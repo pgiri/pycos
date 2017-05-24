@@ -1,0 +1,259 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <link type="text/css" rel="stylesheet" href="pycos.css" />
+
+    <script type="text/javascript" src="jquery.js"></script>
+    <script type="text/javascript" src="pycos.js"></script>
+
+    <script type="text/javascript">
+    //<![CDATA[
+
+     jQuery.ajaxSettings.traditional = true;
+
+      var tasks = {submitted: 0, done: 0};
+      var nodes = {};
+      var timer = null;
+      var timeout = 1000 * %(TIMEOUT)s;
+      var sort_key = 'addr';
+      var sorted_keys = [];
+      var show_task_args = false;
+      if (%(SHOW_TASK_ARGS)s == true) {
+        show_task_args = true;
+      }
+
+      function show_cluster() {
+        $('#tasks-submitted').text(tasks.submitted);
+        $('#tasks-running').text(tasks.submitted - tasks.done);
+        $('#tasks-done').text(tasks.done);
+
+        if (sorted_keys.length == 0) {
+          var key_ids = $.map(nodes, function(node) {
+            return {key:node[sort_key], id:node.addr};
+          });
+          sorted_keys =
+            $.map(key_ids.sort(function(a, b) {
+              return a.key < b.key ? 1 : (a.key > b.key ? -1 : 0); }),
+                  function(key_id) { return key_id.id; }
+                 );
+        }
+
+        var rows = '';
+        $.each(sorted_keys, function(i, key) {
+          var node = nodes[key];
+          rows += '<tr><td>' + (i + 1) + '</td>' +
+            '<td><a href="node.html?host=' + node.addr + '" ' + 'title="View servers on ' +
+            node.addr + '">' + node.addr + '</a></td><td>' + node.name + '</td><td>' +
+            node.servers + '</td>';
+          if (node.avail_info.cpu != null) {
+            rows += '<td>' + node.avail_info.cpu.toFixed(2) + ' %%</td><td>' +
+              formatBytes(node.avail_info.memory) + '</td><td>' +
+              node.avail_info.swap.toFixed(2) + ' %%</td><td>' +
+              formatBytes(node.avail_info.disk) + '</td>';
+          } else {
+            rows += '<td>-</td><td>-</td><td>-</td><td>-</td>';
+          }
+          rows += '<td>' + node.tasks_submitted + '</td><td>' +
+            (node.tasks_submitted - node.tasks_done) + '</td><td>' + node.tasks_done + '</td><td>' +
+            node.last_update.toLocaleTimeString() + '</td></tr>';
+        });
+        $('#nodes').html(rows);
+      }
+
+      function cluster_status(request) {
+        $.ajax({
+          url: request,
+          method: 'GET',
+          dataType: 'json',
+          timeout: Math.min(5000, timeout)
+        })
+          .done(function(status_data) {
+            $.each(status_data, function(i, node) {
+              var cur_node = nodes[node.addr];
+              if (cur_node) {
+                  tasks.submitted -= cur_node.tasks_submitted;
+                  tasks.done -= cur_node.tasks_done;
+              }
+              nodes[node.addr] = node;
+              tasks.submitted += node.tasks_submitted;
+              tasks.done += node.tasks_done;
+              node.last_update = new Date(1000 * node.update_time);
+            });
+
+            if (status_data.length > 0) {
+              if (sort_key == 'addr') {
+                var keys = $.map(nodes, function(node) {
+                  return node.addr;
+                });
+                sorted_keys = merge_sorted_uniq(sorted_keys, keys.sort(desc_cmp), desc_cmp);
+              } else {
+                sorted_keys = [];
+              }
+
+              show_cluster();
+            }
+
+            $('#messages').html('<li>Status updated at ' +
+                                (new Date()).toLocaleTimeString() + '</li>');
+            if (timeout >= 1000) {
+              timer = setTimeout(function() { cluster_status('cluster_updates') }, timeout);
+            }
+          })
+
+          .fail(function(jqXHR, textStatus, errorThrown) {
+            $('#messages').append('<li style="color:red">Could not get status at ' +
+               (new Date()).toLocaleTimeString() + '; ' +
+              'reload this page when computation is scheduled.</li>');
+            if (timer != null) {
+              clearTimeout(timer);
+              timer = null;
+            }
+          })
+      }
+
+      $(document).ready(function() {
+
+        cluster_status('cluster_status');
+
+        $('#show_task_args').prop('checked', show_task_args);
+        $('select[name="sort-key"]').val(sort_key);
+
+        $('#update').click(function() {
+          if (show_task_args != $('#show_task_args').prop('checked')) {
+            show_task_args = $('#show_task_args').prop('checked');
+            $.ajax({
+              url: '/update',
+              method: 'POST',
+              data: {timeout: update_sec, show_task_args: show_task_args},
+              timeout: 1000
+            })
+		.done(function() {
+		    $('#messages').html('<li>Configuration updated.</li>');
+		})
+		.fail(function() {
+		    $('#messages').html('<li style="color:red">' +
+                                        'Configuration update failed.</li>');
+		})
+	  }
+
+          var update_sec = $('#timeout-value').val();
+          if (!$.isNumeric(update_sec)) {
+            $('#messages').append('<li>Invalid timeout value ignored.</li>');
+            $('#timeout-value').val(timeout / 1000);
+            update_sec = timeout / 1000;
+          }
+          update_sec = parseInt(update_sec);
+          if (update_sec < 1) {
+            update_sec = 0;
+            $('#messages').append('<li>Timed updates disabled.</li>');
+          }
+
+          if (timeout != (1000 * update_sec)) {
+            $('#timeout-value').val(update_sec);
+            timeout = 1000 * update_sec;
+            if (timer != null) {
+              clearTimeout(timer);
+              timer = null;
+            }
+            cluster_status('cluster_updates');
+          }
+
+          if (sort_key != $('#sort-key').val()) {
+            sort_key = $('#sort-key').val();
+            sorted_keys = [];
+            show_cluster();
+          }
+
+        });
+
+      });
+    //]]>
+    </script>
+
+  <title>dispycos: Cluster Status</title>
+  </head>
+  <body>
+    <div id="page">
+      <div style="margin:0 auto;" id="navigation">
+        <ul>
+          <li class="active"><a href="cluster.html">Cluster</a></li>
+          <li><a href="node.html">Node</a></li>
+          <li><a href="server.html">Server</a></li>
+        </ul>
+      </div>
+
+      <h1><span class="title">dispycos: Cluster Status</span></h1>
+
+      <table class="border alt"
+        style="background:transparent;margin:10px auto;font-weight:bold;text-align:right;">
+        <tr>
+           <td>Tasks Submitted : </td>
+	   <td id="tasks-submitted">0</td>
+        </tr>
+        <tr>
+          <td style="border-top: 1px solid #bcd;">Tasks Running : </td>
+          <td style="border-top: 1px solid #bcd;" id="tasks-running">0</td>
+        </tr>
+        <tr>
+	  <td style="border-top: 1px solid #bcd;">Tasks Done : </td>
+          <td style="border-top: 1px solid #bcd;" id="tasks-done">0</td>
+        </tr>
+      </table>
+      <table class="fancy shadow alt" style="text-align:right;margin:10px auto;">
+        <caption><span class="border" style="display:inline-block;">Nodes</span></caption>
+        <thead>
+          <tr>
+            <th rowspan="2"></th><th rowspan="2">IP Address</th><th rowspan="2">Name</th>
+	    <th rowspan="2">Servers</th><th colspan="4">Available</th>
+	    <th colspan="3">Tasks</th><th rowspan="2">Last Update</th>
+	  </tr>
+	  <tr>
+            <th>CPU</th><th>Memory</th><th>Swap</th><th>Disk</th>
+            <th>Submitted</th><th>Running</th><th>Done</th>
+          </tr>
+        </thead>
+        <tbody id="nodes">
+	  <tr>
+	    <td></td><td></td><td></td><td></td><td></td><td></td>
+	    <td></td><td></td><td></td><td></td><td></td><td></td>
+	  </tr>
+        </tbody>
+      </table>
+
+      <hr style="margin:10px;" />
+
+      <table id="inputs" style="margin:10px auto;text-align:left;">
+	<tr>
+	  <td><strong>Update Interval Seconds :</strong></td>
+          <td><input style="width:3em;" maxlength="6" type="text" id="timeout-value"
+		     value="%(TIMEOUT)s" /></td>
+	</tr>
+	<tr>
+          <td><strong>Show Task Aguments :</strong></td>
+          <td><input style="width:3em;" maxlength="6" type="checkbox" id="show_task_args" ></td>
+	</tr>
+	<tr>
+          <td><strong>Sort Nodes by : </strong></td>
+          <td><select name="sort-key" style="margin-left:5px;">
+              <option value="addr">IP Address</option>
+              <option value="name">Name</option>
+              <option value="done">Tasks Done</option>
+              <option value="last_update">Last Update</option>
+            </select></td>
+	</tr>
+      </table>
+      <div style="text-align:center;">
+	<button style="margin:5px auto;" type="button" id="update">Update</button>
+      </div>
+
+      <hr style="margin:10px;" />
+      <div>
+        <ul id="messages" style="margin:1em auto;display:inline-block;"><li></li></ul>
+      </div>
+
+    </div>
+  </body>
+</html>

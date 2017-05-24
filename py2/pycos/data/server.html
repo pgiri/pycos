@@ -1,0 +1,331 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <link type="text/css" rel="stylesheet" href="pycos.css" />
+
+    <script type="text/javascript" src="jquery.js"></script>
+    <script type="text/javascript" src="pycos.js"></script>
+
+    <script type="text/javascript">
+    //<![CDATA[
+
+      jQuery.ajaxSettings.traditional = true;
+
+      var server_location = null;
+      var timer = null;
+      var timeout = 1000 * %(TIMEOUT)s;
+      // TODO: make max_tasks an input?
+      var max_tasks = 100;
+      var server_hidden = true;
+      var tasks_hidden = true;
+
+      function getParam(param) {
+        param = param.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
+        var regex = new RegExp('[\\?&]' + param + '=([^&#]*)'),
+        results = regex.exec(location.search);
+        return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
+      }
+
+      function show_server() {
+        $.ajax({
+          url: '/server_info',
+          method: 'POST',
+          data: {location: server_location, limit: max_tasks},
+          dataType: 'json',
+          timeout: Math.min(5000, timeout)
+        })
+
+          .done(function(server) {
+            $('#messages').html('');
+            if (server.hasOwnProperty('location')) {
+              server_location = server.location;
+              $('#server_location').text(server.location);
+              $('#server_status').text(server.status);
+              $('#server_tasks_submitted').text(server.tasks_submitted);
+              $('#server_tasks_running').text(server.tasks_submitted - server.tasks_done);
+              $('#server_tasks_done').text(server.tasks_done);
+              $('#server_update').text((new Date(1000 * server.update_time)).toLocaleTimeString());
+              if ($('#server').is(':hidden')) {
+                $('#server').show();
+                server_hidden = false;
+              }
+
+              var rows = '';
+              $.each(server.tasks, function(i, task) {
+                var args = task.args;
+                if (task.kwargs.length > 0) {
+                  if (args.length > 0) {
+                    args += ', ';
+                  }
+	          args += task.kwargs;
+                }
+                rows += '<tr>' +
+                  '<td><input type="checkbox" name="task" value="' + task.task + '_' + i + '" /></td>' +
+                  '<td>' + task.name + '</td><td>' + args + '</td><td>' +
+                  (new Date(1000 * task.start_time)).toLocaleTimeString() + '</td>' +
+                  '</tr>';
+              });
+
+              if (server.tasks.length > 0) {
+                if ($('#tasks').is(':hidden')) {
+                  $('#tasks').show();
+                  tasks_hidden = false;
+                }
+                $('#tasks-table tbody').html(rows);
+              } else {
+                $('#tasks').hide();
+                tasks_hidden = true;
+                $('#messages').append('<li style="margin:10px 0;"><span class="border">' +
+                                      'No tasks running on this server.</span></li>');
+              }
+
+              var now = new Date();
+              $('#messages').append('<li>Status updated at ' + now.toLocaleTimeString() + '</li>');
+              if (timeout >= 1000) {
+                timer = setTimeout(function() { show_server() }, timeout);
+              }
+            } else {
+              $('#messages').append('<li style="color:red">Failed to get information about ' +
+                                    '"' + server_location + '".</li>');
+              $('#server').hide();
+              $('#tasks').hide();
+              server_hidden = true;
+              tasks_hidden = true;
+            }
+
+          })
+
+          .fail(function(jqXHR, textStatus, errorThrown) {
+            $('#messages').append('<li style="color:red">Server update failed at ' +
+              (new Date()).toLocaleTimeString() + '.</li>');
+            $('#tasks').hide();
+            tasks_hidden = true;
+          });
+      }
+
+      $(document).ready(function() {
+        server_location = getParam('location');
+        $('#location').val(server_location);
+        $('#max_tasks').val(max_tasks);
+
+        if (server_location) {
+          $('#location').attr('size', Math.max($('#location').attr('size'), server_location.length));
+          show_server();
+        } else {
+          $('#server').hide();
+          $('#tasks').hide();
+          server_hidden = true;
+          tasks_hidden = true;
+        }
+	
+        $('#input-update').click(function() {
+          var changed = false;
+          var inp = $('#location').val().trim();
+          if (inp != server_location) {
+            changed = true;
+            server_location = inp;
+          }
+
+          inp = $('#max_tasks').val();
+          if ($.isNumeric(inp)) {
+            inp = parseInt(inp);
+            if (inp < 0) {
+              inp = 0;
+            }
+            if (inp != max_tasks) {
+              changed = true;
+              max_tasks = inp;
+            }
+          } else {
+            $('#messages').append('<li style="color:red">Invalid Max Tasks value ' +
+                                  'ignored.</li>');
+            $('#max_tasks').val(max_tasks);
+          }
+
+          inp = $('#timeout').val();
+          if ($.isNumeric(inp)) {
+            inp = parseInt(inp);
+            if (inp < 1) {
+              inp = 0;
+              $('#messages').append('<li>Timed updates disabled.</li>');
+            }
+            if (timeout != (1000 * inp)) {
+              changed = true;
+              $.ajax({
+                url: '/update',
+                method: 'POST',
+                data: {timeout: inp},
+                timeout: 1000
+              });
+              $('#timeout').val(inp);
+              timeout = 1000 * inp;
+            }
+          } else {
+            $('#messages').append('<li style="color:red">Invalid timeout value ignored.</li>');
+            $('#timeout').val(timeout / 1000);
+          }
+
+          if (changed && server_location) {
+            if (timer != null) {
+              clearTimeout(timer);
+              timer = null;
+            }
+            show_server();
+          }
+        });
+
+        $('#terminate-tasks').click(function() {
+          if ($('select[name="terminate-confirm"]').val() != 'Yes') {
+            $('#messages').append('<li style="color:red">Terminating tasks not confirmed.</li>');
+            return false;
+          }
+          var terminate_tasks = [];
+          $('input[type="checkbox"][name="task"]').each(function(i) {
+            if ($(this).prop('checked')) {
+              var uid = $(this).val();
+              uid = uid.substring(0, uid.lastIndexOf('_'));
+              terminate_tasks.push(uid);
+            }
+          });
+          if (terminate_tasks.length == 0) {
+            return false;
+          }
+
+          $(this).prop('disabled', true);
+          $('select[name="terminate-confirm"] > option[value=""]').prop('selected', true);
+
+          $.ajax({
+            url: '/terminate_tasks',
+            method: 'POST',
+            data: {task:terminate_tasks},
+            dataType: 'json',
+            timeout: 5000
+          })
+
+            .done(function(data) {
+              $.each(data, function(i, uid) {
+                var row = $('input[type="checkbox"][name="task"][value^="' + uid + '_"]').val();
+                if (row) {
+                  row = row.substring(row.lastIndexOf('_') + 1);
+                  $('#tasks-table > tbody > tr:eq(' + row + ') td').each(function(i) {
+                    $(this).css('color', 'Gray');
+                    if (i == 3) {
+                      $(this).text('Terminated');
+                    }
+                  });
+                }
+              });
+              $('#terminate-tasks').prop('disabled', false);
+            })
+
+            .fail(function() {
+              $('#terminate-tasks').prop('disabled', false);
+              $('#messages').append('<li style="color:red">Terminating tasks failed.</li>');
+            });
+
+        });
+
+
+      });
+
+    //]]>
+    </script>
+
+  <title>dispycos: Server Status</title>
+  </head>
+  <body>
+
+    <div id="page">
+      <div style="margin:0 auto;" id="navigation">
+        <ul>
+          <li><a href="cluster.html">Cluster</a></li>
+          <li><a href="node.html">Node</a></li>
+          <li class="active"><a href="server.html">Server</a></li>
+        </ul>
+      </div>
+
+      <h1 style="margin:2em 0;"><span class="title">dispycos: Server Status</span></h1>
+
+      <table id="server" class="fancy shadow alt" style="margin:20px auto;text-align:left;font-weight:bold;">
+        <tbody>
+          <tr>
+            <td>Server Location</td><td id="server_location"></td>
+          </tr>
+          <tr>
+            <td>Server Status</td><td id="server_status"></td>
+          </tr>
+          <tr>
+            <td>Tasks Submitted</td><td id="server_tasks_submitted"></td>
+          </tr>
+          <tr>
+            <td>Tasks Running</td><td id="server_tasks_running"></td>
+          </tr>
+          <tr>
+            <td>Tasks Done</td><td id="server_tasks_done"></td>
+          </tr>
+          <tr>
+            <td>Last Update</td><td id="server_update"></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div id="tasks">
+
+        <table class="fancy shadow alt" style="margin:20px auto;" id="tasks-table">
+          <caption><span class="border" style="display:inline-block;">Tasks</span></caption>
+          <thead>
+            <tr><th></th><th>Task</th><th>Arguments</th><th>Start Time</th></tr>
+          </thead>
+          <tbody>
+	    <tr>
+	      <td></td><td></td><td></td><td></td>
+	    </tr>
+          </tbody>
+        </table>
+
+        <div style="margin:10px auto;">
+          <span class="border" style="display:inline-block;">
+            <strong>Terminate Selected Tasktuines : </strong>
+            <select name="terminate-confirm" style="margin-left:5px;">
+              <option value="" selected="selected">Confirm</option>
+              <option value="No">No</option>
+              <option value="Yes">Yes</option>
+            </select>
+            <button type="button" id="terminate-tasks" style="margin-left:5px;">Terminate</button>
+          </span>
+        </div>
+
+      </div>
+
+      <hr style="margin:10px;" />
+
+      <table id="inputs" style="margin:10px auto;text-align:left;">
+        <tr>
+          <td><strong>Update Interval Seconds :</strong></td>
+          <td><input style="width:3em;padding-right:3px;" maxlength="6" type="text" id="timeout" value="%(TIMEOUT)s" /></td>
+        </tr>
+        <tr>
+          <td><strong>Max Tasks to Show : </strong></td>
+          <td><input style="width:4em;padding-right:3px;" maxlength="5" type="text" id="max_tasks" value="" /></td>
+        </tr>
+        <tr>
+          <td><strong>Server Location : </strong></td>
+          <td><input style="min-width:10em;padding-right:3px;" size="15" type="text" id="location" value="" /></td>
+        </tr>
+      </table>
+      <div style="text-align:center;">
+        <button type="button" id="input-update" style="margin-left:5px;">Update</button>
+      </div>
+
+      <hr style="margin:10px;" />
+
+      <div>
+        <ul id="messages" style="margin:1em auto;display:inline-block;"><li></li></ul>
+      </div>
+
+    </div>
+  </body>
+</html>

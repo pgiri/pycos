@@ -1,0 +1,273 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <link type="text/css" rel="stylesheet" href="pycos.css" />
+
+    <script type="text/javascript" src="jquery.js"></script>
+    <script type="text/javascript" src="pycos.js"></script>
+
+    <script type="text/javascript">
+    //<![CDATA[
+
+      jQuery.ajaxSettings.traditional = true;
+
+      var node_addr = null;
+      var timer = null;
+      var timeout = 1000 * %(TIMEOUT)s;
+      var node_hidden = true;
+      var servers_hidden = true;
+
+      function getParam(param) {
+        param = param.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
+        var regex = new RegExp('[\\?&]' + param + '=([^&#]*)'),
+        results = regex.exec(location.search);
+        return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
+      }
+
+      function show_node(host) {
+        $.ajax({
+          url: '/node_info',
+          method: 'POST',
+          data: {'host':host},
+          dataType: 'json',
+          timeout: Math.min(5000, timeout)
+        })
+
+          .done(function(node) {
+            $('#messages').html('');
+            if (node.hasOwnProperty('addr')) {
+              node_addr = node.addr;
+              $('#node_name').text(node.name);
+              $('#node_addr').text(node.addr);
+              $('#node_status').text(node.status);
+              $('#node_servers').text(node.servers.length);
+              $('#node_tasks_submitted').text(node.tasks_submitted);
+              $('#node_tasks_done').text(node.tasks_done);
+              $('#node_tasks_running').text(node.tasks_submitted - node.tasks_done);
+              $('#node_update').text((new Date(1000 * node.update_time)).toLocaleTimeString());
+              if (node.avail_info.cpu != null) {
+                $('#node_cpu').text(node.avail_info.cpu.toFixed(2) + ' %%');
+                $('#node_memory').text(formatBytes(node.avail_info.memory));
+                $('#node_swap').text(node.avail_info.swap.toFixed(2) + ' %%');
+                $('#node_disk').text(formatBytes(node.avail_info.disk));
+              }
+              if (node_hidden) {
+                $('#node').show();
+                node_hidden = false;
+              }
+
+              var rows = '';
+              $.each(node.servers, function(i, server) {
+                rows += '<tr><td>' + (i + 1) + '</td>' +
+                  '<td><a href="server.html?location=' + server.location + '" ' + 'title="View tasks on ' +
+                  server.location + '">' + server.location + '</a></td><td>' +
+                  server.tasks_submitted + '</td><td>' +
+                  (server.tasks_submitted - server.tasks_done) + '</td><td>' +
+                  server.tasks_done + '</td><td>' +
+                  (new Date(1000 * server.update_time)).toLocaleTimeString() + '</td></tr>';
+
+              });
+              if (node.servers.length > 0) {
+                if (servers_hidden) {
+                  $('#servers').show();
+                  servers_hidden = false;
+                }
+                $('#servers-table tbody').html(rows);
+              } else {
+                $('#servers').hide();
+                servers_hidden = true;
+                $('#messages').append('<li style="margin:10px 0;"><span class="border">' +
+                                      'No servers running on this node.</span></li>');
+              }
+
+              var now = new Date();
+              $('#messages').append('<li>Status updated at ' + now.toLocaleTimeString() + '.</li>');
+              if (timeout >= 1000) {
+                timer = setTimeout(function() { show_node(node.addr) }, timeout);
+              }
+            } else {
+              $('#messages').append('<li style="color:red">' +
+                                    'Failed to get information about "' + host + '".</li>');
+              $('#node').hide();
+              $('#servers').hide();
+              node_hidden = true;
+              servers_hidden = true;
+            }
+
+          })
+
+          .fail(function(jqXHR, textStatus, errorThrown) {
+            $('#messages').append('<li style="color:red">Node update failed at ' +
+              (new Date()).toLocaleTimeString() + '.</li>');
+          });
+      }
+
+      $(document).ready(function() {
+        var host = getParam('host');
+        $('#host').val(host);
+
+        if (host) {
+          $('#host').attr('size', Math.max($('#host').attr('size'), host.length));
+          show_node(host);
+        } else {
+          $('#node').hide();
+          $('#servers').hide();
+          node_hidden = true;
+          servers_hidden = true;
+        }
+	
+        $('#input-update').click(function() {
+          var changed = false;
+          var inp = $('#timeout').val().trim();
+          if ($.isNumeric(inp)) {
+            inp = parseInt(inp);
+            if (inp < 1) {
+              inp = 0;
+              $('#messages').append('<li>Timed updates disabled.</li>');
+            }
+
+            if (timeout != (1000 * inp)) {
+              changed = true;
+              $.ajax({
+                url: '/update',
+                method: 'POST',
+                data: {timeout: inp},
+                timeout: 1000
+              });
+              $('#timeout').val(inp);
+              timeout = 1000 * inp;
+            }
+          } else {
+            $('#messages').append('<li style="color:red">Invalid timeout value ignored.</li>');
+            $('#timeout').val(timeout / 1000);
+          }
+
+          inp = $('#host').val().trim();
+          if (inp.length == 0) {
+            $('#messages').append('<li style="color:red">Invalid host ignored.</li>');
+            $('#host').val(host);
+          } else if (inp != host) {
+            changed = true;
+            host = inp;
+          }
+
+          if (changed) {
+            if (timer != null) {
+              clearTimeout(timer);
+              timer = null;
+            }
+            show_node(host);
+          }
+        });
+
+      });
+
+    //]]>
+    </script>
+
+  <title>dispycos: Node Status</title>
+  </head>
+  <body>
+
+    <div id="page">
+      <div style="margin:0 auto;" id="navigation">
+        <ul>
+          <li><a href="cluster.html">Cluster</a></li>
+          <li class="active"><a href="node.html">Node</a></li>
+          <li><a href="server.html">Server</a></li>
+        </ul>
+      </div>
+
+      <h1 style="margin:2em 0;"><span class="title">dispycos: Node Status</span></h1>
+
+      <table id="node" class="fancy shadow alt" style="margin:20px auto;text-align:left;font-weight:bold;">
+        <tbody>
+          <tr>
+            <td>Name</td><td id="node_name"></td>
+          </tr>
+          <tr>
+            <td>IP Address</td><td id="node_addr"></td>
+          </tr>
+          <tr>
+            <td>Status</td><td id="node_status"></td>
+          </tr>
+          <tr>
+            <td>Servers</td><td id="node_servers"></td>
+          </tr>
+          <tr>
+            <td>Available CPU</td><td id="node_cpu">Unknown</td>
+          </tr>
+          <tr>
+            <td>Available Memory</td><td id="node_memory">Unknown</td>
+          </tr>
+          <tr>
+            <td>Available Swap Space</td><td id="node_swap">Unknown</td>
+          </tr>
+          <tr>
+            <td>Available Disk Space</td><td id="node_disk">Unknown</td>
+          </tr>
+          <tr>
+            <td>Tasks Submitted</td><td id="node_tasks_submitted"></td>
+          </tr>
+          <tr>
+            <td>Tasks Running</td><td id="node_tasks_running"></td>
+          </tr>
+          <tr>
+            <td>Tasks Done</td><td id="node_tasks_done"></td>
+          </tr>
+          <tr>
+            <td>Last Update</td><td id="node_update"></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div id="servers">
+
+        <table class="fancy shadow alt" style="margin:20px auto;" id="servers-table">
+          <caption><span class="border" style="display:inline-block;">Servers</span></caption>
+          <thead>
+            <tr>
+	      <th rowspan="2"></th><th rowspan="2">Server</th><th colspan="3">Tasks</th>
+              <th rowspan="2">Last Update</th>
+	    </tr>
+	    <tr>
+	      <th>Submitted</th><th>Running</th><th>Done</th>
+	    </tr>
+          </thead>
+          <tbody>
+	    <tr>
+	      <td></td><td></td><td></td><td></td><td></td><td></td>
+	    </tr>
+          </tbody>
+        </table>
+
+      </div>
+
+      <hr style="margin:10px;" />
+
+      <table id="inputs" style="margin:10px auto;text-align:left;">
+        <tr>
+          <td><strong>Update Interval Seconds :</strong></td>
+          <td><input style="width:3em;padding-right:3px;" maxlength="6" type="text" id="timeout" value="%(TIMEOUT)s" /></td>
+        </tr>
+        <tr>
+          <td><strong>Name or IP of Node to Show : </strong></td>
+          <td><input style="min-width:8em;padding-right:3px;" size="8" type="text" id="host" value="" /></td>
+        </tr>
+      </table>
+      <div style="text-align:center;">
+        <button type="button" id="input-update" style="margin-left:5px;">Update</button>
+      </div>
+
+      <hr style="margin:10px;" />
+
+      <div>
+        <ul id="messages" style="margin:1em auto;display:inline-block;"><li></li></ul>
+      </div>
+
+    </div>
+  </body>
+</html>

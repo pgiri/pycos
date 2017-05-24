@@ -1,0 +1,31 @@
+Metadata-Version: 1.0
+Name: pycos
+Version: 4.5.6
+Summary: This module provides framework for concurrent, asynchronous, distributed, communicating tassks.
+Home-page: http://pycos.sourceforge.io
+Author: Giridhar Pemmasani
+Author-email: pgiri@yahoo.com
+License: The MIT License: http://www.opensource.org/licenses/mit-license.php
+Description: pycos is a Python framework for concurrent, asynchronous,
+        distributed, communicating tasks. Programs developed with pycos have
+        same logic and structure as Python programs with threads, except for a
+        few syntactic changes. pycos supports socket I/O notification
+        mechanisms epoll, kqueue, /dev/poll (and poll and select, where
+        necessary), and Windows I/O Completion Ports (IOCP) for high
+        performance and scalability, and SSL for security. pycos has been
+        tested with Linux, Mac OS X and Windows. pycos is implemented with
+        standard modules in Python.
+        
+        See http://pycos.sourceforge.io for more details.
+        
+Platform: any
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 2
+Classifier: Programming Language :: Python :: 2.7
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.1
+Classifier: Topic :: Scientific/Engineering
+Classifier: Topic :: Software Development
