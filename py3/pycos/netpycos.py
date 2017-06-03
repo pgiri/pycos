@@ -1,4 +1,4 @@
-"""This file is part of pycos; see http://pycos.sourceforge.net for details.
+"""This file is part of pycos; see http://pycos.sourceforge.io for details.
 
 This module adds API for distributed programming to Pycos.
 """
@@ -29,7 +29,7 @@ from pycos import *
 __author__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __copyright__ = "Copyright (c) 2012-2014 Giridhar Pemmasani"
 __license__ = "MIT"
-__url__ = "http://pycos.sourceforge.net"
+__url__ = "http://pycos.sourceforge.io"
 
 __version__ = pycos.__version__
 __all__ = pycos.__all__ + ['PeerStatus', 'RTI']
@@ -92,6 +92,17 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
     _instance = None
     _pycos = pycos.Pycos.instance()
 
+    class AddrInfo(object):
+        def __init__(self, family, ip, ifn, broadcast, netmask):
+            self.family = family
+            self.ip = ip
+            self.ifn = ifn
+            self.broadcast = broadcast
+            self.netmask = netmask
+            self.location = None
+            self.tcp_sock = None
+            self.udp_sock = None
+
     def __init__(self, udp_port=0, tcp_port=0, node=None, ext_ip_addr=None,
                  socket_family=None, name=None, discover_peers=True,
                  secret='', certfile=None, keyfile=None, notifier=None,
@@ -100,75 +111,11 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         self.__class__._instance = self
         super(self.__class__, self).__init__()
         self._rcis = {}
+        self._locations = set()
         self._stream_peers = {}
         self._pending_reqs = {}
         self._pending_replies = {}
-
-        if node:
-            node = socket.getaddrinfo(node, None)[0]
-            if not socket_family:
-                socket_family = node[0]
-            elif node[0] != socket_family:
-                node = None
-            if node:
-                node = node[4][0]
-            if not socket_family:
-                socket_family = socket.AF_INET
-        if not socket_family:
-            socket_family = socket.getaddrinfo(socket.gethostname(), None)[0][0]
-        assert socket_family in (socket.AF_INET, socket.AF_INET6)
-
-        ifn, self.addrinfo = 0, None
-        if netifaces:
-            for iface in netifaces.interfaces():
-                if socket_family == socket.AF_INET:
-                    if self.addrinfo:
-                        break
-                else:  # socket_family == socket.AF_INET6
-                    if ifn and self.addrinfo:
-                        break
-                    ifn, self.addrinfo = 0, None
-                for link in netifaces.ifaddresses(iface).get(socket_family, []):
-                    if socket_family == socket.AF_INET:
-                        if link.get('broadcast', '').startswith(link['addr'].split('.')[0]):
-                            if (not node) or (link['addr'] == node):
-                                self.addrinfo = socket.getaddrinfo(link['addr'], None)[0]
-                                break
-                    else:  # socket_family == socket.AF_INET6
-                        if link['addr'].startswith('fe80:'):
-                            addr = link['addr']
-                            if '%' not in addr.split(':')[-1]:
-                                addr = addr + '%' + interface
-                            for addrinfo in socket.getaddrinfo(addr, None):
-                                if addrinfo[2] == socket.IPPROTO_TCP:
-                                    ifn = addrinfo[4][-1]
-                                    break
-                        elif link['addr'].startswith('fd'):
-                            for addrinfo in socket.getaddrinfo(link['addr'], None):
-                                if addrinfo[2] == socket.IPPROTO_TCP:
-                                    self.addrinfo = addrinfo
-                                    break
-        elif socket_family == socket.AF_INET6:
-            logger.warning('IPv6 may not work without "netifaces" package!')
-
-        if self.addrinfo:
-            if not node:
-                node = self.addrinfo[4][0]
-            if not socket_family:
-                socket_family = self.addrinfo[0]
-        if not node:
-            node = socket.gethostname()
-
-        node = socket.getaddrinfo(node, None, socket_family, socket.SOCK_STREAM)[0]
-        ip_addr = node[4][0]
-        if node[0] == socket.AF_INET6:
-            # canonicalize so different platforms resolve to same string
-            ip_addr = re.sub(r'^0+', '', ip_addr)
-            ip_addr = re.sub(r':0+', ':', ip_addr)
-            ip_addr = re.sub(r'::+', '::', ip_addr)
-
-        info = collections.namedtuple('AddrInfo', ['family', 'ip', 'ifn'])
-        self.addrinfo = info(node[0], ip_addr, ifn)
+        self._addrinfos = []
 
         if not udp_port:
             udp_port = 51350
@@ -186,81 +133,103 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                     logger.warning('failed to create "%s"', self.__dest_path)
                     logger.debug(traceback.format_exc())
         self.max_file_size = max_file_size
+        self._secret = secret
         self._certfile = certfile
         self._keyfile = keyfile
-        self._udp_sock = AsyncSocket(socket.socket(self.addrinfo.family, socket.SOCK_DGRAM))
-        if hasattr(socket, 'SO_REUSEADDR'):
-            self._udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        if hasattr(socket, 'SO_REUSEPORT'):
-            self._udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        self._udp_sock.bind(('', udp_port))
+        self._ignore_peers = False
 
-        self._tcp_sock = AsyncSocket(socket.socket(self.addrinfo.family, socket.SOCK_STREAM),
-                                     keyfile=self._keyfile, certfile=self._certfile)
-        if tcp_port:
+        RTI._pycos = _Peer._pycos = SysTask._pycos = self
+        pycos.Task._pycos = pycos.Channel._pycos = Pycos._pycos
+
+        if isinstance(node, list):
+            if node:
+                nodes = node
+            else:
+                nodes = [None]
+        else:
+            nodes = [node]
+        if isinstance(ext_ip_addr, list):
+            ext_ip_addrs = ext_ip_addr
+        else:
+            ext_ip_addrs = [ext_ip_addr]
+
+        location = None
+        for i in range(len(nodes)):
+            node = nodes[i]
+            if len(ext_ip_addrs) > i:
+                ext_ip_addr = ext_ip_addrs[i]
+            else:
+                ext_ip_addr = None
+            addrinfo = Pycos.node_addrinfo(node, socket_family=socket_family)
+            if not addrinfo:
+                logger.warning('Invalid node "%s" ignored', node)
+                continue
+            addrinfo = Pycos.AddrInfo(*addrinfo)
+            udp_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
             if hasattr(socket, 'SO_REUSEADDR'):
-                self._tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             if hasattr(socket, 'SO_REUSEPORT'):
-                self._tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        self._tcp_sock.bind((self.addrinfo.ip, tcp_port))
-        self._location = Location(self.addrinfo.ip, self._tcp_sock.getsockname()[1])
-        if not self._location.port:
-            raise Exception('could not start network server at %s' % (self._location))
+                udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            if addrinfo.family == socket.AF_INET6:
+                mreq = socket.inet_pton(addrinfo.family, addrinfo.broadcast)
+                mreq += struct.pack('@I', addrinfo.ifn)
+                udp_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
+            udp_sock.bind(('', udp_port))
+
+            tcp_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_STREAM),
+                                   keyfile=self._keyfile, certfile=self._certfile)
+            if tcp_port:
+                if hasattr(socket, 'SO_REUSEADDR'):
+                    tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                if hasattr(socket, 'SO_REUSEPORT'):
+                    tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            tcp_sock.bind((addrinfo.ip, tcp_port))
+            location = Location(addrinfo.ip, tcp_sock.getsockname()[1])
+            if ext_ip_addr:
+                try:
+                    info = socket.getaddrinfo(ext_ip_addr, None)[0]
+                    ip_addr = info[4][0]
+                    if info[0] == socket.AF_INET6:
+                        # canonicalize so different platforms resolve to same string
+                        ip_addr = re.sub(r'^0+', '', ip_addr)
+                        ip_addr = re.sub(r':0+', ':', ip_addr)
+                        ip_addr = re.sub(r'::+', '::', ip_addr)
+                    location.addr = ip_addr
+                except:
+                    logger.warning('invalid ext_ip_addr "%s" ignored', ext_ip_addr)
+
+            tcp_sock.listen(32)
+            logger.info('network server %s@ %s, udp_port=%s', '"%s" ' % name if name else '',
+                        location, udp_sock.getsockname()[1])
+
+            addrinfo.tcp_sock = tcp_sock
+            addrinfo.udp_sock = udp_sock
+            addrinfo.location = location
+            self._addrinfos.append(addrinfo)
+            SysTask(self._tcp_proc, tcp_sock, location, addrinfo)
+            SysTask(self._udp_proc, udp_sock, location, addrinfo)
+            self._locations.add(location)
+
+        if not isinstance(location, Location):
+            logger.warning('Could not initialize networking')
+            raise Exception('Invalid "node"?')
+
+        Pycos._pycos._location = self._location = location
+        Pycos._pycos._locations = self._locations
+
         if name:
             self._name = name
         else:
             self._name = str(self._location)
-        if ext_ip_addr:
-            try:
-                info = socket.getaddrinfo(ext_ip_addr)[0]
-                ip_addr = info[4][0]
-                if info[0] == socket.AF_INET6:
-                    # canonicalize so different platforms resolve to same string
-                    ip_addr = re.sub(r'^0+', '', ip_addr)
-                    ip_addr = re.sub(r':0+', ':', ip_addr)
-                    ip_addr = re.sub(r'::+', '::', ip_addr)
-                self._location.addr = ip_addr
-            except:
-                logger.warning('invalid ext_ip_addr ignored')
-
-        self._secret = secret
-        if secret is None:
-            self._signature = None
-            self._auth_code = None
-        else:
-            self._signature = ''.join(hex(_)[2:] for _ in os.urandom(20))
-            self._auth_code = hashlib.sha1((self._signature + secret).encode()).hexdigest()
-        self._tcp_sock.listen(32)
-        logger.info('network server %s@ %s, udp_port=%s', '"%s" ' % name if name else '',
-                    self._location, self._udp_sock.getsockname()[1])
-
-        if self.addrinfo.family == socket.AF_INET:
-            self._broadcast = '<broadcast>'
-            if netifaces:
-                for iface in netifaces.interfaces():
-                    for link in netifaces.ifaddresses(iface).get(netifaces.AF_INET, []):
-                        if link['addr'] == self._location.addr:
-                            self._broadcast = link.get('broadcast', '<broadcast>')
-                            break
-                    else:
-                        continue
-                    break
-        else:  # self.addrinfo.family == socket.AF_INET6
-            self._broadcast = 'ff05::1'
-            mreq = socket.inet_pton(self.addrinfo.family, self._broadcast)
-            mreq += struct.pack('@I', self.addrinfo.ifn)
-            self._udp_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
-
+        self._signature = hashlib.sha1(os.urandom(20))
+        for location in self._locations:
+            self._signature.update(str(location).encode())
+        self._signature = self._signature.hexdigest()
+        self._auth_code = hashlib.sha1((self._signature + secret).encode()).hexdigest()
+        pycos.Task._sign = pycos.Channel._sign = SysTask._sign = RTI._sign = self._signature
+        if discover_peers:
+            self.discover_peers()
         atexit.register(self.finish)
-        Pycos._pycos._location = self._location
-        RTI._pycos = _Peer._pycos = SysTask._pycos = self
-        pycos.Task._pycos = pycos.Channel._pycos = Pycos._pycos
-        # NB: any Task and Channel instances already running will not have
-        # current '_location', so they can't communiacte over netowrk
-
-        self._ignore_peers = False
-        self._tcp_task = SysTask(self._tcp_proc)
-        self._udp_task = SysTask(self._udp_proc, discover_peers)
 
     @classmethod
     def instance(cls, *args, **kwargs):
@@ -292,12 +261,10 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             Pycos._pycos.finish()
             super(self.__class__, self).finish()
             Pycos._instance = None
-            if self._udp_sock:
-                self._udp_sock.close()
-                self._udp_sock = None
-            if self._tcp_sock:
-                self._tcp_sock.close()
-                self._tcp_sock = None
+            for addrinfo in self._addrinfos:
+                addrinfo.udp_sock.close()
+                addrinfo.tcp_sock.close()
+            self._addrinfos = []
             self._notifier.terminate()
             logger.shutdown()
 
@@ -356,7 +323,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             task = Pycos.cur_task(self)
         if not isinstance(loc, Location):
             try:
-                info = socket.getaddrinfo(loc)[0]
+                info = socket.getaddrinfo(loc, None)[0]
                 ip_addr = info[4][0]
                 if info[0] == socket.AF_INET6:
                     # canonicalize so different platforms resolve to same string
@@ -393,42 +360,55 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             _Peer._lock.release()
         self._lock.release()
 
+        # TODO: is there a better approach to find best suitable address to
+        # select (with netmask)?
+        def best_match(ip):
+            best = (0, self._addrinfos[0])
+            for addrinfo in self._addrinfos:
+                i, n = 0, min(len(ip), len(addrinfo.ip))
+                while i < n and ip[i] == addrinfo.ip[i]:
+                    i += 1
+                if i > best[0]:
+                    best = (i, addrinfo)
+            return best[1]
+
+        addrinfo = best_match(loc.addr)
+
         if loc.port:
             req = _NetRequest('signature', kwargs={'version': __version__}, dst=loc)
-            sock = AsyncSocket(socket.socket(self.addrinfo.family, socket.SOCK_STREAM),
+            sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_STREAM),
                                keyfile=self._keyfile, certfile=self._certfile)
             sock.settimeout(2)
             try:
                 yield sock.connect((loc.addr, loc.port))
                 yield sock.send_msg(serialize(req))
                 sign = yield sock.recv_msg()
-                ret = yield self._acquaint_(loc, sign.decode(), task=task)
+                ret = yield self._acquaint_(loc, sign.decode(), addrinfo, task=task)
             except:
                 ret = -1
             finally:
                 sock.close()
 
             if broadcast and ret == 0:
-                kwargs = {'location': self._location, 'signature': self._signature,
+                kwargs = {'location': addrinfo.location, 'signature': self._signature,
                           'name': self._name, 'version': __version__}
                 _Peer.send_req_to(_NetRequest('relay_ping', kwargs=kwargs, dst=loc), loc)
             raise StopIteration(ret)
         else:
             if not udp_port:
                 udp_port = 51350
-            ping_msg = {'location': self._location, 'signature': self._signature,
+            ping_msg = {'location': addrinfo.location, 'signature': self._signature,
                         'name': self._name, 'version': __version__, 'broadcast': broadcast}
             ping_msg = 'ping:'.encode() + serialize(ping_msg)
-            ping_sock = AsyncSocket(socket.socket(self.addrinfo.family, socket.SOCK_DGRAM))
+            ping_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
             ping_sock.settimeout(2)
-            if self.addrinfo.family == socket.AF_INET:
+            if addrinfo.family == socket.AF_INET:
                 ping_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            else:  # self.addrinfo.family == socket.AF_INET6
+            else:  # addrinfo.family == socket.AF_INET6
                 ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS,
                                      struct.pack('@i', 1))
-                ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF,
-                                     self.addrinfo.ifn)
-            ping_sock.bind((self.addrinfo.ip, 0))
+                ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF, addrinfo.ifn)
+            ping_sock.bind((addrinfo.ip, 0))
             try:
                 yield ping_sock.sendto(ping_msg, (loc.addr, udp_port))
             except:
@@ -441,30 +421,30 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         discover peers, if there is a chance initial broadcast message may be
         lost (as these messages are sent over UDP).
         """
-        if not port:
-            port = self._udp_sock.getsockname()[1]
-        ping_msg = {'location': self._location, 'signature': self._signature,
-                    'name': self._name, 'version': __version__}
-        ping_msg = 'ping:'.encode() + serialize(ping_msg)
+        ping_msg = {'signature': self._signature, 'name': self._name, 'version': __version__}
 
-        def _discover(task=None):
-            ping_sock = AsyncSocket(socket.socket(self.addrinfo.family, socket.SOCK_DGRAM))
+        def _discover(addrinfo, port, task=None):
+            ping_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
             ping_sock.settimeout(2)
-            if self.addrinfo.family == socket.AF_INET:
+            if addrinfo.family == socket.AF_INET:
                 ping_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            else:  # self.addrinfo.family == socket.AF_INET6
+            else:  # addrinfo.family == socket.AF_INET6
                 ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS,
                                      struct.pack('@i', 1))
-                ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF,
-                                     self.addrinfo.ifn)
-            ping_sock.bind((self.addrinfo.ip, 0))
+                ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF, addrinfo.ifn)
+            ping_sock.bind((addrinfo.ip, 0))
+            if not port:
+                port = addrinfo.udp_sock.getsockname()[1]
+            ping_msg['location'] = addrinfo.location
             try:
-                yield ping_sock.sendto(ping_msg, (self._broadcast, port))
+                yield ping_sock.sendto('ping:'.encode() + serialize(ping_msg),
+                                       (addrinfo.broadcast, port))
             except:
                 pass
             ping_sock.close()
 
-        SysTask(_discover)
+        for addrinfo in self._addrinfos:
+            SysTask(_discover, addrinfo, port)
 
     def ignore_peers(self, ignore):
         """Don't respond to 'ping' from peers if 'ignore=True'. This can be used
@@ -605,15 +585,97 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             reply = -1
         raise StopIteration(reply)
 
-    def _acquaint_(self, peer_location, peer_signature, task=None):
+    @staticmethod
+    def node_addrinfo(node, socket_family=None):
+        """Given node (either host name or IP address) is resolved to IP address and
+        fills in and returns information with AddrInfo structure.
+        """
+        if node:
+            try:
+                node = socket.getaddrinfo(node, None)[0]
+            except:
+                return None
+            if not socket_family:
+                socket_family = node[0]
+            elif node[0] != socket_family:
+                node = None
+            if node:
+                node = node[4][0]
+            if not socket_family:
+                socket_family = socket.AF_INET
+        if not socket_family:
+            socket_family = socket.getaddrinfo(socket.gethostname(), None)[0][0]
+        assert socket_family in (socket.AF_INET, socket.AF_INET6)
+
+        ifn, addrinfo, netmask, broadcast = 0, None, None, None
+        if netifaces:
+            for iface in netifaces.interfaces():
+                if socket_family == socket.AF_INET:
+                    if addrinfo:
+                        break
+                else:  # socket_family == socket.AF_INET6
+                    if ifn and addrinfo:
+                        break
+                    ifn, addrinfo, netmask = 0, None, None
+                for link in netifaces.ifaddresses(iface).get(socket_family, []):
+                    netmask = link.get('netmask', None)
+                    broadcast = link.get('broadcast', None)
+                    if socket_family == socket.AF_INET:
+                        if link.get('broadcast', '').startswith(link['addr'].split('.')[0]):
+                            if (not node) or (link['addr'] == node):
+                                addrinfo = socket.getaddrinfo(link['addr'], None)[0]
+                                break
+                    else:  # socket_family == socket.AF_INET6
+                        if link['addr'].startswith('fe80:'):
+                            addr = link['addr']
+                            if '%' not in addr.split(':')[-1]:
+                                addr = addr + '%' + interface
+                            for addrinfo in socket.getaddrinfo(addr, None):
+                                if addrinfo[2] == socket.IPPROTO_TCP:
+                                    ifn = addrinfo[4][-1]
+                                    break
+                        elif link['addr'].startswith('fd'):
+                            for addrinfo in socket.getaddrinfo(link['addr'], None):
+                                if addrinfo[2] == socket.IPPROTO_TCP:
+                                    addrinfo = addrinfo
+                                    break
+        elif socket_family == socket.AF_INET6:
+            logger.warning('IPv6 may not work without "netifaces" package!')
+
+        if addrinfo:
+            if not node:
+                node = addrinfo[4][0]
+            if not socket_family:
+                socket_family = addrinfo[0]
+        if not node:
+            node = socket.gethostname()
+
+        node = socket.getaddrinfo(node, None, socket_family, socket.SOCK_STREAM)[0]
+        ip_addr = node[4][0]
+        if node[0] == socket.AF_INET6:
+            # canonicalize so different platforms resolve to same string
+            ip_addr = re.sub(r'^0+', '', ip_addr)
+            ip_addr = re.sub(r':0+', ':', ip_addr)
+            ip_addr = re.sub(r'::+', '::', ip_addr)
+            if not broadcast:
+                broadcast = 'ff05::1'
+        else:
+            if not broadcast:
+                broadcast = '<broadcast>'
+
+        return (node[0], ip_addr, ifn, broadcast, netmask)
+
+    def _acquaint_(self, peer_location, peer_signature, addrinfo, task=None):
         """
         Internal use only.
         """
-        sock = AsyncSocket(socket.socket(self.addrinfo.family, socket.SOCK_STREAM),
+        if peer_signature in _Peer._sign_locations:
+            raise StopIteration
+        sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_STREAM),
                            keyfile=self._keyfile, certfile=self._certfile)
         sock.settimeout(MsgTimeout)
         req = _NetRequest('peer', kwargs={'signature': self._signature, 'name': self._name,
-                                          'from': self._location, 'version': __version__},
+                                          'from': addrinfo.location, 'version': __version__},
                           dst=peer_location)
         req.auth = hashlib.sha1((peer_signature + self._secret).encode()).hexdigest()
         try:
@@ -622,7 +684,9 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             peer_info = yield sock.recv_msg()
             peer_info = deserialize(peer_info)
             assert peer_info['version'] == __version__
-            _Peer(peer_info['name'], peer_location, req.auth, self._keyfile, self._certfile)
+            if peer_signature not in _Peer._sign_locations:
+                _Peer(peer_info['name'], peer_location, peer_signature,
+                      self._keyfile, self._certfile, addrinfo)
             reply = 0
         except:
             logger.debug(traceback.format_exc())
@@ -630,16 +694,14 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         sock.close()
         raise StopIteration(0)
 
-    def _udp_proc(self, discover_peers, task=None):
+    def _udp_proc(self, sock, location, addrinfo, task=None):
         """
         Internal use only.
         """
         task.set_daemon()
-        if discover_peers:
-            self.discover_peers()
 
         while 1:
-            msg, addr = yield self._udp_sock.recvfrom(1024)
+            msg, addr = yield sock.recvfrom(1024)
             if not msg.startswith(b'ping:'):
                 logger.warning('ignoring UDP message from %s:%s', addr[0], addr[1])
                 continue
@@ -648,7 +710,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             except:
                 continue
             peer_location = ping_info.get('location', None)
-            if not isinstance(peer_location, Location) or peer_location == self._location:
+            if not isinstance(peer_location, Location) or peer_location in self._locations:
                 continue
             if ping_info['version'] != __version__:
                 logger.warning('Peer %s version %s is not %s',
@@ -669,16 +731,16 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 peer = None
 
             if not peer:
-                SysTask(self._acquaint_, peer_location, ping_info['signature'])
+                SysTask(self._acquaint_, peer_location, ping_info['signature'], addrinfo)
 
-    def _tcp_proc(self, task=None):
+    def _tcp_proc(self, sock, location, addrinfo, task=None):
         """
         Internal use only.
         """
         task.set_daemon()
         while 1:
             try:
-                conn, addr = yield self._tcp_sock.accept()
+                conn, addr = yield sock.accept()
             except ssl.SSLError as err:
                 logger.debug('SSL connection failed: %s', str(err))
                 continue
@@ -687,9 +749,9 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             except:
                 logger.debug(traceback.format_exc())
                 continue
-            SysTask(self._tcp_conn_proc, conn, addr)
+            SysTask(self._tcp_conn_proc, location, addrinfo, conn, addr)
 
-    def _tcp_conn_proc(self, conn, addr, task=None):
+    def _tcp_conn_proc(self, location, addrinfo, conn, addr, task=None):
         """
         Internal use only.
         """
@@ -703,7 +765,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             try:
                 req = deserialize(msg)
             except:
-                logger.debug('%s ignoring invalid message', self._location)
+                logger.debug('%s ignoring invalid message', addrinfo.location)
                 break
             if req.auth != self._auth_code:
                 if req.name == 'signature':
@@ -712,101 +774,96 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                     logger.warning('invalid request "%s" ignored', req.name)
                 break
 
-            # if req.dst and req.dst != self._location:
-            #     logger.debug('invalid request "%s" to %s (%s)', req.name, req.dst, self._location)
-            #     break
+            # if req.dst and req.dst != addrinfo.location:
+            #     logger.debug('invalid request "%s" to %s (%s)',
+            #                  req.name, req.dst, addrinfo.location)
+            #      break
 
             if req.name == 'send':
                 reply = -1
-                if req.dst != self._location:
-                    logger.warning('ignoring invalid "send" (%s != %s)', req.dst, self._location)
+                task = req.kwargs.get('task', None)
+                if task:
+                    name = req.kwargs.get('name', ' ')
+                    if name[0] == '~':
+                        Task._pycos._lock.acquire()
+                        task = Task._pycos._tasks.get(int(task), None)
+                        Task._pycos._lock.release()
+                        if task and task._name == name:
+                            reply = task.send(req.kwargs['message'])
+                        else:
+                            logger.warning('ignoring invalid recipient to "send"')
+                    elif name[0] == '!':
+                        task = self._tasks.get(int(task))
+                        if task and task._name == name:
+                            reply = task.send(req.kwargs['message'])
+                        else:
+                            logger.warning('ignoring invalid recipient to "send"')
+                    else:
+                        logger.warning('invalid "send" message ignored')
                 else:
-                    task = req.kwargs.get('task', None)
-                    if task:
-                        name = req.kwargs.get('name', ' ')
-                        if name[0] == '~':
-                            Task._pycos._lock.acquire()
-                            task = Task._pycos._tasks.get(int(task), None)
-                            Task._pycos._lock.release()
-                            if task and task._name == name:
-                                reply = task.send(req.kwargs['message'])
-                            else:
-                                logger.warning('ignoring invalid recipient to "send"')
-                        elif name[0] == '!':
-                            task = self._tasks.get(int(task))
-                            if task and task._name == name:
-                                reply = task.send(req.kwargs['message'])
-                            else:
-                                logger.warning('ignoring invalid recipient to "send"')
+                    channel = req.kwargs.get('channel', None)
+                    if channel[0] == '~':
+                        Channel._pycos._lock.acquire()
+                        channel = Channel._pycos._channels.get(channel)
+                        Channel._pycos._lock.release()
+                        if channel:
+                            reply = channel.send(req.kwargs['message'])
+                        else:
+                            logger.warning('ignoring invalid recipient to "send"')
+                    elif channel[0] == '!':
+                        channel = self._channels.get(channel)
+                        if isinstance(channel, Channel):
+                            reply = channel.send(req.kwargs['message'])
                         else:
                             logger.warning('invalid "send" message ignored')
                     else:
-                        channel = req.kwargs.get('channel', None)
+                        logger.warning('ignoring invalid recipient to "send"')
+                yield conn.send_msg(serialize(reply))
+
+            elif req.name == 'deliver':
+                reply = -1
+                task = req.kwargs.get('task', None)
+                if task:
+                    name = req.kwargs.get('name', ' ')
+                    if name[0] == '~':
+                        Task._pycos._lock.acquire()
+                        task = Task._pycos._tasks.get(int(task))
+                        Task._pycos._lock.release()
+                        if task and task.send(req.kwargs['message']) == 0:
+                            reply = 1
+                    elif name[0] == '!':
+                        task = self._tasks.get(int(task))
+                        if task and task.send(req.kwargs['message']) == 0:
+                            reply = 1
+                        else:
+                            logger.warning('invalid "deliver" message ignored')
+                else:
+                    channel = req.kwargs.get('channel')
+                    if channel:
+                        def async_reply(req, task=None):
+                            reply = yield channel.deliver(
+                                req.kwargs['message'], timeout=req.timeout, n=req.kwargs['n'])
+                            req.event = None
+                            req.name += '-reply'
+                            reply_location = req.kwargs['reply_location']
+                            req.kwargs = {'reply_id': req.kwargs['reply_id'], 'reply': reply}
+                            _Peer.send_req_to(req, reply_location)
+
                         if channel[0] == '~':
                             Channel._pycos._lock.acquire()
                             channel = Channel._pycos._channels.get(channel)
                             Channel._pycos._lock.release()
                             if channel:
-                                reply = channel.send(req.kwargs['message'])
-                            else:
-                                logger.warning('ignoring invalid recipient to "send"')
+                                SysTask(async_reply, req)
                         elif channel[0] == '!':
                             channel = self._channels.get(channel)
                             if isinstance(channel, Channel):
-                                reply = channel.send(req.kwargs['message'])
-                            else:
-                                logger.warning('invalid "send" message ignored')
-                        else:
-                            logger.warning('ignoring invalid recipient to "send"')
-                yield conn.send_msg(serialize(reply))
-
-            elif req.name == 'deliver':
-                reply = -1
-                if req.dst != self._location:
-                    logger.warning('ignoring invalid "deliver" (%s != %s)', req.dst, self._location)
-                else:
-                    task = req.kwargs.get('task', None)
-                    if task:
-                        name = req.kwargs.get('name', ' ')
-                        if name[0] == '~':
-                            Task._pycos._lock.acquire()
-                            task = Task._pycos._tasks.get(int(task))
-                            Task._pycos._lock.release()
-                            if task and task.send(req.kwargs['message']) == 0:
-                                reply = 1
-                        elif name[0] == '!':
-                            task = self._tasks.get(int(task))
-                            if task and task.send(req.kwargs['message']) == 0:
-                                reply = 1
-                            else:
-                                logger.warning('invalid "deliver" message ignored')
-                    else:
-                        channel = req.kwargs.get('channel')
-                        if channel:
-                            def async_reply(req, task=None):
-                                reply = yield channel.deliver(
-                                    req.kwargs['message'], timeout=req.timeout, n=req.kwargs['n'])
-                                req.event = None
-                                req.name += '-reply'
-                                reply_location = req.kwargs['reply_location']
-                                req.kwargs = {'reply_id': req.kwargs['reply_id'], 'reply': reply}
-                                _Peer.send_req_to(req, reply_location)
-
-                            if channel[0] == '~':
-                                Channel._pycos._lock.acquire()
-                                channel = Channel._pycos._channels.get(channel)
-                                Channel._pycos._lock.release()
-                                if channel:
-                                    SysTask(async_reply, req)
-                            elif channel[0] == '!':
-                                channel = self._channels.get(channel)
-                                if isinstance(channel, Channel):
-                                    SysTask(async_reply, req)
-                            else:
-                                logger.warning('invalid "deliver" message ignored')
+                                SysTask(async_reply, req)
                         else:
                             logger.warning('invalid "deliver" message ignored')
-                        reply = None
+                    else:
+                        logger.warning('invalid "deliver" message ignored')
+                    reply = None
                 yield conn.send_msg(serialize(reply))
 
             elif req.name.endswith('deliver-reply'):
@@ -820,19 +877,16 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 yield conn.send_msg(serialize(None))
 
             elif req.name == 'run_rci':
-                if req.dst != self._location:
-                    reply = Exception('invalid RTI invocation')
+                rci = self._rcis.get(req.kwargs['name'], None)
+                if rci:
+                    args = req.kwargs['args']
+                    kwargs = req.kwargs['kwargs']
+                    try:
+                        reply = Task(rci._method, *args, **kwargs)
+                    except:
+                        reply = Exception(traceback.format_exc())
                 else:
-                    rci = self._rcis.get(req.kwargs['name'], None)
-                    if rci:
-                        args = req.kwargs['args']
-                        kwargs = req.kwargs['kwargs']
-                        try:
-                            reply = Task(rci._method, *args, **kwargs)
-                        except:
-                            reply = Exception(traceback.format_exc())
-                    else:
-                        reply = Exception('RTI "%s" is not registered' % req.kwargs['name'])
+                    reply = Exception('RTI "%s" is not registered' % req.kwargs['name'])
                 yield conn.send_msg(serialize(reply))
 
             elif req.name == 'locate_task':
@@ -860,7 +914,6 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 yield conn.send_msg(serialize(rci))
 
             elif req.name == 'monitor':
-                assert req.dst == self._location
                 reply = -1
                 monitor = req.kwargs.get('monitor', None)
                 task = req.kwargs.get('task', None)
@@ -894,7 +947,6 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 yield conn.send_msg(serialize(reply))
 
             elif req.name == 'subscribe':
-                assert req.dst == self._location
                 reply = -1
                 channel = req.kwargs.get('channel', ' ')
                 if channel[0] == '~':
@@ -903,16 +955,16 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                     Channel._pycos._lock.release()
                 elif channel[0] == '!':
                     channel = self._channels.get(channel, None)
-                if isinstance(channel, Channel) and channel._location == self._location:
+                if isinstance(channel, Channel) and not channel._location:
                     subscriber = req.kwargs.get('subscriber', None)
                     if isinstance(subscriber, Task):
-                        if subscriber._location == self._location:
+                        if not subscriber._location:
                             Task._pycos._lock.acquire()
                             subscriber = Task._pycos._tasks.get(int(subscriber._id), None)
                             Task._pycos._lock.release()
                         reply = yield channel.subscribe(subscriber)
                     elif isinstance(subsriber, Channel):
-                        if subscriber._location == self._location:
+                        if not subscriber._location:
                             Channel._pycos._lock.acquire()
                             subscriber = self._channels.get(subscriber._name, None)
                             Channel._pycos._lock.release()
@@ -920,7 +972,6 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 yield conn.send_msg(serialize(reply))
 
             elif req.name == 'unsubscribe':
-                assert req.dst == self._location
                 reply = -1
                 channel = req.kwargs.get('channel', ' ')
                 if channel[0] == '~':
@@ -929,16 +980,16 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                     Channel._pycos._lock.release()
                 elif channel[0] == '!':
                     channel = self._channels.get(channel, None)
-                if isinstance(channel, Channel) and channel._location == self._location:
+                if isinstance(channel, Channel) and not channel._location:
                     subscriber = req.kwargs.get('subscriber', None)
                     if isinstance(subscriber, Task):
-                        if subscriber._location == self._location:
+                        if not subscriber._location:
                             Task._pycos._lock.acquire()
                             subscriber = Task._pycos._tasks.get(int(subscriber._id), None)
                             Task._pycos._lock.release()
                         reply = yield channel.unsubscribe(subscriber)
                     elif isinstance(subsriber, Channel):
-                        if subscriber._location == self._location:
+                        if not subscriber._location:
                             Channel._pycos._lock.acquire()
                             subscriber = self._channels.get(subscriber._name, None)
                             Channel._pycos._lock.release()
@@ -947,13 +998,14 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
 
             elif req.name == 'locate_peer':
                 if req.kwargs['name'] == self._name:
-                    loc = self._location
-                elif req.dst == self._location:
+                    loc = addrinfo.location
+                elif req.dst == addrinfo.location:
+                    loc = None
+                else:
                     loc = None
                 yield conn.send_msg(serialize(loc))
 
             elif req.name == 'send_file':
-                assert req.dst == self._location
                 sep = req.kwargs['sep']
                 tgt = req.kwargs['file'].split(sep)[-1]
                 if req.kwargs['dir']:
@@ -1010,7 +1062,6 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 yield conn.send_msg(serialize(resp))
 
             elif req.name == 'del_file':
-                assert req.dst == self._location
                 tgt = os.path.basename(req.kwargs['file'])
                 dir = req.kwargs['dir']
                 if isinstance(dir, str) and dir:
@@ -1037,11 +1088,10 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                                  req.kwargs.get('version', None), __version__)
                     yield conn.send_msg(serialize(-1))
                     break
-                auth = req.kwargs['signature'] + self._secret
-                auth = hashlib.sha1(auth.encode()).hexdigest()
-                peer_loc = req.kwargs['from']
                 yield conn.send_msg(serialize({'version': __version__, 'name': self._name}))
-                _Peer(req.kwargs['name'], peer_loc, auth, self._keyfile, self._certfile)
+                if req.kwargs['signature'] not in _Peer._sign_locations:
+                    _Peer(req.kwargs['name'], req.kwargs['from'], req.kwargs['signature'],
+                          self._keyfile, self._certfile, addrinfo)
 
             elif req.name == 'close_peer':
                 peer_loc = req.kwargs.get('location', None)
@@ -1049,7 +1099,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                     # TODO: remove from _stream_peers?
                     # Pycos._pycos._stream_peers.pop((peer_loc.addr, peer_loc.port))
                     _Peer.remove(peer_loc)
-                yield conn.send_msg('closed'.encode())
+                yield conn.send_msg(serialize(0))
                 break
 
             elif req.name == 'acquaint':
@@ -1059,7 +1109,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                     yield conn.send_msg(serialize(-1))
                     break
                 peer_location = req.kwargs.get('location', None)
-                if not isinstance(peer_location, Location) or peer_location == self._location:
+                if not isinstance(peer_location, Location) or peer_location in self._locations:
                     yield conn.send_msg(serialize(-1))
                     break
                 _Peer._lock.acquire()
@@ -1074,25 +1124,25 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                     _Peer.remove(peer_location)
                     peer = None
                 if not peer:
-                    SysTask(self._acquaint_, peer_location, req.kwargs['signature'])
+                    SysTask(self._acquaint_, peer_location, req.kwargs['signature'], addrinfo)
                 yield conn.send_msg(serialize(0))
 
             elif req.name == 'relay_ping':
                 yield conn.send_msg(serialize(0))
                 ping_msg = 'ping:'.encode() + serialize(req.kwargs)
-                port = self._udp_sock.getsockname()[1]
-                ping_sock = AsyncSocket(socket.socket(self.addrinfo.family, socket.SOCK_DGRAM))
+                port = addrinfo.udp_sock.getsockname()[1]
+                ping_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
                 ping_sock.settimeout(2)
-                if self.addrinfo.family == socket.AF_INET:
+                if addrinfo.family == socket.AF_INET:
                     ping_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-                else:  # self.addrinfo.family == socket.AF_INET6
+                else:  # addrinfo.family == socket.AF_INET6
                     ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS,
                                          struct.pack('@i', 1))
                     ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF,
-                                         self.addrinfo.ifn)
-                ping_sock.bind((self.addrinfo.ip, 0))
+                                         addrinfo.ifn)
+                ping_sock.bind((addrinfo.ip, 0))
                 try:
-                    yield ping_sock.sendto(ping_msg, (self._broadcast, port))
+                    yield ping_sock.sendto(ping_msg, (addrinfo.broadcast, port))
                 except:
                     pass
                 finally:
@@ -1104,7 +1154,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         conn.close()
 
     def __repr__(self):
-        s = str(self._location)
+        s = ', '.join(str(s) for s in self._locations)
         if s == self._name:
             return s
         else:
@@ -1121,6 +1171,7 @@ class RTI(object):
     __slots__ = ('_name', '_location', '_method')
 
     _pycos = None
+    _sign = None
 
     def __init__(self, method, name=None):
         """'method' must be generator method; this is used to create tasks. If
@@ -1135,7 +1186,7 @@ class RTI(object):
             self._name = method.__name__
         if not RTI._pycos:
             RTI._pycos = Pycos.instance()
-        self._location = RTI._pycos._location
+        self._location = None
 
     @property
     def location(self):
@@ -1179,7 +1230,7 @@ class RTI(object):
     def register(self):
         """RTI must be registered so it can be located.
         """
-        if self._location != RTI._pycos._location:
+        if self._location:
             return -1
         if not inspect.isgeneratorfunction(self._method):
             return -1
@@ -1195,7 +1246,7 @@ class RTI(object):
     def unregister(self):
         """Unregister registered RTI; see 'register' above.
         """
-        if self._location != RTI._pycos._location:
+        if self._location:
             return -1
         RTI._pycos._lock.acquire()
         if RTI._pycos._rcis.pop(self._name, None) is None:
@@ -1222,12 +1273,22 @@ class RTI(object):
             raise Exception(reply)
 
     def __getstate__(self):
-        state = {'_name': self._name, '_location': self._location}
+        state = {'name': self._name}
+        if self._location:
+            state['location'] = self._location
+        else:
+            state['location'] = RTI._sign
         return state
 
     def __setstate__(self, state):
-        self._name = state['_name']
-        self._location = state['_location']
+        self._name = state['name']
+        self._location = state['location']
+        if isinstance(self._location, Location):
+            if self._location in RTI._pycos._locations:
+                self._location = None
+        else:
+            self._location = _Peer.sign_location(self._location)
+            # TODO: is it possible for peer to disconnect during deserialize?
 
     def __eq__(self, other):
         return (isinstance(other, RTI) and
@@ -1262,7 +1323,6 @@ class SysTask(pycos.Task):
             Pycos.instance()
         self.__class__._pycos = self._scheduler = SysTask._pycos
         super(SysTask, self).__init__(*args, **kwargs)
-
 
     @staticmethod
     def locate(name, location=None, timeout=None):
@@ -1301,32 +1361,36 @@ class _Peer(object):
     """
 
     __slots__ = ('name', 'location', 'auth', 'keyfile', 'certfile', 'stream', 'conn',
-                 'reqs', 'waiting', 'req_task')
+                 'reqs', 'waiting', 'req_task', 'addrinfo', 'signature')
 
     peers = {}
     status_task = None
     _pycos = None
     _lock = threading.Lock()
+    _sign_locations = {}
 
-    def __init__(self, name, location, auth, keyfile, certfile):
+    def __init__(self, name, location, signature, keyfile, certfile, addrinfo):
         self.name = name
         self.location = location
-        self.auth = auth
+        self.signature = signature
+        self.auth = hashlib.sha1((signature + _Peer._pycos._secret).encode()).hexdigest()
         self.keyfile = keyfile
         self.certfile = certfile
         self.stream = False
         self.conn = None
         self.reqs = collections.deque()
         self.waiting = False
+        self.addrinfo = addrinfo
         _Peer._lock.acquire()
         if (location.addr, location.port) in _Peer.peers:
             pycos.logger.debug('Ignoring already known peer %s', location)
             _Peer._lock.release()
             return
         _Peer.peers[(location.addr, location.port)] = self
+        _Peer._sign_locations[signature] = location
         _Peer._lock.release()
         self.req_task = SysTask(self.req_proc)
-        logger.debug('%s: found peer %s', _Peer._pycos._location, self.location)
+        logger.debug('%s: found peer %s', addrinfo.location, self.location)
         if _Peer.status_task:
             _Peer.status_task.send(PeerStatus(location, name, PeerStatus.Online))
 
@@ -1349,6 +1413,13 @@ class _Peer(object):
         _Peer._pycos._lock.release()
 
     @staticmethod
+    def sign_location(sign):
+        _Peer._lock.acquire()
+        location = _Peer._sign_locations.get(sign, None)
+        _Peer._lock.release()
+        return location
+
+    @staticmethod
     def get_peers():
         _Peer._lock.acquire()
         peers = [copy.copy(peer.location) for peer in _Peer.peers.values()]
@@ -1367,7 +1438,7 @@ class _Peer(object):
         _Peer._lock.acquire()
         peer = _Peer.peers.get((req.dst.addr, req.dst.port), None)
         if not peer:
-            logger.debug('%s: invalid peer: %s', _Peer._pycos.location, req.dst)
+            logger.debug('Ignoring request to invalid peer %s', dst)
             _Peer._lock.release()
             return -1
         peer.reqs.append(req)
@@ -1383,7 +1454,7 @@ class _Peer(object):
             _Peer._lock.acquire()
             peer = _Peer.peers.get((dst.addr, dst.port), None)
             if not peer:
-                logger.debug('%s: invalid peer to: %s', _Peer._pycos.location, dst)
+                logger.debug('Ignoring request to invalid peer %s', dst)
                 _Peer._lock.release()
                 return -1
             peer.reqs.append(req)
@@ -1426,7 +1497,7 @@ class _Peer(object):
 
     @staticmethod
     def close_peer(peer, timeout, task=None):
-        req = _NetRequest('close_peer', kwargs={'location': _Peer._pycos._location},
+        req = _NetRequest('close_peer', kwargs={'location': peer.addrinfo.location},
                           dst=peer.location, timeout=timeout)
         yield _Peer._sync_reply(req)
         if peer.req_task:
@@ -1445,7 +1516,7 @@ class _Peer(object):
         task.set_daemon()
         conn_errors = 0
         req = None
-        sock_family = _Peer._pycos.addrinfo.family
+        sock_family = self.addrinfo.family
         while 1:
             _Peer._lock.acquire()
             if self.reqs:
@@ -1582,8 +1653,9 @@ class _Peer(object):
         peer = _Peer.peers.pop((location.addr, location.port), None)
         _Peer._lock.release()
         if peer:
-            logger.debug('%s: peer %s terminated', _Peer._pycos.location, peer.location)
+            logger.debug('%s: peer %s terminated', peer.addrinfo.location, peer.location)
             peer.stream = False
+            _Peer._sign_locations.pop(peer.signature, None)
             if peer.req_task:
                 peer.req_task.terminate()
             if _Peer.status_task:

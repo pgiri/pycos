@@ -2,7 +2,7 @@
 
 # server program for client (tut_sock_client.py) sending requests with
 # sockets (asynchronous network programming);
-# see http://pycos.sourceforge.net/tutorial.html for details.
+# see http://pycos.sourceforge.io/tutorial.html for details.
 
 # run this program and then client either on same node. If they are on
 # different computers, 'host' address must be changed appropriately.

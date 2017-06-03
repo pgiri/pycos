@@ -13,22 +13,15 @@ import pycos.netpycos as pycos
 
 def receiver_proc(task=None):
     task.set_daemon()
-    # until subscribed, 'deliver' in client will block
-    msg = yield task.recv()
+    # until subscribed, client's deliver will block
+    yield task.sleep(5)
     yield channel.subscribe(task)
-    print('receiver subbed: %s' % msg)
+    pycos.logger.info(' receiver subscribed')
     while True:
         msg = yield task.receive()
         if msg:
             print('Received "%s" from %s at %s' % \
                   (msg['msg'], msg['sender'].name, msg['sender'].location))
-
-def doctor(task=None):
-    task.register()
-    task.set_daemon()
-    while 1:
-        n = yield task.recv()
-        print('pulse: %s' % n)
 
 pycos.logger.setLevel(logging.DEBUG)
 pycos.logger.show_ms(True)
@@ -38,7 +31,6 @@ channel = pycos.Channel('2clients')
 channel.register()
 
 recv = pycos.Task(receiver_proc)
-pycos.Task(doctor)
 if sys.version_info.major > 2:
     read_input = input
 else:
@@ -48,7 +40,5 @@ while True:
         cmd = read_input().strip().lower()
         if cmd in ('quit', 'exit'):
             break
-        if cmd.startswith('go'):
-            recv.send(cmd)
     except:
         break

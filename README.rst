@@ -1,7 +1,7 @@
 pycos
 ######
 
-`pycos <http://pycos.sourceforge.io>`_ is a Python framework for asynchronous,
+`pycos <https://pycos.sourceforge.io>`_ is a Python framework for asynchronous,
 concurrent, distributed programming with tasks, asynchronous completions and
 message passing.
 
@@ -54,7 +54,7 @@ Features
   distributed communicating processes, for wide range of use cases, covering
   `SIMD, MISD, MIMD <https://en.wikipedia.org/wiki/Flynn%27s_taxonomy>`_ system
   architectures at the process level, `web interface
-  <http://pycos.sourceforge.net/dispycos.html#client-browser-interface>`_ to
+  <https://pycos.sourceforge.io/dispycos.html#client-browser-interface>`_ to
   monitor cluster/application status/performance; `in-memory processing
   <https://en.wikipedia.org/wiki/In-memory_processing>`_, data streaming,
   real-time (live) analytics and cloud computing are supported as well,
@@ -93,5 +93,5 @@ Authors
 
 Links
 -----
-* `Project page <http://pycos.sourceforge.io>`_.
+* `Project page <https://pycos.sourceforge.io>`_.
 * `GitHub (Code Repository) <https://github.com/pgiri/pycos>`_.

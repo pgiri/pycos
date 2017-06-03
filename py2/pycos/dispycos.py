@@ -29,7 +29,7 @@ import pycos.dispycos
 __author__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __copyright__ = "Copyright (c) 2014-2015 Giridhar Pemmasani"
 __license__ = "MIT"
-__url__ = "http://pycos.sourceforge.net"
+__url__ = "http://pycos.sourceforge.io"
 
 __all__ = ['Scheduler', 'Computation', 'DispycosStatus', 'DispycosTaskInfo',
            'DispycosNodeInfo', 'DispycosNodeAvailInfo', 'DispycosNodeAllocate']
@@ -1470,9 +1470,9 @@ if __name__ == '__main__':
         pass
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', '--ip_addr', dest='node', default=None,
+    parser.add_argument('-i', '--ip_addr', dest='node', action='append', default=[],
                         help='IP address or host name of this node')
-    parser.add_argument('--ext_ip_addr', dest='ext_ip_addr', default=None,
+    parser.add_argument('--ext_ip_addr', dest='ext_ip_addr', action='append', default=[],
                         help='External IP address to use (needed in case of NAT firewall/gateway)')
     parser.add_argument('-u', '--udp_port', dest='udp_port', type=int, default=51350,
                         help='UDP port number to use')

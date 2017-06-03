@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-"""This file is part of pycos; see http://pycos.sourceforge.net for details.
+"""This file is part of pycos; see http://pycos.sourceforge.io for details.
 
 This program can be used to start dispycos server processes so dispycos
 scheduler (see 'dispycos.py') can send computations to these server processes
@@ -16,7 +16,7 @@ See 'dispycos_*.py' files for example use cases.
 __author__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __copyright__ = "Copyright (c) 2014 Giridhar Pemmasani"
 __license__ = "MIT"
-__url__ = "http://pycos.sourceforge.net"
+__url__ = "http://pycos.sourceforge.io"
 
 
 def _dispycos_server_proc():
@@ -463,7 +463,7 @@ def _dispycos_spawn(_dispycos_config, _dispycos_id_ports, _dispycos_mp_queue,
 if __name__ == '__main__':
 
     """
-    See http://pycos.sourceforge.net/dispycos.html#node-servers for details on
+    See http://pycos.sourceforge.io/dispycos.html#node-servers for details on
     options to start this program.
     """
 
@@ -502,9 +502,9 @@ if __name__ == '__main__':
     parser.add_argument('-c', '--cpus', dest='cpus', type=int, default=0,
                         help='number of CPUs/dispycos instances to run; '
                         'if negative, that many CPUs are not used')
-    parser.add_argument('-i', '--ip_addr', dest='node', default='',
+    parser.add_argument('-i', '--ip_addr', dest='node', action='append', default=[],
                         help='IP address or host name of this node')
-    parser.add_argument('--ext_ip_addr', dest='ext_ip_addr', default='',
+    parser.add_argument('--ext_ip_addr', dest='ext_ip_addr', action='append', default=[],
                         help='External IP address to use (needed in case of NAT firewall/gateway)')
     parser.add_argument('-u', '--udp_port', dest='udp_port', type=int, default=51351,
                         help='UDP port number to use')

@@ -1,4 +1,4 @@
-"""This file is part of pycos; see http://pycos.sourceforge.net
+"""This file is part of pycos; see http://pycos.sourceforge.io
 for details.
 
 This module provides API for asynchronous file and pipe processing.
@@ -26,7 +26,7 @@ from pycos import _AsyncPoller, Pycos, Task
 __author__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __copyright__ = "Copyright (c) 2014 Giridhar Pemmasani"
 __license__ = "MIT"
-__url__ = "http://pycos.sourceforge.net"
+__url__ = "http://pycos.sourceforge.io"
 
 __all__ = ['AsyncFile', 'AsyncPipe']
 

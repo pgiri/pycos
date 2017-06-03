@@ -1,5 +1,5 @@
 """
-This file is part of pycos; see http://pycos.sourceforge.net for details.
+This file is part of pycos; see http://pycos.sourceforge.io for details.
 
 This module provides framework for concurrent, asynchronous network programming
 with tasks, asynchronous completions and message passing. Other modules in pycos
@@ -53,9 +53,9 @@ __copyright__ = "Copyright (c) 2012-2014 Giridhar Pemmasani"
 __contributors__ = []
 __maintainer__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __license__ = "MIT"
-__url__ = "http://pycos.sourceforge.net"
+__url__ = "http://pycos.sourceforge.io"
 __status__ = "Production"
-__version__ = "4.5.6"
+__version__ = "4.6.0"
 
 __all__ = ['Task', 'Pycos', 'Lock', 'RLock', 'Event', 'Condition', 'Semaphore',
            'AsyncSocket', 'HotSwapException', 'MonitorException', 'Location', 'Channel',
@@ -2445,6 +2445,7 @@ class Task(object):
                  '_hot_swappable', '_location', '_scheduler')
 
     _pycos = None
+    _sign = None
 
     def __init__(self, *args, **kwargs):
         self._generator = Task.__get_generator(self, *args, **kwargs)
@@ -2466,11 +2467,10 @@ class Task(object):
             if not Task._pycos:
                 Task._pycos = Pycos.instance()
         self._scheduler = self.__class__._pycos
-        self._location = self._scheduler._location
+        self._location = None
         if self._scheduler == Task._pycos:
             self._name = '~' + self._name
         else:
-            # assert self._location and self._scheduler == SysTask._pycos
             self._name = '!' + self._name
         self._scheduler._add(self)
 
@@ -2480,7 +2480,9 @@ class Task(object):
 
         Can also be used on remotely running tasks.
         """
-        return copy.copy(self._location)
+        if self._location:
+            return copy.copy(self._location)
+        return self._scheduler.location
 
     @property
     def name(self):
@@ -2510,7 +2512,7 @@ class Task(object):
     def _locate(name, location, timeout):
         """Internal use only.
         """
-        if not location or location == Task._pycos._location:
+        if not location or location in Task._pycos._locations:
             if name[0] == '~':
                 rtask = Task._pycos._rtasks.get(name, None)
             elif name[0] == '!':
@@ -2519,7 +2521,7 @@ class Task(object):
                 SysTask._pycos._lock.release()
             else:
                 raise StopIteration(None)
-            if rtask or location == Task._pycos._location:
+            if rtask or location in Task._pycos._locations:
                 raise StopIteration(rtask)
         req = _NetRequest('locate_task', kwargs={'name': name}, dst=location, timeout=timeout)
         req_id = id(req)
@@ -2540,7 +2542,7 @@ class Task(object):
         """Register this task so tasks running on a remote (peer) pycos can
         locate it (with 'locate') so they can exchange messages, monitored etc.
         """
-        if self._location != Task._pycos._location:
+        if self._location:
             return -1
         if name:
             if self._scheduler == Task._pycos:
@@ -2554,7 +2556,7 @@ class Task(object):
     def unregister(self, name=None):
         """Unregister this task (see 'register' above).
         """
-        if self._location != Task._pycos._location:
+        if self._location:
             return -1
         if name:
             if self._scheduler == Task._pycos:
@@ -2608,9 +2610,7 @@ class Task(object):
 
         Can also be used on remotely running tasks.
         """
-        if self._location == Task._pycos._location:
-            return self._scheduler._resume(self, message, Pycos._AwaitMsg_)
-        else:
+        if self._location:
             request = _NetRequest('send', kwargs={'message': message, 'name': self._name,
                                                   'task': self._id},
                                   dst=self._location, timeout=MsgTimeout)
@@ -2620,6 +2620,8 @@ class Task(object):
                 return -1
             else:
                 return 0
+        else:
+            return self._scheduler._resume(self, message, Pycos._AwaitMsg_)
 
     def deliver(self, message, timeout=None):
         """Must be used with 'yield' as 'yield task.deliver(message)'.
@@ -2630,11 +2632,7 @@ class Task(object):
         then message has been delivered, if it is 0, it couldn't be delivered
         before timeout, and if it is < 0, then the (remote) task is not valid.
         """
-        if self._location == Task._pycos._location:
-            reply = self._scheduler._resume(self, message, Pycos._AwaitMsg_)
-            if reply == 0:
-                reply = 1
-        else:
+        if self._location:
             request = _NetRequest('deliver', kwargs={'message': message, 'name': self._name,
                                                      'task': self._id},
                                   dst=self._location, timeout=timeout)
@@ -2644,6 +2642,10 @@ class Task(object):
                 reply = -1
             # if reply < 0:
             #     logger.warning('remote task at %s may not be valid', self._location)
+        else:
+            reply = self._scheduler._resume(self, message, Pycos._AwaitMsg_)
+            if reply == 0:
+                reply = 1
         raise StopIteration(reply)
 
     def receive(self, timeout=None, alarm_value=None):
@@ -2726,15 +2728,15 @@ class Task(object):
 
         Can also be used on remotely running tasks.
         """
-        if self._location == Task._pycos._location:
-            return self._scheduler._terminate_task(self)
-        else:
+        if self._location:
             request = _NetRequest('terminate_task', kwargs={'task': self._id, 'name': self._name},
                                   dst=self._location, timeout=MsgTimeout)
             if _Peer.send_req(request) != 0:
                 logger.warning('remote task at %s may not be valid', self._location)
                 return -1
             return 0
+        else:
+            return self._scheduler._terminate_task(self)
 
     def hot_swappable(self, flag):
         if Pycos.cur_task(self._scheduler) == self:
@@ -2777,36 +2779,35 @@ class Task(object):
 
         Can also be used on remotely running 'observe' task.
         """
-        if observe._location == Task._pycos._location:
-            reply = self._scheduler._monitor(self, observe)
-        else:
+        if observe._location:
             # remote task
             request = _NetRequest('monitor', kwargs={'monitor': self, 'name': observe._name,
                                                      'task': observe._id},
                                   dst=observe._location, timeout=MsgTimeout)
             reply = yield _Peer._sync_reply(request)
+        else:
+            reply = self._scheduler._monitor(self, observe)
         raise StopIteration(reply)
 
     def notify(self, monitor):
         """Similar to 'monitor' method, except that it is invoked with local
         task to add argument as monitor.
         """
-        if self._location == Task._pycos._location:
-            return self._scheduler._monitor(monitor, self)
-        else:
+        if self._location:
             return -1
+        else:
+            return self._scheduler._monitor(monitor, self)
 
     def is_alive(self):
         """Returns True if task is known to scheduler; otherwise (e.g., task
         finished) returns False.
         """
-        if self._location == Task._pycos._location:
+        if self._location:
+            logger.warning('%s: is_alive for %s is invliad', self._location, self)
+        else:
             if self._state is None:
                 return False
             return True
-        else:
-            logger.warning('%s: is_alive for %s is invliad',
-                           Task._pycos._location, self._location)
 
     def _await_(self, timeout=None, alarm_value=None):
         """Internal use only.
@@ -2835,26 +2836,39 @@ class Task(object):
         return target(*args, **kwargs)
 
     def __getstate__(self):
-        state = {'name': self._name, 'id': str(self._id), 'location': self._location}
+        state = {'name': self._name, 'id': str(self._id)}
+        if self._location:
+            state['location'] = self._location
+        else:
+            state['location'] = Task._sign
         return state
 
     def __setstate__(self, state):
         self._name = state['name']
-        self._location = state['location']
         self._id = state['id']
-        if (self._location == Task._pycos._location and
-            isinstance(self._name, str) and len(self._name) > 1):
-            if self._name[0] == '~':
-                self._id = int(self._id)
-                self._scheduler = Task._pycos
-            elif self._location and self._name[0] == '!':
-                self._id = int(self._id)
-                self._scheduler = SysTask._pycos
+        self._location = state['location']
+        if isinstance(self._location, Location):
+            if self._location in Task._pycos._locations:
+                self._location = None
+        else:
+            self._location = _Peer.sign_location(self._location)
+            # TODO: is it possible for peer to disconnect during deserialize?
+        if self._location:
+            self._scheduler = None
+        else:
+            if isinstance(self._name, str) and len(self._name) > 1:
+                if self._name[0] == '~':
+                    self._id = int(self._id)
+                    self._scheduler = Task._pycos
+                elif self._name[0] == '!':
+                    self._id = int(self._id)
+                    self._scheduler = SysTask._pycos
+                else:
+                    logger.warning('invalid task from remote peer: %s', self._name)
+                    self._scheduler = None
             else:
                 logger.warning('invalid task from remote peer: %s', self._name)
                 self._scheduler = None
-        else:
-            self._scheduler = None
 
     def __repr__(self):
         s = '%s/%s' % (self._name, self._id)
@@ -2923,6 +2937,7 @@ class Channel(object):
                  '_scheduler')
 
     _pycos = None
+    _sign = None
 
     def __init__(self, name, transform=None):
         """'name' must be unique across all channels.
@@ -2938,7 +2953,7 @@ class Channel(object):
         self._scheduler = Pycos.scheduler()
         if not self._scheduler:
             self._scheduler = Channel._pycos
-        self._location = Channel._pycos._location
+        self._location = None
         if transform is not None:
             try:
                 argspec = inspect.getargspec(transform)
@@ -2957,7 +2972,6 @@ class Channel(object):
         if self._scheduler == Channel._pycos:
             self._name = '~' + self._name
         else:
-            # assert self._location and self._scheduler == SysTask._pycos
             self._name = '!' + self._name
         self._subscribers = set()
         self._subscribe_event = Event()
@@ -2974,7 +2988,9 @@ class Channel(object):
 
         Can also be used on remote channels.
         """
-        return copy.copy(self._location)
+        if self._location:
+            return copy.copy(self._location)
+        return self._scheduler.location
 
     @property
     def name(self):
@@ -2994,9 +3010,9 @@ class Channel(object):
         """
         if not Channel._pycos:
             Channel._pycos = Pycos.instance()
-        if not location or location == Channel._pycos._location:
+        if not location or location in Channel._pycos._locations:
             rchannel = Channel._pycos._channels.get('~' + name, None)
-            if rchannel or location == Channel._pycos._location:
+            if rchannel or location in Channel._pycos._locations:
                 raise StopIteration(rchannel)
         req = _NetRequest('locate_channel', kwargs={'name': '~' + name},
                           dst=location, timeout=timeout)
@@ -3018,19 +3034,19 @@ class Channel(object):
         """A registered channel can be located (with 'locate') by a task on a
         remote pycos.
         """
-        if self._location != Channel._pycos._location:
+        if self._location:
             return -1
         return self._scheduler._register_channel(self, self._name)
 
     def unregister(self):
         """Unregister channel (see 'register' above).
         """
-        if self._location != Channel._pycos._location:
+        if self._location:
             return -1
         return self._scheduler._unregister_channel(self, self._name)
 
     def set_transform(self, transform):
-        if self._location != Channel._pycos._location:
+        if self._location:
             return -1
         try:
             argspec = inspect.getargspec(transform)
@@ -3053,8 +3069,14 @@ class Channel(object):
         if not isinstance(subscriber, Task) and not isinstance(subscriber, Channel):
             logger.warning('invalid subscriber ignored')
             raise StopIteration(-1)
-        if self._location == Channel._pycos._location:
-            if subscriber._location != self._location:
+        if self._location:
+            # remote channel
+            kwargs = {'channel': self._name}
+            kwargs['subscriber'] = subscriber
+            request = _NetRequest('subscribe', kwargs=kwargs, dst=self._location, timeout=timeout)
+            reply = yield _Peer._sync_reply(request)
+        else:
+            if subscriber._location:
                 if isinstance(subscriber, Task):
                     # remote task
                     subscriber._id = int(subscriber._id)
@@ -3075,12 +3097,6 @@ class Channel(object):
             self._subscribe_event.set()
             self._scheduler._lock.release()
             reply = 0
-        else:
-            # remote channel
-            kwargs = {'channel': self._name}
-            kwargs['subscriber'] = subscriber
-            request = _NetRequest('subscribe', kwargs=kwargs, dst=self._location, timeout=timeout)
-            reply = yield _Peer._sync_reply(request)
         raise StopIteration(reply)
 
     def unsubscribe(self, subscriber, timeout=None):
@@ -3094,8 +3110,14 @@ class Channel(object):
         if not isinstance(subscriber, Task) and not isinstance(subscriber, Channel):
             logger.warning('invalid subscriber ignored')
             raise StopIteration(-1)
-        if self._location == Channel._pycos._location:
-            if subscriber._location != self._location:
+        if self._location:
+            # remote channel
+            kwargs = {'channel': self._name}
+            kwargs['subscriber'] = subscriber
+            request = _NetRequest('unsubscribe', kwargs=kwargs, dst=self._location, timeout=timeout)
+            reply = yield _Peer._sync_reply(request)
+        else:
+            if subscriber._location:
                 if isinstance(subscriber, Task):
                     # remote task
                     subscriber._id = int(subscriber._id)
@@ -3117,12 +3139,6 @@ class Channel(object):
                 reply = -1
             else:
                 reply = 0
-        else:
-            # remote channel
-            kwargs = {'channel': self._name}
-            kwargs['subscriber'] = subscriber
-            request = _NetRequest('unsubscribe', kwargs=kwargs, dst=self._location, timeout=timeout)
-            reply = yield _Peer._sync_reply(request)
         raise StopIteration(reply)
 
     def send(self, message):
@@ -3130,7 +3146,15 @@ class Channel(object):
 
         Can also be used on remote channels.
         """
-        if self._location == Channel._pycos._location:
+        if self._location:
+            # remote channel
+            request = _NetRequest('send', kwargs={'message': message, 'channel': self._name},
+                                  dst=self._location, timeout=MsgTimeout)
+            # request is queued for asynchronous processing
+            if _Peer.send_req(request) != 0:
+                logger.warning('remote channel at %s may not be valid', self._location)
+                return -1
+        else:
             self._scheduler._lock.acquire()
             transform = self._transform
             subscribers = list(self._subscribers)
@@ -3153,14 +3177,6 @@ class Channel(object):
                     yield self.unsubscribe(subscriber)
                 for subscriber in invalid:
                     Task(_unsub, self, subscriber)
-        else:
-            # remote channel
-            request = _NetRequest('send', kwargs={'message': message, 'channel': self._name},
-                                  dst=self._location, timeout=MsgTimeout)
-            # request is queued for asynchronous processing
-            if _Peer.send_req(request) != 0:
-                logger.warning('remote channel at %s may not be valid', self._location)
-                return -1
         return 0
 
     def deliver(self, message, timeout=None, n=0):
@@ -3175,7 +3191,20 @@ class Channel(object):
         """
         if not isinstance(n, int) or n < 0:
             raise StopIteration(-1)
-        if self._location == Channel._pycos._location:
+        if self._location:
+            # remote channel
+            request = _NetRequest('deliver', kwargs={'message': message, 'channel': self._name,
+                                                     'n': n},
+                                  dst=self._location, timeout=timeout)
+            request.reply = -1
+            reply = yield _Peer._async_reply(request, alarm_value=0)
+            if reply is None:
+                reply = -1
+            # if reply < 0:
+            #     logger.warning('remote channel "%s" at %s may have gone away!',
+            #                    self._name, self._location)
+            raise StopIteration(reply)
+        else:
             self._scheduler._lock.acquire()
             transform = self._transform
             subscribers = list(self._subscribers)
@@ -3223,7 +3252,7 @@ class Channel(object):
                 if info['pending'] == 0:
                     info['done'].set()
             for subscriber in subscribers:
-                if isinstance(subscriber, Task) and self._location == subscriber._location:
+                if isinstance(subscriber, Task) and not subscriber._location:
                     if subscriber.send(message) == 0:
                         info['reply'] += 1
                         info['success'] += 1
@@ -3244,22 +3273,9 @@ class Channel(object):
                     Task(_unsub, self, subscriber)
 
             raise StopIteration(info['reply'])
-        else:
-            # remote channel
-            request = _NetRequest('deliver', kwargs={'message': message, 'channel': self._name,
-                                                     'n': n},
-                                  dst=self._location, timeout=timeout)
-            request.reply = -1
-            reply = yield _Peer._async_reply(request, alarm_value=0)
-            if reply is None:
-                reply = -1
-            # if reply < 0:
-            #     logger.warning('remote channel "%s" at %s may have gone away!',
-            #                    self._name, self._location)
-            raise StopIteration(reply)
 
     def close(self):
-        if self._location == Channel._pycos._location:
+        if not self._location:
             self.unregister()
             self._subscribers = set()
             self._scheduler._lock.acquire()
@@ -3267,24 +3283,37 @@ class Channel(object):
             self._scheduler._lock.release()
 
     def __getstate__(self):
-        state = {'name': self._name, 'location': self._location}
+        state = {'name': self._name}
+        if self._location:
+            state['location'] = self._location
+        else:
+            state['location'] = Channel._sign
         return state
 
     def __setstate__(self, state):
         self._name = state['name']
-        self._location = state['location']
         self._transform = None
-        if (self._location == Channel._pycos._location and
-            isinstance(self._name, str) and len(self._name) > 1):
-            if self._name[0] == '~':
-                self._scheduler = Channel._pycos
-            elif self._location and self._name[0] == '!':
-                self._scheduler = SysTask._pycos
+        self._location = state['location']
+        if isinstance(self._location, Location):
+            if self._location in Channel._pycos._locations:
+                self._location = None
+        else:
+            self._location = _Peer.sign_location(self._location)
+            # TODO: is it possible for peer to disconnect during deserialize?
+        if self._location:
+            self._scheduler = None
+        else:
+            if isinstance(self._name, str) and len(self._name) > 1:
+                if self._name[0] == '~':
+                    self._scheduler = Channel._pycos
+                elif self._name[0] == '!':
+                    self._scheduler = SysTask._pycos
+                else:
+                    logger.warning('invalid scheduler: %s', self._scheduler)
+                    self._scheduler = None
             else:
                 logger.warning('invalid scheduler: %s', self._scheduler)
                 self._scheduler = None
-        else:
-            self._scheduler = None
 
     def __eq__(self, other):
         return (isinstance(other, Channel) and
@@ -3403,6 +3432,7 @@ class Pycos(object, metaclass=Singleton):
         if not Pycos._instance:
             Pycos._instance = self
         self._notifier = _AsyncNotifier()
+        self._locations = set()
         self._location = None
         self._name = ''
         self.__cur_task = None
@@ -3441,6 +3471,12 @@ class Pycos(object, metaclass=Singleton):
         """Get Location instance where this Pycos is running.
         """
         return copy.copy(self._location)
+
+    @property
+    def locations(self):
+        """Get Location instances where this Pycos is running.
+        """
+        return [copy.copy(location) for location in self._locations]
 
     @property
     def name(self):
@@ -3797,16 +3833,7 @@ class Pycos(object, metaclass=Singleton):
                             logger.warning('task "%s" is in state: %s', task._name, task._state)
                         monitors = list(task._monitors)
                         for monitor in monitors:
-                            if monitor._location == self._location:
-                                if task._exceptions:
-                                    exc = MonitorException(task, task._exceptions[0])
-                                else:
-                                    exc = MonitorException(task, (StopIteration, task._value))
-                                if monitor.send(exc):
-                                    logger.warning('monitor for %s/%s is not valid!',
-                                                   task._name, task._id)
-                                    task._monitors.discard(monitor)
-                            else:
+                            if monitor._location:
                                 # remote monitor; prepare serializable data
                                 if task._exceptions:
                                     exc = task._exceptions[0][:2]
@@ -3825,6 +3852,15 @@ class Pycos(object, metaclass=Singleton):
                                         exc = type(exc)
                                     exc = MonitorException(task, (StopIteration, exc))
                                 monitor.send(exc)
+                            else:
+                                if task._exceptions:
+                                    exc = MonitorException(task, task._exceptions[0])
+                                else:
+                                    exc = MonitorException(task, (StopIteration, task._value))
+                                if monitor.send(exc):
+                                    logger.warning('monitor for %s/%s is not valid!',
+                                                   task._name, task._id)
+                                    task._monitors.discard(monitor)
                         if not task._monitors or not task._exceptions:
                             task._msgs.clear()
                             task._monitors.clear()
@@ -3893,10 +3929,10 @@ class Pycos(object, metaclass=Singleton):
         self.__class__._instance = None
         self._quit = True
         self._lock.release()
-        if self._location:
-            logger.debug('pycos %s terminated', self._location)
-        else:
+        if self == Pycos._pycos:
             logger.debug('pycos terminated')
+        else:
+            logger.debug('pycos %s terminated', self.location)
         self._complete.set()
 
     def _exit(self, await_non_daemons):
@@ -3930,7 +3966,7 @@ class Pycos(object, metaclass=Singleton):
                     logger.warning('running %s failed:', func.__name__)
                     logger.warning(traceback.format_exc())
             self._complete.wait()
-        if self._location and self == SysTask._pycos:
+        if self._locations and self == SysTask._pycos:
             _Peer.shutdown()
             self._complete.wait()
 

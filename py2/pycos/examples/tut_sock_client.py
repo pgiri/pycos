@@ -2,7 +2,7 @@
 
 # client program for sending requests to server (tut_sock_server.py)
 # with sockets (asynchronous network programming);
-# see http://pycos.sourceforge.net/tutorial.html for details.
+# see http://pycos.sourceforge.io/tutorial.html for details.
 
 import sys, socket, random
 import pycos

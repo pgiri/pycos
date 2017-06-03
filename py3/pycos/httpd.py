@@ -1,6 +1,6 @@
 """
 This file is part of pycos project.
-See http://pycos.sourceforge.net for details.
+See http://pycos.sourceforge.io for details.
 """
 
 import sys
@@ -32,7 +32,7 @@ __copyright__ = "Copyright 2015, Giridhar Pemmasani"
 __contributors__ = []
 __maintainer__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __license__ = "MIT"
-__url__ = "http://pycos.sourceforge.net"
+__url__ = "http://pycos.sourceforge.io"
 
 __all__ = ['HTTPServer']
 

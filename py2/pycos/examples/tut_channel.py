@@ -1,5 +1,5 @@
 # program for broadcasting messages over channel; see
-# http://pycos.sourceforge.net/tutorial.html for details.
+# http://pycos.sourceforge.io/tutorial.html for details.
 
 import sys, random
 import pycos

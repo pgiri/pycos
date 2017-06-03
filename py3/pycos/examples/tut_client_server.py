@@ -2,7 +2,7 @@
 
 # client and server tasks communicating with message passing
 # (asynchronous concurrent programming);
-# see http://pycos.sourceforge.net/tutorial.html for details.
+# see http://pycos.sourceforge.io/tutorial.html for details.
 
 import sys, random
 import pycos

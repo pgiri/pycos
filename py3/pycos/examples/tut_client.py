@@ -1,6 +1,6 @@
 # client program for sending requests to remote server (tut_server.py)
 # using message passing (asynchronous concurrent programming);
-# see http://pycos.sourceforge.net/tutorial.html for details.
+# see http://pycos.sourceforge.io/tutorial.html for details.
 
 import sys, random
 import pycos.netpycos as pycos

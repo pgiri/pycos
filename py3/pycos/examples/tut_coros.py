@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 # program for creating tasks (asynchronous concurrent programming); see
-# http://pycos.sourceforge.net/tutorial.html for details.
+# http://pycos.sourceforge.io/tutorial.html for details.
 
 import sys, random, time
 import pycos

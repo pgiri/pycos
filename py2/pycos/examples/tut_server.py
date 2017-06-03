@@ -1,7 +1,7 @@
 # server program for processing requests received with message passing
 # (asynchronous concurrent programming) from remote client
 # (tut_client.py) on same network;
-# see http://pycos.sourceforge.net/tutorial.html for details.
+# see http://pycos.sourceforge.io/tutorial.html for details.
 
 import sys
 import pycos.netpycos as pycos
