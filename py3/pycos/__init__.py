@@ -2468,10 +2468,6 @@ class Task(object):
                 Task._pycos = Pycos.instance()
         self._scheduler = self.__class__._pycos
         self._location = None
-        if self._scheduler == Task._pycos:
-            self._name = '~' + self._name
-        else:
-            self._name = '!' + self._name
         self._scheduler._add(self)
 
     @property
@@ -2506,7 +2502,7 @@ class Task(object):
         """
         if not Task._pycos:
             Task._pycos = Pycos.instance()
-        yield Task._locate('~' + name, location=location, timeout=timeout)
+        yield Task._locate(name, location=location, timeout=timeout)
 
     @staticmethod
     def _locate(name, location, timeout):
@@ -2514,13 +2510,11 @@ class Task(object):
         """
         if not location or location in Task._pycos._locations:
             if name[0] == '~':
-                rtask = Task._pycos._rtasks.get(name, None)
-            elif name[0] == '!':
                 SysTask._pycos._lock.acquire()
                 rtask = SysTask._pycos._rtasks.get(name, None)
                 SysTask._pycos._lock.release()
             else:
-                raise StopIteration(None)
+                rtask = Task._pycos._rtasks.get(name, None)
             if rtask or location in Task._pycos._locations:
                 raise StopIteration(rtask)
         req = _NetRequest('locate_task', kwargs={'name': name}, dst=location, timeout=timeout)
@@ -2543,12 +2537,14 @@ class Task(object):
         locate it (with 'locate') so they can exchange messages, monitored etc.
         """
         if self._location:
+            logger.warning('"register" is not allowed for remote tasks')
             return -1
         if name:
-            if self._scheduler == Task._pycos:
+            if not isinstance(name, str) or name[0] == '~':
+                logger.warning('Invalid name "%s" to register task ignored', name)
+                return -1
+            if self._scheduler != Task._pycos:
                 name = '~' + name
-            else:
-                name = '!' + name
         else:
             name = self._name
         return self._scheduler._register_task(self, name)
@@ -2559,10 +2555,8 @@ class Task(object):
         if self._location:
             return -1
         if name:
-            if self._scheduler == Task._pycos:
+            if self._scheduler != Task._pycos:
                 name = '~' + name
-            else:
-                name = '!' + name
         else:
             name = self._name
         return self._scheduler._unregister_task(self, name)
@@ -2857,15 +2851,11 @@ class Task(object):
             self._scheduler = None
         else:
             if isinstance(self._name, str) and len(self._name) > 1:
+                self._id = int(self._id)
                 if self._name[0] == '~':
-                    self._id = int(self._id)
-                    self._scheduler = Task._pycos
-                elif self._name[0] == '!':
-                    self._id = int(self._id)
                     self._scheduler = SysTask._pycos
                 else:
-                    logger.warning('invalid task from remote peer: %s', self._name)
-                    self._scheduler = None
+                    self._scheduler = Task._pycos
             else:
                 logger.warning('invalid task from remote peer: %s', self._name)
                 self._scheduler = None
@@ -2969,10 +2959,6 @@ class Channel(object):
             logger.warning('Channel name "%s" should begin with alpha-numeric character;'
                            'it is changed to "%s"', self._name, name)
             self._name = name
-        if self._scheduler == Channel._pycos:
-            self._name = '~' + self._name
-        else:
-            self._name = '!' + self._name
         self._subscribers = set()
         self._subscribe_event = Event()
         self._scheduler._lock.acquire()
@@ -3011,11 +2997,10 @@ class Channel(object):
         if not Channel._pycos:
             Channel._pycos = Pycos.instance()
         if not location or location in Channel._pycos._locations:
-            rchannel = Channel._pycos._channels.get('~' + name, None)
+            rchannel = Channel._pycos._channels.get(name, None)
             if rchannel or location in Channel._pycos._locations:
                 raise StopIteration(rchannel)
-        req = _NetRequest('locate_channel', kwargs={'name': '~' + name},
-                          dst=location, timeout=timeout)
+        req = _NetRequest('locate_channel', kwargs={'name': name}, dst=location, timeout=timeout)
         req.event = Event()
         req_id = id(req)
         SysTask._pycos._lock.acquire()
@@ -3304,13 +3289,7 @@ class Channel(object):
             self._scheduler = None
         else:
             if isinstance(self._name, str) and len(self._name) > 1:
-                if self._name[0] == '~':
-                    self._scheduler = Channel._pycos
-                elif self._name[0] == '!':
-                    self._scheduler = SysTask._pycos
-                else:
-                    logger.warning('invalid scheduler: %s', self._scheduler)
-                    self._scheduler = None
+                self._scheduler = Channel._pycos
             else:
                 logger.warning('invalid scheduler: %s', self._scheduler)
                 self._scheduler = None
