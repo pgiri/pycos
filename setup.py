@@ -26,13 +26,13 @@ setup(
     },
     scripts=[os.path.join(base_dir, 'pycos', script)
              for script in ['dispycos.py', 'dispycosnode.py']],
-    license='MIT',
+    license='Apache 2.0',
     platforms='any',
     classifiers=[
         'Development Status :: 5 - Production/Stable',
         'Intended Audience :: Developers',
         'Intended Audience :: Science/Research',
-        'License :: OSI Approved :: MIT License',
+        'License :: OSI Approved :: Apache Software License',
         'Operating System :: OS Independent',
         'Programming Language :: Python :: 2',
         'Programming Language :: Python :: 2.7',

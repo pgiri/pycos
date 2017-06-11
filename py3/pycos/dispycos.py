@@ -29,7 +29,7 @@ import pycos.dispycos
 
 __author__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __copyright__ = "Copyright (c) 2014-2015 Giridhar Pemmasani"
-__license__ = "MIT"
+__license__ = "Apache 2.0"
 __url__ = "http://pycos.sourceforge.io"
 
 __all__ = ['Scheduler', 'Computation', 'DispycosStatus', 'DispycosTaskInfo',

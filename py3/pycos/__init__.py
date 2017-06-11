@@ -52,10 +52,10 @@ __email__ = "pgiri@yahoo.com"
 __copyright__ = "Copyright (c) 2012-2014 Giridhar Pemmasani"
 __contributors__ = []
 __maintainer__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
-__license__ = "MIT"
+__license__ = "Apache 2.0"
 __url__ = "http://pycos.sourceforge.io"
 __status__ = "Production"
-__version__ = "4.6.0"
+__version__ = "4.6.1"
 
 __all__ = ['Task', 'Pycos', 'Lock', 'RLock', 'Event', 'Condition', 'Semaphore',
            'AsyncSocket', 'HotSwapException', 'MonitorException', 'Location', 'Channel',

@@ -5,7 +5,7 @@ Summary: This module provides framework for concurrent, asynchronous, distribute
 Home-page: http://pycos.sourceforge.io
 Author: Giridhar Pemmasani
 Author-email: pgiri@yahoo.com
-License: The MIT License: http://www.opensource.org/licenses/mit-license.php
+License: Apache 2.0 License: https://www.apache.org/licenses/LICENSE-2.0
 Description: pycos is a Python framework for concurrent, asynchronous,
         distributed, communicating tasks. Programs developed with pycos have
         same logic and structure as Python programs with threads, except for a
@@ -21,7 +21,7 @@ Description: pycos is a Python framework for concurrent, asynchronous,
 Platform: any
 Classifier: Intended Audience :: Developers
 Classifier: Intended Audience :: Science/Research
-Classifier: License :: OSI Approved :: MIT License
+Classifier: License :: OSI Approved :: Apache Software License
 Classifier: Operating System :: OS Independent
 Classifier: Programming Language :: Python :: 2
 Classifier: Programming Language :: Python :: 2.7
