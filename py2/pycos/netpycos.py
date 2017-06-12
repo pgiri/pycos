@@ -60,18 +60,19 @@ class Pycos(pycos.Pycos):
     """This adds network services to pycos.Pycos so it can communicate with
     peers.
 
-    If 'node' is not None, it must be either hostname or IP address where pycos
-    runs network services. If 'udp_port' is not None, it is port number where
-    pycos runs network services. If 'udp_port' is 0, the default port number
-    51350 is used. If multiple instances of pycos are to be running on same
-    host, they all can be started with the same 'udp_port', so that pycos
-    instances automatically find each other.
+    If 'node' is not None, it must be either hostname or IP address, or list of
+    hostnames or IP addresses where pycos runs network services. If 'udp_port' is
+    not None, it is port number where pycos runs network services. If 'udp_port'
+    is 0, the default port number 51350 is used. If multiple instances of pycos
+    are to be running on same host, they all can be started with the same
+    'udp_port', so that pycos instances automatically find each other.
 
     'name' is used in locating peers. They must be unique. If 'name' is not
     given, it is set to string 'node:tcp_port'.
 
-    'ext_ip_addr' is the IP address of NAT firewall/gateway if pycos is behind
-    that firewall/gateway.
+    'ext_ip_addr' is either the IP address or list of IP addresses of NAT
+    firewall/gateway if pycos is behind that firewall/gateway. If it is a list,
+    each element must correspond to element of 'node' list.
 
     If 'discover_peers' is True (default), this node broadcasts message to
     detect other peers. If it is False, message is not broadcasted.
@@ -167,16 +168,6 @@ class Pycos(pycos.Pycos):
                 logger.warning('Invalid node "%s" ignored', node)
                 continue
             addrinfo = Pycos.AddrInfo(*addrinfo)
-            udp_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
-            if hasattr(socket, 'SO_REUSEADDR'):
-                udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            if hasattr(socket, 'SO_REUSEPORT'):
-                udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-            if addrinfo.family == socket.AF_INET6:
-                mreq = socket.inet_pton(addrinfo.family, addrinfo.broadcast)
-                mreq += struct.pack('@I', addrinfo.ifn)
-                udp_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
-            udp_sock.bind(('', udp_port))
 
             tcp_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_STREAM),
                                    keyfile=self._keyfile, certfile=self._certfile)
@@ -201,20 +192,42 @@ class Pycos(pycos.Pycos):
                     logger.warning('invalid ext_ip_addr "%s" ignored', ext_ip_addr)
 
             tcp_sock.listen(32)
-            logger.info('network server %s@ %s, udp_port=%s', '"%s" ' % name if name else '',
-                        location, udp_sock.getsockname()[1])
+            if not name:
+                name = socket.gethostname()
+            logger.info('TCP server "%s" @ %s', name if name else '', location)
 
             addrinfo.tcp_sock = tcp_sock
-            addrinfo.udp_sock = udp_sock
             addrinfo.location = location
-            self._addrinfos.append(addrinfo)
-            SysTask(self._tcp_proc, tcp_sock, location, addrinfo)
-            SysTask(self._udp_proc, udp_sock, location, addrinfo)
             self._locations.add(location)
+            self._addrinfos.append(addrinfo)
+            SysTask(self._tcp_proc, addrinfo)
 
-        if not isinstance(location, Location):
+        if not self._addrinfos:
             logger.warning('Could not initialize networking')
             raise Exception('Invalid "node"?')
+
+        udp_addrinfos = {}
+        for addrinfo in self._addrinfos:
+            if addrinfo.broadcast == '<broadcast>':
+                bind_addr = ''
+            else:
+                bind_addr = addrinfo.broadcast
+            udp_addrinfos[bind_addr] = addrinfo
+        for bind_addr, addrinfo in udp_addrinfos.items():
+            udp_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
+            if hasattr(socket, 'SO_REUSEADDR'):
+                udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            if hasattr(socket, 'SO_REUSEPORT'):
+                udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            if addrinfo.family == socket.AF_INET6:
+                mreq = socket.inet_pton(addrinfo.family, addrinfo.broadcast)
+                mreq += struct.pack('@I', addrinfo.ifn)
+                udp_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
+                udp_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+            udp_sock.bind((bind_addr, udp_port))
+            addrinfo.udp_sock = udp_sock
+            logger.info('UDP server @ %s:%s', bind_addr, udp_sock.getsockname()[1])
+            SysTask(self._udp_proc, location, addrinfo)
 
         Pycos._pycos._location = self._location = location
         Pycos._pycos._locations = self._locations
@@ -590,7 +603,7 @@ class Pycos(pycos.Pycos):
     @staticmethod
     def node_addrinfo(node, socket_family=None):
         """Given node (either host name or IP address) is resolved to IP address and
-        fills in and returns information as tuple.
+        fills in and returns information with AddrInfo structure.
         """
         if node:
             try:
@@ -696,12 +709,12 @@ class Pycos(pycos.Pycos):
         sock.close()
         raise StopIteration(0)
 
-    def _udp_proc(self, sock, location, addrinfo, task=None):
+    def _udp_proc(self, location, addrinfo, task=None):
         """
         Internal use only.
         """
         task.set_daemon()
-
+        sock = addrinfo.udp_sock
         while 1:
             msg, addr = yield sock.recvfrom(1024)
             if not msg.startswith('ping:'):
@@ -735,11 +748,12 @@ class Pycos(pycos.Pycos):
             if not peer:
                 SysTask(self._acquaint_, peer_location, ping_info['signature'], addrinfo)
 
-    def _tcp_proc(self, sock, location, addrinfo, task=None):
+    def _tcp_proc(self, addrinfo, task=None):
         """
         Internal use only.
         """
         task.set_daemon()
+        sock = addrinfo.tcp_sock
         while 1:
             try:
                 conn, addr = yield sock.accept()
@@ -751,9 +765,9 @@ class Pycos(pycos.Pycos):
             except:
                 logger.debug(traceback.format_exc())
                 continue
-            SysTask(self._tcp_conn_proc, location, addrinfo, conn, addr)
+            SysTask(self._tcp_conn_proc, conn, addrinfo)
 
-    def _tcp_conn_proc(self, location, addrinfo, conn, addr, task=None):
+    def _tcp_conn_proc(self, conn, addrinfo, task=None):
         """
         Internal use only.
         """
@@ -1412,7 +1426,7 @@ class _Peer(object):
         _Peer._lock.acquire()
         peer = _Peer.peers.get((req.dst.addr, req.dst.port), None)
         if not peer:
-            logger.debug('Ignoring request to invalid peer %s', dst)
+            logger.debug('Ignoring request to invalid peer %s', req.dst)
             _Peer._lock.release()
             return -1
         peer.reqs.append(req)
