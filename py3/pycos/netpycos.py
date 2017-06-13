@@ -111,7 +111,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
 
         self.__class__._instance = self
         super(self.__class__, self).__init__()
-        self._rcis = {}
+        self._rtis = {}
         self._locations = set()
         self._stream_peers = {}
         self._pending_reqs = {}
@@ -872,13 +872,13 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                     req.event.set()
                 yield conn.send_msg(serialize(None))
 
-            elif req.name == 'run_rci':
-                rci = self._rcis.get(req.kwargs['name'], None)
-                if rci:
+            elif req.name == 'run_rti':
+                rti = self._rtis.get(req.kwargs['name'], None)
+                if rti:
                     args = req.kwargs['args']
                     kwargs = req.kwargs['kwargs']
                     try:
-                        reply = Task(rci._method, *args, **kwargs)
+                        reply = Task(rti._method, *args, **kwargs)
                     except:
                         reply = Exception(traceback.format_exc())
                 else:
@@ -900,9 +900,9 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 Channel._pycos._lock.release()
                 yield conn.send_msg(serialize(channel))
 
-            elif req.name == 'locate_rci':
-                rci = self._rcis.get(req.kwargs['name'], None)
-                yield conn.send_msg(serialize(rci))
+            elif req.name == 'locate_rti':
+                rti = self._rtis.get(req.kwargs['name'], None)
+                yield conn.send_msg(serialize(rti))
 
             elif req.name == 'monitor':
                 reply = -1
@@ -1187,7 +1187,7 @@ class RTI(object):
 
     @staticmethod
     def locate(name, location=None, timeout=None):
-        """Must be used with 'yield' as 'rci = yield RTI.locate("name")'.
+        """Must be used with 'yield' as 'rti = yield RTI.locate("name")'.
 
         Returns RTI instance to registered RTI at a remote peer so its method
         can be used to execute tasks at that peer.
@@ -1197,7 +1197,7 @@ class RTI(object):
         """
         if not RTI._pycos:
             RTI._pycos = Pycos.instance()
-        req = _NetRequest('locate_rci', kwargs={'name': name}, dst=location, timeout=timeout)
+        req = _NetRequest('locate_rti', kwargs={'name': name}, dst=location, timeout=timeout)
         req.event = Event()
         req_id = id(req)
         RTI._pycos._lock.acquire()
@@ -1206,11 +1206,11 @@ class RTI(object):
         _Peer.send_req_to(req, location)
         if (yield req.event.wait(timeout)) is False:
             req.reply = None
-        rci = req.reply
+        rti = req.reply
         RTI._pycos._lock.acquire()
         RTI._pycos._pending_reqs.pop(req_id, None)
         RTI._pycos._lock.release()
-        raise StopIteration(rci)
+        raise StopIteration(rti)
 
     def register(self):
         """RTI must be registered so it can be located.
@@ -1220,8 +1220,8 @@ class RTI(object):
         if not inspect.isgeneratorfunction(self._method):
             return -1
         RTI._pycos._lock.acquire()
-        if RTI._pycos._rcis.get(self._name, None) is None:
-            RTI._pycos._rcis[self._name] = self
+        if RTI._pycos._rtis.get(self._name, None) is None:
+            RTI._pycos._rtis[self._name] = self
             RTI._pycos._lock.release()
             return 0
         else:
@@ -1234,7 +1234,7 @@ class RTI(object):
         if self._location:
             return -1
         RTI._pycos._lock.acquire()
-        if RTI._pycos._rcis.pop(self._name, None) is None:
+        if RTI._pycos._rtis.pop(self._name, None) is None:
             RTI._pycos._lock.release()
             return -1
         else:
@@ -1242,12 +1242,12 @@ class RTI(object):
             return 0
 
     def __call__(self, *args, **kwargs):
-        """Must be used with 'yeild' as 'rtask = yield rci(*args, **kwargs)'.
+        """Must be used with 'yeild' as 'rtask = yield rti(*args, **kwargs)'.
 
         Run RTI (method at remote location) with args and kwargs. Both args and
         kwargs must be serializable. Returns (remote) Task instance.
         """
-        req = _NetRequest('run_rci', kwargs={'name': self._name, 'args': args, 'kwargs': kwargs},
+        req = _NetRequest('run_rti', kwargs={'name': self._name, 'args': args, 'kwargs': kwargs},
                           dst=self._location, timeout=MsgTimeout)
         reply = yield _Peer._sync_reply(req)
         if isinstance(reply, Task):
