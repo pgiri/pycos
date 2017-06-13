@@ -1044,11 +1044,6 @@ class Scheduler(object):
                 last_ping = now
                 async_scheduler.discover_peers(port=self._node_port)
 
-    @staticmethod
-    def auth_code():
-        # TODO: use uuid?
-        return hashlib.sha1(os.urandom(10).encode('hex')).hexdigest()
-
     def __computation_scheduler_proc(self, nodes, task=None):
         task.set_daemon()
         for node in nodes:
@@ -1065,7 +1060,7 @@ class Scheduler(object):
             self.__pulse_interval = self._cur_computation._pulse_interval
 
             self.__cur_client_auth = self._cur_computation._auth
-            self._cur_computation._auth = Scheduler.auth_code()
+            self._cur_computation._auth = hashlib.sha1(os.urandom(20)).hexdigest()
             self.__cur_node_allocations = self._cur_computation._node_allocations
             self._cur_computation._node_allocations = []
 
@@ -1282,7 +1277,7 @@ class Scheduler(object):
                     client.send(None)
                     continue
                 while 1:
-                    computation._auth = Scheduler.auth_code()
+                    computation._auth = hashlib.sha1(os.urandom(20)).hexdigest()
                     if not os.path.exists(os.path.join(self.__dest_path, computation._auth)):
                         break
                 try:

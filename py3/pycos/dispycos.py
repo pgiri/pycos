@@ -533,7 +533,7 @@ class Computation(object):
         for attr in ['_code', '_xfer_funcs', '_xfer_files', '_auth',  'scheduler', 'status_task',
                      '_pulse_interval', '_pulse_task', '_node_allocations',
                      '_node_setup', '_server_setup', '_disable_nodes', '_disable_servers',
-                      '_peers_communicate']:
+                     '_peers_communicate']:
             state[attr] = getattr(self, attr)
         return state
 
@@ -1050,11 +1050,6 @@ class Scheduler(object, metaclass=pycos.Singleton):
                 last_ping = now
                 async_scheduler.discover_peers(port=self._node_port)
 
-    @staticmethod
-    def auth_code():
-        # TODO: use uuid?
-        return hashlib.sha1(''.join(hex(_)[2:] for _ in os.urandom(10)).encode()).hexdigest()
-
     def __computation_scheduler_proc(self, nodes, task=None):
         task.set_daemon()
         for node in nodes:
@@ -1071,7 +1066,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
             self.__pulse_interval = self._cur_computation._pulse_interval
 
             self.__cur_client_auth = self._cur_computation._auth
-            self._cur_computation._auth = Scheduler.auth_code()
+            self._cur_computation._auth = hashlib.sha1(os.urandom(20)).hexdigest()
             self.__cur_node_allocations = self._cur_computation._node_allocations
             self._cur_computation._node_allocations = []
 
@@ -1288,7 +1283,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
                     client.send(None)
                     continue
                 while 1:
-                    computation._auth = Scheduler.auth_code()
+                    computation._auth = hashlib.sha1(os.urandom(20)).hexdigest()
                     if not os.path.exists(os.path.join(self.__dest_path, computation._auth)):
                         break
                 try:

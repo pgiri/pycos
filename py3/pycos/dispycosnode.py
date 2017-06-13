@@ -737,8 +737,7 @@ if __name__ == '__main__':
     else:
         _dispycos_config['keyfile'] = None
 
-    _dispycos_node_auth = ''.join(hex(_)[2:] for _ in os.urandom(10))
-    _dispycos_node_auth = hashlib.sha1(_dispycos_node_auth.encode()).hexdigest()
+    _dispycos_node_auth = hashlib.sha1(os.urandom(20)).hexdigest()
 
     class _dispycos_Struct(object):
 
