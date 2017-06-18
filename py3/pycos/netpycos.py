@@ -1,4 +1,5 @@
-"""This file is part of pycos; see http://pycos.sourceforge.io for details.
+"""
+This file is part of pycos project. See https://pycos.sourceforge.io for details.
 
 This module adds API for distributed programming to Pycos.
 """
@@ -29,7 +30,7 @@ from pycos import *
 __author__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __copyright__ = "Copyright (c) 2012-2014 Giridhar Pemmasani"
 __license__ = "Apache 2.0"
-__url__ = "http://pycos.sourceforge.io"
+__url__ = "https://pycos.sourceforge.io"
 
 __version__ = pycos.__version__
 __all__ = pycos.__all__ + ['PeerStatus', 'RTI']

@@ -1,5 +1,5 @@
 """
-This file is part of pycos; see http://pycos.sourceforge.io for details.
+This file is part of pycos project. See https://pycos.sourceforge.io for details.
 
 This module provides framework for concurrent, asynchronous network programming
 with tasks, asynchronous completions and message passing. Other modules in pycos
@@ -53,7 +53,7 @@ __copyright__ = "Copyright (c) 2012-2014 Giridhar Pemmasani"
 __contributors__ = []
 __maintainer__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __license__ = "Apache 2.0"
-__url__ = "http://pycos.sourceforge.io"
+__url__ = "https://pycos.sourceforge.io"
 __status__ = "Production"
 __version__ = "4.6.1"
 

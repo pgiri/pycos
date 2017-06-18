@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
-"""This file is part of pycos; see http://pycos.sourceforge.io for details.
+"""
+This file is part of pycos project. See https://pycos.sourceforge.io for details.
 
 This program can be used to start dispycos server processes so dispycos
 scheduler (see 'dispycos.py') can send computations to these server processes
@@ -16,7 +17,7 @@ See 'dispycos_*.py' files for example use cases.
 __author__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __copyright__ = "Copyright (c) 2014 Giridhar Pemmasani"
 __license__ = "Apache 2.0"
-__url__ = "http://pycos.sourceforge.io"
+__url__ = "https://pycos.sourceforge.io"
 
 
 def _dispycos_server_proc():

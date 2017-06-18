@@ -1,14 +1,14 @@
-"""This file is part of pycos; see http://pycos.sourceforge.io
-for details.
+"""
+This file is part of pycos project. See https://pycos.sourceforge.io for details.
 
-This module provides API for asynchronous file and pipe processing.
-They work with Windows, Linux, OS X and likely other UNIX
-variants. Note that regular (on-disk) files don't support asynchronous
-I/O, as they are non-blocking and can't be used for polling to signal
-read/write events - they are always ready to be read/written.
+This module provides API for asynchronous file and pipe processing.  They work
+with Windows, Linux, OS X and likely other UNIX variants. Note that regular
+(on-disk) files don't support asynchronous I/O, as they are non-blocking and
+can't be used for polling to signal read/write events - they are always ready to
+be read/written.
 
-Under Windows, pipes must be opened with Popen in this module instead
-of Popen in subprocess module.
+Under Windows, pipes must be opened with Popen in this module instead of Popen
+in subprocess module.
 
 See 'pipe_csum.py', 'pipe_grep.py' and 'socket_afile.py' for examples.
 """
@@ -26,7 +26,7 @@ from pycos import _AsyncPoller, Pycos, Task
 __author__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __copyright__ = "Copyright (c) 2014 Giridhar Pemmasani"
 __license__ = "Apache 2.0"
-__url__ = "http://pycos.sourceforge.io"
+__url__ = "https://pycos.sourceforge.io"
 
 __all__ = ['AsyncFile', 'AsyncPipe']
 
