@@ -276,8 +276,9 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             super(self.__class__, self).finish()
             Pycos._instance = None
             for addrinfo in self._addrinfos:
-                addrinfo.udp_sock.close()
                 addrinfo.tcp_sock.close()
+                if addrinfo.udp_sock:
+                    addrinfo.udp_sock.close()
             self._addrinfos = []
             self._notifier.terminate()
             logger.shutdown()
