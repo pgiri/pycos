@@ -22,7 +22,7 @@ __url__ = "https://pycos.sourceforge.io"
 
 def _dispycos_server_proc():
     # task
-    """Server process receives computations and runs tasks for it.
+    """Server process receives a computation and runs tasks for it.
     """
 
     import os
@@ -285,17 +285,12 @@ def _dispycos_server_process(_dispycos_config, _dispycos_mp_queue, _dispycos_com
         import signal
         try:
             os.kill(_dispycos_var, signal.SIGINT)
-            time.sleep(0.1)
-            os.kill(_dispycos_var, signal.SIGKILL)
         except:
             pass
         else:
-            time.sleep(0.1)
-            try:
-                if os.waitpid(_dispycos_var, os.WNOHANG)[0] != _dispycos_var:
-                    pycos.logger.warning('Killing process %d failed', _dispycos_var)
-            except:
-                pass
+            time.sleep(0.2)
+            if os.path.isfile(_dispycos_pid_path):
+                pycos.logger.warning('Killing process %d failed', _dispycos_var)
         del signal, _dispycos_req
 
     with open(_dispycos_pid_path, 'w') as _dispycos_var:
@@ -336,7 +331,7 @@ def _dispycos_server_process(_dispycos_config, _dispycos_mp_queue, _dispycos_com
     _dispycos_config['_disable_servers'] = _dispycos_computation._disable_servers
     _dispycos_config['_server_setup'] = _dispycos_computation._server_setup
     _dispycos_config['computation_location'] = _dispycos_computation._pulse_task.location
-    _dispycos_task = pycos.SysTask(_dispycos_server_proc)
+    _dispycos_task = pycos.SysTask(_dispycos_config.pop('server_proc'))
     assert isinstance(_dispycos_task, pycos.Task)
     mp_queue.put((server_id, pycos.serialize(_dispycos_task)))
     _dispycos_task.send(_dispycos_config)
@@ -373,6 +368,12 @@ def _dispycos_spawn(_dispycos_config, _dispycos_id_ports, _dispycos_mp_queue,
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     signal.signal(signal.SIGABRT, signal.SIG_DFL)
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
+
+    _dispycos_config['server_proc'] = _dispycos_server_proc
+    server_process = _dispycos_server_process
+    for _dispycos_var in list(globals()):
+        if _dispycos_var.startswith('_dispycos_'):
+            globals().pop(_dispycos_var)
 
     for _dispycos_var in list(sys.modules.keys()):
         if _dispycos_var.startswith('pycos'):
@@ -437,8 +438,7 @@ def _dispycos_spawn(_dispycos_config, _dispycos_id_ports, _dispycos_mp_queue,
         server_config['name'] = '%s_proc-%s' % (_dispycos_config['name'], server_config['id'])
         server_config['tcp_port'] = _dispycos_id_ports[i][1]
         server_config['peers'] = _dispycos_config['peers'][:]
-        procs[i] = multiprocessing.Process(target=_dispycos_server_process,
-                                           name=server_config['name'],
+        procs[i] = multiprocessing.Process(target=server_process, name=server_config['name'],
                                            args=(server_config, _dispycos_mp_queue,
                                                  _dispycos_computation))
         procs[i].start()
