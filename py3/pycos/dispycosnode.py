@@ -38,9 +38,10 @@ def _dispycos_server_proc():
 
     _dispycos_task = pycos.Pycos.cur_task()
     _dispycos_config = yield _dispycos_task.receive()
-    _dispycos_node_task = pycos.deserialize(_dispycos_config['node_task'])
+    _dispycos_var = pycos.deserialize(_dispycos_config['node_location'])
+    yield pycos.Pycos.instance().peer(_dispycos_var)
+    _dispycos_node_task = yield Task.locate('dispycos_node', location=_dispycos_var)
     _dispycos_scheduler_task = pycos.deserialize(_dispycos_config['scheduler_task'])
-    assert isinstance(_dispycos_scheduler_task, Task)
     _dispycos_computation_auth = _dispycos_config.pop('computation_auth', None)
 
     if _dispycos_config['min_pulse_interval'] > 0:
@@ -107,7 +108,6 @@ def _dispycos_server_proc():
     if (yield pycos.Pycos.instance().peer(_dispycos_var)):
         raise StopIteration(-1)
     pycos.Pycos.instance().peer_status(SysTask(_dispycos_peer_status))
-    yield pycos.Pycos.instance().peer(_dispycos_node_task.location)
     yield pycos.Pycos.instance().peer(_dispycos_scheduler_task.location)
     _dispycos_scheduler_task.send({'status': Scheduler.ServerDiscovered, 'task': _dispycos_task,
                                    'name': _dispycos_name, 'auth': _dispycos_computation_auth})
@@ -774,8 +774,7 @@ if __name__ == '__main__':
         msg_timeout = _dispycos_config['msg_timeout']
         zombie_period = _dispycos_config['zombie_period']
         disk_path = task_scheduler.dest_path
-        _dispycos_config['node_task'] = pycos.serialize(task)
-        _dispycos_config['node'] = task.location.addr
+        _dispycos_config['node_location'] = pycos.serialize(task.location)
 
         def monitor_peers(task=None):
             task.set_daemon()
