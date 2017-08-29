@@ -144,7 +144,7 @@ def _dispycos_server_proc():
         _dispycos_var = None
     _dispycos_monitor_task = SysTask(_dispycos_monitor_proc, _dispycos_var)
     _dispycos_node_task.send({'req': 'server_setup', 'id': _dispycos_config['id'],
-                              'task': _dispycos_task})
+                              'task': _dispycos_task, 'auth': _dispycos_computation_auth})
     _dispycos_busy_time.value = int(time.time())
     pycos.logger.debug('dispycos server "%s": Computation "%s" from %s', _dispycos_name,
                        _dispycos_computation_auth, _dispycos_scheduler_task.location)
