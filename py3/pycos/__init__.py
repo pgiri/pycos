@@ -55,7 +55,7 @@ __maintainer__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __license__ = "Apache 2.0"
 __url__ = "https://pycos.sourceforge.io"
 __status__ = "Production"
-__version__ = "4.6.1"
+__version__ = "4.6.2"
 
 __all__ = ['Task', 'Pycos', 'Lock', 'RLock', 'Event', 'Condition', 'Semaphore',
            'AsyncSocket', 'HotSwapException', 'MonitorException', 'Location', 'Channel',
@@ -3066,21 +3066,19 @@ class Channel(object):
                     # remote task
                     subscriber._id = int(subscriber._id)
                     for s in self._subscribers:
-                        if isinstance(s, Task) and \
-                           s._id == subscriber._id and s._location == subscriber._location:
+                        if (isinstance(s, Task) and s._id == subscriber._id and
+                            s._location == subscriber._location):
                             subscriber = s
                             break
                 elif isinstance(subscriber, Channel):
                     # remote channel
                     for s in self._subscribers:
-                        if isinstance(s, Channel) and \
-                           s._name == subscriber._name and s._location == subscriber._location:
+                        if (isinstance(s, Channel) and s._name == subscriber._name and
+                            s._location == subscriber._location):
                             subscriber = s
                             break
-            self._scheduler._lock.acquire()
             self._subscribers.add(subscriber)
             self._subscribe_event.set()
-            self._scheduler._lock.release()
             reply = 0
         raise StopIteration(reply)
 
@@ -3107,15 +3105,15 @@ class Channel(object):
                     # remote task
                     subscriber._id = int(subscriber._id)
                     for s in self._subscribers:
-                        if isinstance(s, Task) and \
-                           s._id == subscriber._id and s._location == subscriber._location:
+                        if (isinstance(s, Task) and s._id == subscriber._id and
+                            s._location == subscriber._location):
                             subscriber = s
                             break
                 elif isinstance(subscriber, Channel):
                     # remote channel
                     for s in self._subscribers:
-                        if isinstance(s, Channel) and \
-                           s._name == subscriber._name and s._location == subscriber._location:
+                        if (isinstance(s, Channel) and s._name == subscriber._name and
+                            s._location == subscriber._location):
                             subscriber = s
                             break
             try:
@@ -3140,20 +3138,15 @@ class Channel(object):
                 logger.warning('remote channel at %s may not be valid', self._location)
                 return -1
         else:
-            self._scheduler._lock.acquire()
-            transform = self._transform
-            subscribers = list(self._subscribers)
-            self._scheduler._lock.release()
-
-            if transform:
+            if self._transform:
                 try:
-                    message = transform(self.name, message)
+                    message = self._transform(self.name, message)
                 except:
                     message = None
                 if message is None:
                     return 0
             invalid = []
-            for subscriber in subscribers:
+            for subscriber in self._subscribers:
                 if subscriber.send(message) != 0:
                     invalid.append(subscriber)
             if invalid:
@@ -3190,33 +3183,25 @@ class Channel(object):
             #                    self._name, self._location)
             raise StopIteration(reply)
         else:
-            self._scheduler._lock.acquire()
-            transform = self._transform
-            subscribers = list(self._subscribers)
-            self._scheduler._lock.release()
-
-            if transform:
+            if self._transform:
                 try:
-                    message = transform(self.name, message)
+                    message = self._transform(self.name, message)
                 except:
                     message = None
                 if message is None:
                     raise StopIteration(0)
+            subscribers = list(self._subscribers)
             if n:
                 while len(subscribers) < n:
                     start = _time()
-                    self._scheduler._lock.acquire()
                     self._subscribe_event.clear()
-                    self._scheduler._lock.release()
                     if (yield self._subscribe_event.wait(timeout)) is False:
                         raise StopIteration(0)
                     if timeout is not None:
                         timeout -= _time() - start
                         if timeout <= 0:
                             raise StopIteration(0)
-                    self._scheduler._lock.acquire()
                     subscribers = list(self._subscribers)
-                    self._scheduler._lock.release()
 
             info = {'reply': 0, 'pending': len(subscribers), 'success': 0,
                     'done': Event(), 'invalid': []}
@@ -3754,8 +3739,8 @@ class Pycos(object, metaclass=Singleton):
                         task._exceptions = []
                     elif exc[0] == HotSwapException:
                         v = exc[1].args
-                        if isinstance(v, tuple) and len(v) == 1 and inspect.isgenerator(v[0]) and \
-                           task._hot_swappable and not task._callers:
+                        if (isinstance(v, tuple) and len(v) == 1 and inspect.isgenerator(v[0]) and
+                            task._hot_swappable and not task._callers):
                             try:
                                 task._generator.close()
                             except:
