@@ -791,6 +791,9 @@ class Scheduler(object, metaclass=pycos.Singleton):
                     rtask = msg.get('task', None)
                     if not isinstance(rtask, pycos.Task):
                         continue
+                    if (not self._cur_computation or
+                        self._cur_computation._auth != msg.get('auth', None)):
+                        continue
                     node = self._nodes.get(rtask.location.addr, None)
                     if not node:
                         node = self._disabled_nodes.get(rtask.location.addr, None)
