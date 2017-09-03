@@ -133,7 +133,8 @@ class Computation(object):
 
     def __init__(self, components, pulse_interval=(5*MinPulseInterval), node_allocations=[],
                  status_task=None, node_setup=None, server_setup=None,
-                 disable_nodes=False, disable_servers=False, peers_communicate=False):
+                 disable_nodes=False, disable_servers=False, peers_communicate=False,
+                 zombie_period=None):
         """'components' should be a list, each element of which is either a
         module, a (generator or normal) function, path name of a file, a class
         or an object (in which case the code for its class is sent).
@@ -157,6 +158,11 @@ class Computation(object):
             raise Exception('"server_setup" must be a task (generator function)')
         if (disable_nodes or disable_servers) and not status_task:
             raise Exception('status_task must be given when nodes or servers are disabled')
+        if zombie_period:
+            if zombie_period < 5*pulse_interval:
+                raise Exception('"zombie_period" must be at least 5*pulse_interval')
+        elif zombie_period is None:
+            zombie_period = 10*pulse_interval
 
         if not isinstance(components, list):
             components = [components]
@@ -168,6 +174,7 @@ class Computation(object):
         self.scheduler = None
         self._pulse_task = None
         self._pulse_interval = pulse_interval
+        self._zombie_period = zombie_period
         self._node_allocations = [node if isinstance(node, DispycosNodeAllocate)
                                   else DispycosNodeAllocate(node) for node in node_allocations]
         self.status_task = status_task
@@ -534,7 +541,7 @@ class Computation(object):
         for attr in ['_code', '_xfer_funcs', '_xfer_files', '_auth',  'scheduler', 'status_task',
                      '_pulse_interval', '_pulse_task', '_node_allocations',
                      '_node_setup', '_server_setup', '_disable_nodes', '_disable_servers',
-                     '_peers_communicate']:
+                     '_peers_communicate', '_zombie_period']:
             state[attr] = getattr(self, attr)
         return state
 
@@ -655,6 +662,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
         self._avail_nodes = set()
         self._nodes_avail = pycos.Event()
         self._nodes_avail.clear()
+        self._shared = False
 
         self._cur_computation = None
         self.__cur_client_auth = None
@@ -1005,12 +1013,12 @@ class Scheduler(object, metaclass=pycos.Singleton):
             if not isinstance(rtask, Task):
                 yield task.sleep(0.1)
                 continue
-            node = self._nodes.get(msg.location.addr, None)
-            if not node:
-                node = self._disabled_nodes.get(msg.location.addr, None)
-            if node and node.task == rtask:
-                raise StopIteration
-
+            node = self._nodes.pop(msg.location.addr, None)
+            if node:
+                logger.warning('Rediscovered dispycosnode at %s; discarding previous incarnation!',
+                               msg.location.addr)
+                # TODO: close this node?
+            node = self._disabled_nodes.get(msg.location.addr, None)
             if not node:
                 node = Scheduler._Node(msg.name, msg.location.addr)
                 self._disabled_nodes[msg.location.addr] = node
@@ -1029,26 +1037,27 @@ class Scheduler(object, metaclass=pycos.Singleton):
                 break
             now = time.time()
             if self.__cur_client_auth:
-                if self._cur_computation._pulse_task.send('pulse') == 0:
+                if (yield self._cur_computation._pulse_task.deliver('pulse')) == 1:
                     client_pulse = now
-                elif ((now - client_pulse) > self.__zombie_period):
-                    logger.warning('Closing zombie computation %s', self.__cur_client_auth)
-                    SysTask(self.__close_computation)
+                if self.__zombie_period:
+                    if ((now - client_pulse) > self.__zombie_period):
+                        logger.warning('Closing zombie computation %s', self.__cur_client_auth)
+                        SysTask(self.__close_computation)
 
-                if (now - node_check) > self.__zombie_period:
-                    node_check = now
-                    for node in self._nodes.values():
-                        if (node.status != Scheduler.NodeInitialized and
-                            node.status != Scheduler.NodeDiscovered):
-                            continue
-                        if (now - node.last_pulse) > self.__zombie_period:
-                            logger.warning('dispycos node %s is zombie!', node.addr)
-                            SysTask(self.__close_node, node, self._cur_computation)
+                    if (now - node_check) > self.__zombie_period:
+                        node_check = now
+                        for node in self._nodes.values():
+                            if (node.status != Scheduler.NodeInitialized and
+                                node.status != Scheduler.NodeDiscovered):
+                                continue
+                            if (now - node.last_pulse) > self.__zombie_period:
+                                logger.warning('dispycos node %s is zombie!', node.addr)
+                                SysTask(self.__close_node, node, self._cur_computation)
 
-                    if not self._cur_computation._disable_nodes:
-                        for node in self._disabled_nodes.values():
-                            if node.task:
-                                SysTask(self.__init_node, node)
+                        if not self._cur_computation._disable_nodes:
+                            for node in self._disabled_nodes.values():
+                                if node.task:
+                                    SysTask(self.__init_node, node)
 
             if self.__ping_interval and ((now - last_ping) > self.__ping_interval):
                 last_ping = now
@@ -1068,6 +1077,8 @@ class Scheduler(object, metaclass=pycos.Singleton):
             if self.__job_scheduler_task:
                 self.__job_scheduler_task.terminate()
             self.__pulse_interval = self._cur_computation._pulse_interval
+            if not self._shared:
+                self.__zombie_period = self._cur_computation._zombie_period
 
             self.__cur_client_auth = self._cur_computation._auth
             self._cur_computation._auth = hashlib.sha1(os.urandom(20)).hexdigest()
