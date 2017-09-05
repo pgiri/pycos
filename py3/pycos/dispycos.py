@@ -173,7 +173,10 @@ class Computation(object):
         self._auth = None
         self.scheduler = None
         self._pulse_task = None
-        self._pulse_interval = pulse_interval
+        if zombie_period:
+            self._pulse_interval = min(pulse_interval, zombie_period / 3)
+        else:
+            self._pulse_interval = pulse_interval
         self._zombie_period = zombie_period
         self._node_allocations = [node if isinstance(node, DispycosNodeAllocate)
                                   else DispycosNodeAllocate(node) for node in node_allocations]
@@ -575,14 +578,17 @@ class Scheduler(object, metaclass=pycos.Singleton):
     NodeClosed = 3
     NodeIgnore = 4
     NodeDisconnected = 5
+    NodeAbandoned = 6
 
     ServerDiscovered = 11
     ServerInitialized = 12
     ServerClosed = 13
     ServerIgnore = 14
     ServerDisconnected = 15
+    ServerAbandoned = 16
 
     TaskCreated = 20
+    TaskAbandoned = 21
     ComputationScheduled = 23
     ComputationClosed = 25
 
@@ -601,6 +607,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
             self.name = name
             self.addr = addr
             self.cpus_used = 0
+            self.cpus = 0
             self.platform = None
             self.avail_info = None
             self.servers = {}
@@ -1009,20 +1016,36 @@ class Scheduler(object, metaclass=pycos.Singleton):
 
     def __discover_node(self, msg, task=None):
         for _ in range(10):
-            rtask = yield Task.locate('dispycos_node', location=msg.location, timeout=MsgTimeout)
-            if not isinstance(rtask, Task):
+            node_task = yield Task.locate('dispycos_node', location=msg.location,
+                                          timeout=MsgTimeout)
+            if not isinstance(node_task, Task):
                 yield task.sleep(0.1)
                 continue
+            self._disabled_nodes.pop(msg.location.addr, None)
             node = self._nodes.pop(msg.location.addr, None)
             if node:
                 logger.warning('Rediscovered dispycosnode at %s; discarding previous incarnation!',
                                msg.location.addr)
-                # TODO: close this node?
+                self._disabled_nodes.pop(node.addr, None)
+                if self._cur_computation:
+                    status_task = self._cur_computation.status_task
+                else:
+                    status_task = None
+                if status_task:
+                    for server in node.servers.values():
+                        for rtask, job in server.rtasks.values():
+                            status = pycos.MonitorException(rtask, (Scheduler.TaskAbandoned, None))
+                            status_task.send(status)
+                        status_task.send(DispycosStatus(Scheduler.ServerAbandoned,
+                                                        server.task.location))
+                    info = DispycosNodeInfo(node.name, node.addr, node.cpus, node.platform,
+                                            node.avail_info)
+                    status_task.send(DispycosStatus(Scheduler.NodeAbandoned, info))
             node = self._disabled_nodes.get(msg.location.addr, None)
             if not node:
                 node = Scheduler._Node(msg.name, msg.location.addr)
                 self._disabled_nodes[msg.location.addr] = node
-            node.task = rtask
+            node.task = node_task
             yield self.__get_node_info(node, task=task)
             raise StopIteration
 
@@ -1402,7 +1425,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
         if server.rtasks:
             logger.warning('%s tasks running at %s', len(server.rtasks), server.task.location)
             if computation and computation.status_task:
-                for (rtask, cpu) in server.rtasks.values():
+                for rtask, job in server.rtasks.values():
                     status = pycos.MonitorException(rtask, (Scheduler.ServerClosed, None))
                     computation.status_task.send(status)
                 node.cpus_used -= len(server.rtasks)

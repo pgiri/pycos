@@ -90,10 +90,10 @@ def _dispycos_server_proc():
                     if _dispycos_computation_auth:
                         _dispycos_task.send({'req': 'close', 'auth': _dispycos_computation_auth})
 
-    def _dispycos_monitor_proc(zombie_period, task=None):
+    def _dispycos_monitor_proc(pulse_interval, task=None):
         task.set_daemon()
         while 1:
-            msg = yield task.receive(timeout=zombie_period)
+            msg = yield task.receive(timeout=pulse_interval)
             if isinstance(msg, pycos.MonitorException):
                 pycos.logger.debug('task %s done at %s', msg.args[0], task.location)
                 _dispycos_job_tasks.discard(msg.args[0])
@@ -140,11 +140,7 @@ def _dispycos_server_proc():
     _dispycos_scheduler_task.send({'status': Scheduler.ServerInitialized, 'task': _dispycos_task,
                                    'name': _dispycos_name, 'auth': _dispycos_computation_auth})
 
-    _dispycos_var = _dispycos_config['zombie_period']
-    if _dispycos_var:
-        _dispycos_var /= 3
-    else:
-        _dispycos_var = None
+    _dispycos_var = _dispycos_config['pulse_interval']
     _dispycos_monitor_task = SysTask(_dispycos_monitor_proc, _dispycos_var)
     _dispycos_busy_time.value = int(time.time())
     pycos.logger.debug('dispycos server "%s": Computation "%s" from %s', _dispycos_name,
@@ -248,8 +244,8 @@ def _dispycos_server_proc():
 
     # kill any pending jobs
     while _dispycos_job_tasks:
-        for _dispycos_job_task in _dispycos_job_tasks:
-            _dispycos_job_task.terminate()
+        for _dispycos_var in _dispycos_job_tasks:
+            _dispycos_var.terminate()
         pycos.logger.debug('dispycos server "%s": Waiting for %s tasks to terminate '
                            'before closing computation', _dispycos_name, len(_dispycos_job_tasks))
         if (yield _dispycos_jobs_done.wait(timeout=5)):
@@ -1010,15 +1006,20 @@ if __name__ == '__main__':
                     computation = msg.get('computation', None)
                     if (cur_computation_auth == msg.get('auth', None) and
                         isinstance(client, pycos.Task) and isinstance(computation, Computation)):
-                        interval = computation._pulse_interval
                         last_pulse = now
-                        if interval:
-                            interval = min(interval, _dispycos_config['max_pulse_interval'])
-                        else:
-                            interval = _dispycos_config['max_pulse_interval']
                         _dispycos_busy_time.value = int(time.time())
                         _dispycos_config['scheduler_task'] = pycos.serialize(scheduler_task)
                         _dispycos_config['computation_auth'] = computation._auth
+                        interval = computation._pulse_interval
+                        if interval < _dispycos_config['min_pulse_interval']:
+                            interval = _dispycos_config['min_pulse_interval']
+                            pycos.logger.warning('Pulse interval for computation from %s has been '
+                                                 'raised to %s', client.location, interval)
+                        if zombie_period:
+                            _dispycos_config['pulse_interval'] = min(interval, zombie_period / 3)
+                        else:
+                            _dispycos_config['pulse_interval'] = interval
+
                         id_ports = [(server.id, _dispycos_tcp_ports[server.id - 1])
                                     for server in _dispycos_servers if not server.task]
                         args = (_dispycos_config, id_ports, _dispycos_mp_queue, _dispycos_recv_pipe,
@@ -1035,6 +1036,8 @@ if __name__ == '__main__':
                             pass
                         else:
                             close_computation()
+                            scheduler_task = None
+                            interval = _dispycos_config['max_pulse_interval']
 
                 elif req == 'release':
                     auth = msg.get('auth', None)
@@ -1042,7 +1045,7 @@ if __name__ == '__main__':
                         close_computation()
                         cur_computation_auth = None
                         scheduler_task = None
-                        interval = MaxPulseInterval
+                        interval = _dispycos_config['max_pulse_interval']
                         released = 'released'
                     else:
                         released = 'invalid'
@@ -1060,7 +1063,7 @@ if __name__ == '__main__':
                         close_computation()
                         cur_computation_auth = None
                         scheduler_task = None
-                        interval = MaxPulseInterval
+                        interval = _dispycos_config['max_pulse_interval']
                         if req == 'quit' or req == 'terminate':
                             _dispycos_config['serve'] = 0
                             if all(not server.task for server in _dispycos_servers):
@@ -1091,7 +1094,7 @@ if __name__ == '__main__':
                     close_computation()
                     cur_computation_auth = None
                     scheduler_task = None
-                    interval = MaxPulseInterval
+                    interval = _dispycos_config['max_pulse_interval']
                     pycos.Task(task_scheduler.close_peer, stask.location)
                     if _dispycos_config['serve'] > 0:
                         _dispycos_config['serve'] -= 1
@@ -1104,7 +1107,7 @@ if __name__ == '__main__':
                     close_computation()
                     cur_computation_auth = None
                     scheduler_task = None
-                    interval = MaxPulseInterval
+                    interval = _dispycos_config['max_pulse_interval']
                     if _dispycos_config['serve'] > 0:
                         _dispycos_config['serve'] -= 1
                         if not _dispycos_config['serve']:
