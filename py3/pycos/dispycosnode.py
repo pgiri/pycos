@@ -106,8 +106,7 @@ def _dispycos_server_proc():
             else:
                 pycos.logger.warning('invalid message to monitor ignored: %s', type(msg))
 
-    _dispycos_var = _dispycos_config['computation_location']
-    _dispycos_var = pycos.Location(_dispycos_var.addr, _dispycos_var.port)
+    _dispycos_var = pycos.deserialize(_dispycos_config['computation_location'])
     if (yield pycos.Pycos.instance().peer(_dispycos_var)):
         raise StopIteration(-1)
     pycos.Pycos.instance().peer_status(SysTask(_dispycos_peer_status))
@@ -331,7 +330,6 @@ def _dispycos_server_process(_dispycos_config, _dispycos_mp_queue, _dispycos_com
 
     _dispycos_config['_disable_servers'] = _dispycos_computation._disable_servers
     _dispycos_config['_server_setup'] = _dispycos_computation._server_setup
-    _dispycos_config['computation_location'] = _dispycos_computation._pulse_task.location
     _dispycos_task = pycos.SysTask(_dispycos_config.pop('server_proc'))
     assert isinstance(_dispycos_task, pycos.Task)
     computation_auth = _dispycos_config['computation_auth']
@@ -896,6 +894,10 @@ if __name__ == '__main__':
                     _dispycos_send_pipe.recv()
                 while _dispycos_recv_pipe.poll():  # clear pipe
                     _dispycos_recv_pipe.recv()
+            loc = _dispycos_config.pop('computation_location', None)
+            if loc:
+                loc = pycos.deserialize(loc)
+                pycos.Task(task_scheduler.close_peer, loc)
             for name in os.listdir(_dispycos_config['dest_path']):
                 if name.startswith('dispycosproc-') or name == 'dispycosscheduler':
                     continue
@@ -1009,6 +1011,8 @@ if __name__ == '__main__':
                         last_pulse = now
                         _dispycos_busy_time.value = int(time.time())
                         _dispycos_config['scheduler_task'] = pycos.serialize(scheduler_task)
+                        _dispycos_config['computation_location'] = pycos.serialize(
+                            computation._pulse_task.location)
                         _dispycos_config['computation_auth'] = computation._auth
                         interval = computation._pulse_interval
                         if interval < _dispycos_config['min_pulse_interval']:
