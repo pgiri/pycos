@@ -375,19 +375,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             _Peer._lock.release()
         self._lock.release()
 
-        # TODO: is there a better approach to find best suitable address to
-        # select (with netmask)?
-        def best_match(ip):
-            best = (0, self._addrinfos[0])
-            for addrinfo in self._addrinfos:
-                i, n = 0, min(len(ip), len(addrinfo.ip))
-                while i < n and ip[i] == addrinfo.ip[i]:
-                    i += 1
-                if i > best[0]:
-                    best = (i, addrinfo)
-            return best[1]
-
-        addrinfo = best_match(loc.addr)
+        addrinfo = self._ip_addrinfo_(loc.addr)
 
         if loc.port:
             req = _NetRequest('signature', kwargs={'version': __version__}, dst=loc)
@@ -543,7 +531,8 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         kwargs = {'file': os.path.basename(file), 'stat_buf': stat_buf,
                   'overwrite': overwrite is True, 'dir': dir, 'sep': os.sep}
         req = _NetRequest('send_file', kwargs=kwargs, dst=location, timeout=timeout)
-        sock = AsyncSocket(socket.socket(self.addrinfo.family, socket.SOCK_STREAM),
+        addrinfo = self._ip_addrinfo_(location.addr)
+        sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_STREAM),
                            keyfile=self._keyfile, certfile=self._certfile)
         if timeout:
             sock.settimeout(timeout)
@@ -679,6 +668,21 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 broadcast = '<broadcast>'
 
         return (node[0], ip_addr, ifn, broadcast, netmask)
+
+    # TODO: is there a better approach to find best suitable address to select
+    # (with netmask)?
+    def _ip_addrinfo_(self, ip):
+        """
+        Internal use only.
+        """
+        best = (0, self._addrinfos[0])
+        for addrinfo in self._addrinfos:
+            i, n = 0, min(len(ip), len(addrinfo.ip))
+            while i < n and ip[i] == addrinfo.ip[i]:
+                i += 1
+            if i > best[0]:
+                best = (i, addrinfo)
+        return best[1]
 
     def _acquaint_(self, peer_location, peer_signature, addrinfo, task=None):
         """
