@@ -2927,7 +2927,7 @@ class Channel(object):
 
         Can also be used on remote channel.
         """
-        return self._name[1:]
+        return self._name
 
     @staticmethod
     def locate(name, location=None, timeout=None):
