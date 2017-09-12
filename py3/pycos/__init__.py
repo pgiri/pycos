@@ -2449,7 +2449,7 @@ class Task(object):
 
     def __init__(self, *args, **kwargs):
         self._generator = Task.__get_generator(self, *args, **kwargs)
-        self._name = self._generator.__name__
+        self._name = '!' + self._generator.__name__
         self._id = id(self)
         self._state = None
         self._value = None

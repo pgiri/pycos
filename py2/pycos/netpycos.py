@@ -1316,7 +1316,7 @@ class SysTask(pycos.Task):
             Pycos.instance()
         self.__class__._pycos = self._scheduler = SysTask._pycos
         super(SysTask, self).__init__(*args, **kwargs)
-        self._name = '~' + self._name
+        self._name = '~' + self.name
 
     @staticmethod
     def locate(name, location=None, timeout=None):
