@@ -886,7 +886,14 @@ class Pycos(pycos.Pycos):
                     args = req.kwargs['args']
                     kwargs = req.kwargs['kwargs']
                     try:
-                        reply = Task(rti._method, *args, **kwargs)
+                        if rti._monitor:
+                            Task._pycos._lock.acquire()
+                            reply = Task(rti._method, *args, **kwargs)
+                            if reply:
+                                reply.notify(rti._monitor)
+                            Task._pycos._lock.release()
+                        else:
+                            reply = Task(rti._method, *args, **kwargs)
                     except:
                         reply = Exception(traceback.format_exc())
                 else:
@@ -928,6 +935,19 @@ class Pycos(pycos.Pycos):
                         if task and task._name == name:
                             reply = Task._pycos._monitor(monitor, task)
                         Task._pycos._lock.release()
+                yield conn.send_msg(serialize(reply))
+
+            elif req.name == 'rti_monitor':
+                rti = self._rtis.get(req.kwargs['name'], None)
+                if rti:
+                    monitor = req.kwargs.get('monitor', None)
+                    if isinstance(monitor, Task) or monitor is None:
+                        rti._monitor = monitor
+                        reply = 0
+                    else:
+                        reply = -1
+                else:
+                    reply = -1
                 yield conn.send_msg(serialize(reply))
 
             elif req.name == 'terminate_task':
@@ -1161,7 +1181,7 @@ class RTI(object):
     running tasks).
     """
 
-    __slots__ = ('_name', '_location', '_method')
+    __slots__ = ('_name', '_location', '_method', '_monitor')
 
     _pycos = None
     _sign = None
@@ -1180,6 +1200,7 @@ class RTI(object):
         if not RTI._pycos:
             RTI._pycos = Pycos.instance()
         self._location = None
+        self._monitor = None
 
     @property
     def location(self):
@@ -1248,6 +1269,20 @@ class RTI(object):
         else:
             RTI._pycos._lock.release()
             return 0
+
+    def monitor(self, task, timeout=MsgTimeout):
+        """Must be used with 'yeild' as 'reply = yield rti.monitor(task)'.
+
+        Install 'task' (a Task instance) as monitor for tasks created; i.e.,
+        'task' receives MonitorException messages. If call is successful, return
+        value is 0.
+        """
+        if not isinstance(task, Task) and monitor is not None:
+            raise StopIteration(-1)
+        req = _NetRequest('rti_monitor', kwargs={'name': self._name, 'monitor': task},
+                          dst=self._location, timeout=timeout)
+        reply = yield _Peer._sync_reply(req)
+        raise StopIteration(reply)
 
     def __call__(self, *args, **kwargs):
         """Must be used with 'yeild' as 'rtask = yield rti(*args, **kwargs)'.
