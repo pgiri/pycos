@@ -1361,11 +1361,12 @@ if platform.system() == 'Windows':
                         self._read_overlap.object = self._read_result = None
                         if not err:
                             err = winerror.ERROR_CONNECTION_INVALID
-                        if (err == winerror.ERROR_CONNECTION_INVALID or
-                            err == winerror.ERROR_OPERATION_ABORTED):
-                            self._read_task._proceed_('')
-                        else:
-                            self._read_task.throw(socket.error(err))
+                        if self._read_task:
+                            if (err == winerror.ERROR_CONNECTION_INVALID or
+                                err == winerror.ERROR_OPERATION_ABORTED):
+                                self._read_task._proceed_('')
+                            else:
+                                self._read_task.throw(socket.error(err))
                     else:
                         buf = self._read_result[:n]
                         self._read_overlap.object = self._read_result = None
@@ -1395,11 +1396,12 @@ if platform.system() == 'Windows':
                         self._write_overlap.object = self._write_result = None
                         if not err:
                             err = winerror.ERROR_CONNECTION_INVALID
-                        if (err == winerror.ERROR_CONNECTION_INVALID or
-                            err == winerror.ERROR_OPERATION_ABORTED):
-                            self._write_task._proceed_(0)
-                        else:
-                            self._write_task.throw(socket.error(err))
+                        if self._write_task:
+                            if (err == winerror.ERROR_CONNECTION_INVALID or
+                                err == winerror.ERROR_OPERATION_ABORTED):
+                                self._write_task._proceed_(0)
+                            else:
+                                self._write_task.throw(socket.error(err))
                     else:
                         self._write_overlap.object = None
                         self._write_task._proceed_(n)
@@ -1430,11 +1432,12 @@ if platform.system() == 'Windows':
                         self._read_overlap.object = self._read_result = None
                         if not err:
                             err = winerror.ERROR_CONNECTION_INVALID
-                        if (err == winerror.ERROR_CONNECTION_INVALID or
-                            err == winerror.ERROR_OPERATION_ABORTED):
-                            self._read_task._proceed_('')
-                        else:
-                            self._read_task.throw(socket.error(err))
+                        if self._read_task:
+                            if (err == winerror.ERROR_CONNECTION_INVALID or
+                                err == winerror.ERROR_OPERATION_ABORTED):
+                                self._read_task._proceed_('')
+                            else:
+                                self._read_task.throw(socket.error(err))
                     else:
                         self._read_result.append(buf[0][:n])
                         pending[0] -= n
@@ -1477,7 +1480,8 @@ if platform.system() == 'Windows':
                         self._write_overlap.object = self._write_result = None
                         if not err:
                             err = winerror.ERROR_CONNECTION_INVALID
-                        self._write_task.throw(socket.error(err))
+                        if self._write_task:
+                            self._write_task.throw(socket.error(err))
                     else:
                         self._write_result = self._write_result[n:]
                         if len(self._write_result) == 0:
@@ -1518,7 +1522,7 @@ if platform.system() == 'Windows':
                         self._read_overlap.object = self._read_result = None
                         if err == winerror.ERROR_OPERATION_ABORTED:
                             self._read_task = None
-                        else:
+                        elif self._read_task:
                             self._read_task.throw(socket.error(err))
                         return
 
