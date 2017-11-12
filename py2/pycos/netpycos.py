@@ -956,11 +956,7 @@ class Pycos(pycos.Pycos):
             elif req.name == 'rti_monitor':
                 rti = self._rtis.get(req.kwargs['name'], None)
                 if rti:
-                    monitor = req.kwargs.get('monitor', None)
-                    if isinstance(monitor, Task) or monitor is None:
-                        reply = RTI._set_monitor_(req.kwargs['mid'], monitor)
-                    else:
-                        reply = -1
+                    reply = RTI._set_monitor_(req.kwargs['mid'], req.kwargs['monitor'])
                 else:
                     reply = -1
                 yield conn.send_msg(serialize(reply))
@@ -1289,13 +1285,15 @@ class RTI(object):
         """
         if not isinstance(task, Task) and monitor is not None:
             raise StopIteration(-1)
-        req = _NetRequest('rti_monitor', kwargs={'name': self._name, 'monitor': task,
-                                                 'mid': self._mid},
+        if self._mid:
+            mid = self._mid
+        else:
+            mid = RTI._pycos._location
+        req = _NetRequest('rti_monitor', kwargs={'name': self._name, 'monitor': task, 'mid': mid},
                           dst=self._location, timeout=timeout)
         reply = yield _Peer._sync_reply(req)
-        if isinstance(reply, str):
-            self._mid = reply
-            reply = 0
+        if reply == 0:
+            self._mid = mid
         raise StopIteration(reply)
 
     def close(self, timeout=MsgTimeout):
@@ -1337,7 +1335,9 @@ class RTI(object):
         """Internal use only.
         """
         drop = [mid for (mid, monitor) in RTI._monitors.iteritems()
-                if monitor.location == location]
+                if monitor.location == location
+                # or mid == location
+                ]
         for mid in drop:
             RTI._monitors.pop(mid, None)
 
@@ -1345,15 +1345,10 @@ class RTI(object):
     def _set_monitor_(mid, monitor):
         """Internal use only.
         """
-        if not mid:
-            if not monitor:
-                return -1
-            while 1:
-                mid = hashlib.sha1(os.urandom(20)).hexdigest()
-                if mid not in RTI._monitors:
-                    break
+        if not isinstance(mid, Location) or not isinstance(monitor, Task):
+            return -1
         RTI._monitors[mid] = monitor
-        return mid
+        return 0
 
     def __getstate__(self):
         state = {'name': self._name}
