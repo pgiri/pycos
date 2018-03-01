@@ -69,7 +69,7 @@ task.sleep(2)`` to suspend execution for 2 seconds).
 
 pycos package conists of following modules:
 
-* :mod:`pycos` module provides API for tasks and asynchronous network
+* [pycos](pycos.rst) module provides API for tasks and asynchronous network
   programming. It includes following classes:
 
   * :ref:`Task` to create tasks, which are counterpart to threads in regular
