@@ -1,0 +1,465 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>pycos: Concurrent, Asynchronous, Distributed, Communicating Tasks with Python &mdash; pycos 4.6.0 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+
+  
+    <link rel="top" title="pycos 4.6.0 documentation" href="#"/>
+        <link rel="next" title="1. Introduction" href="intro.html"/>
+    <!-- Twitter -->
+    <script src="//platform.twitter.com/widgets.js" type="text/javascript"></script>
+    <!-- Google +1 -->
+    <script type="text/javascript">
+      (function() {
+      var po = document.createElement('script'); po.type = 'text/javascript'; po.async = true;
+      po.src = '//apis.google.com/js/plusone.js';
+      var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(po, s);
+      })();
+    </script>
+    <!-- Facebook -->
+    <div id="fb-root"></div>
+    <script type="text/javascript">
+      (function(d, s, id) {
+        var js, fjs = d.getElementsByTagName(s)[0];
+        if (d.getElementById(id)) return;
+        js = d.createElement(s); js.id = id;
+        js.src = "//connect.facebook.net/en_US/sdk.js#xfbml=1&version=v2.3";
+        fjs.parentNode.insertBefore(js, fjs);
+      }(document, 'script', 'facebook-jssdk'));
+    </script>
+    <style media="screen" type="text/css">
+      div#social {
+        font-size: 1px;
+        text-align: center;
+        margin: 10px auto;
+        padding: 10px;
+        display: inline-block;
+        background-color: #eaeaea;
+        border-radius: 8px;
+      }
+      div#social span {
+        display: inline-block;
+      }
+      div#social span + span {
+        margin-left: 15px;
+        padding-left: 10px;
+        border-left: 1px solid #999;
+      }
+    </style>
+
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="#" class="icon icon-home"> pycos
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                4.6
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <ul>
+<li class="toctree-l1"><a class="reference internal" href="intro.html">1. Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pycos.html">2. Asynchronous Concurrenct Programming (pycos)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="network.html">3. Asynchronous Network Programming (pycos)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="asyncfile.html">4. Asynchronous Files and Pipes (asyncfile)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="netpycos.html">5. Distributed Programming (netpycos)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="dispycos.html">6. Distributed Communicating Tasks (dispycos)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">7. Tutorial / Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="asyncoro2pycos.html">8. asyncoro2pycos</a></li>
+<li class="toctree-l1"><a class="reference internal" href="recommend.html">9. Contribute to / Recommend / Share pycos</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+        <a href="#">pycos</a>
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+ 
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="#">Docs</a> &raquo;</li>
+      
+    <li>pycos: Concurrent, Asynchronous, Distributed, Communicating Tasks with Python</li>
+      <li class="wy-breadcrumbs-aside">
+        
+          
+        
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <span class="target" id="pycos-index"></span><div class="section" id="pycos-concurrent-asynchronous-distributed-communicating-tasks-with-python">
+<h1>pycos: Concurrent, Asynchronous, Distributed, Communicating Tasks with Python<a class="headerlink" href="#pycos-concurrent-asynchronous-distributed-communicating-tasks-with-python" title="Permalink to this headline">¶</a></h1>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">pycos is renamed from asyncoro project to better reflect its
+functionality and to avoid confusion with asyncore module. See
+<a class="reference internal" href="asyncoro2pycos.html"><em>asyncoro2pycos</em></a> for details.</p>
+</div>
+<p>pycos is a Python framework for, <a class="reference internal" href="pycos.html"><em>concurrent</em></a>, asynchronous,
+<a class="reference internal" href="network.html"><em>network</em></a>, <a class="reference internal" href="netpycos.html"><em>distributed programming</em></a> and
+<a class="reference internal" href="dispycos.html"><em>distributed computing</em></a>, using generator functions,
+asynchronous completions and message passing. pycos can be used to create tasks
+with generator functions, similar to the way threads are created with functions
+with Python&#8217;s <a class="reference external" href="https://docs.python.org/2.7/library/threading.html">threading module</a>. Programs developed with
+pycos have <strong>same logic and structure</strong> as programs with threads, except for a
+few syntactic changes - mostly using <em>yield</em> with asynchronous completions that
+give control to pycos&#8217;s scheduler, which interleaves executions of generators,
+similar to the way an operating system executes multiple processes.</p>
+<p>Unlike threads, creating tasks with pycos is very efficient. Moreover, with
+pycos context switch occurs only when tasks use <em>yield</em> (typically with an
+asychronous call), so there is no need for locking and there is no overhead of
+unnecessary context switches.</p>
+<p>Unlike with other asynchronous frameworks, programming with pycos is rather
+straight forward; <a class="reference internal" href="pycos.html"><em>Asynchronous Concurrenct Programming (pycos)</em></a> describes 4 simple steps to convert programming
+with threads to programming with pycos.</p>
+<p>pycos features include:</p>
+<ul class="simple">
+<li>No callbacks or event loops! No need to lock critical sections either,</li>
+<li>Efficient polling mechanisms epoll, kqueue, Windows I/O Completion Ports
+(IOCP) for high performance and scalability,</li>
+<li>Asynchronous (non-blocking) <a class="reference internal" href="network.html"><em>sockets</em></a> and <a class="reference internal" href="asyncfile.html"><em>pipes</em></a>, for concurrent processing of I/O,</li>
+<li>SSL for security,</li>
+<li>Asynchronous locking primitives similar to Python threading module,</li>
+<li>Asynchronous timers and timeouts,</li>
+<li><a class="reference external" href="http://en.wikipedia.org/wiki/Message_passing">Message passing</a> for (local
+and remote) tasks to exchange messages one-to-one with <a class="reference external" href="http://en.wikipedia.org/wiki/Message_queue">Message Queue Pattern</a> or through broadcasting
+channels with <a class="reference external" href="http://en.wikipedia.org/wiki/Publish/subscribe">Publish-Subscribe Pattern</a>,</li>
+<li><a class="reference external" href="http://en.wikipedia.org/wiki/Location_transparency">Location transparency</a>
+with naming and locating (local and remote) resources,</li>
+<li>Monitoring and restarting of (local or remote) tasks, for fault detection and
+fault-tolerance,</li>
+<li>Distributing computation components (code and data) to execute
+<a class="reference internal" href="dispycos.html"><em>Distributed Communicating Tasks (dispycos)</em></a>, for wide range of use cases, covering <a class="reference external" href="https://en.wikipedia.org/wiki/Flynn%27s_taxonomy">SIMD, MISD, MIMD</a> system architectures at
+the process level, and <a class="reference external" href="http://pycos.sourceforge.io/dispycos.html#client-browser-interface">web interface</a> to
+monitor cluster/application status/performance; <a class="reference external" href="https://en.wikipedia.org/wiki/In-memory_processing">in-memory processing</a>, data streaming,
+real-time (live) analytics and <a class="reference internal" href="dispycos.html#cloud"><span>Cloud Computing</span></a> are supported as well,</li>
+<li>Remote execution of tasks for distributed programming with Remote Task
+Invocation <a class="reference internal" href="netpycos.html#rti"><span>RTI (Remote Task Invocation)</span></a> and message passing,</li>
+<li>Hot-swapping of task functions, for dynamic system reconfiguration,</li>
+<li>Thread pools with asynchronous task completions, for executing synchronous
+tasks, e.g., external library calls, such as reading standard input.</li>
+</ul>
+<p>For reference purposes, pycos with Python 2.7 on <a class="reference external" href="https://www.raspberrypi.org/products/model-b-plus/">Raspberry Pi Model B+</a> (compliment by James
+Philips of <a class="reference external" href="https://github.com/zunzun/pyeq2">pyeq2 project</a>) running the
+program:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">pycos</span>
+<span class="k">def</span> <span class="nf">task_proc</span><span class="p">(</span><span class="n">task</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="k">yield</span> <span class="n">task</span><span class="o">.</span><span class="n">suspend</span><span class="p">()</span>
+
+<span class="n">tasks</span> <span class="o">=</span> <span class="p">[</span><span class="n">pycos</span><span class="o">.</span><span class="n">Task</span><span class="p">(</span><span class="n">task_proc</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="mi">10000</span><span class="p">)]</span>
+<span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>  <span class="c1"># wait for tasks to run (and suspend)</span>
+<span class="k">for</span> <span class="n">task</span> <span class="ow">in</span> <span class="n">tasks</span><span class="p">:</span>
+    <span class="n">task</span><span class="o">.</span><span class="n">resume</span><span class="p">()</span>
+
+<span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="nb">open</span><span class="p">(</span><span class="s1">&#39;/proc/self/status&#39;</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;VmPeak&#39;</span><span class="p">):</span>
+        <span class="k">print</span><span class="p">(</span><span class="s1">&#39;VM Peak: </span><span class="si">%d</span><span class="s1"> MB&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="mi">1</span><span class="p">])</span> <span class="o">/</span> <span class="mi">1024</span><span class="p">))</span>
+    <span class="k">elif</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;VmHWM&#39;</span><span class="p">):</span>
+        <span class="k">print</span><span class="p">(</span><span class="s1">&#39;VM Max: </span><span class="si">%d</span><span class="s1"> MB&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="mi">1</span><span class="p">])</span> <span class="o">/</span> <span class="mi">1024</span><span class="p">))</span>
+    <span class="k">elif</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;VmStk&#39;</span><span class="p">):</span>
+        <span class="k">print</span><span class="p">(</span><span class="s1">&#39;VM Stack: </span><span class="si">%d</span><span class="s1"> MB&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="mi">1</span><span class="p">])</span> <span class="o">/</span> <span class="mi">1024</span><span class="p">))</span>
+</pre></div>
+</div>
+<p>shows that running 10,000 tasks takes about 23 MB of memory (with about 10 MB
+taken by modules used in pycos). Memory and time scale linearly: For 100,000
+tasks memory used is 116 MB, for 200,000 tasks it is 218 MB, for 300,000
+tasks it is 315 MB.</p>
+<p>pycos works with Python 2.7+ and Python 3.1+ and tested on Linux, Mac OS X and
+Windows; it may work on other platforms too. pycos works with <a class="reference external" href="http://pypy.org">PyPy</a> as well.</p>
+<div class="section" id="dependencies">
+<h2>Dependencies<a class="headerlink" href="#dependencies" title="Permalink to this headline">¶</a></h2>
+<p>pycos is implemented with standard modules in Python.</p>
+<p>If <a class="reference external" href="https://pypi.python.org/pypi/psutil">psutil</a> is available on nodes, node
+availability status (CPU, memory and disk) is sent in status messages, and shown
+in web browser so cluster/application performance can be monitored.</p>
+<p>Under Windows efficient polling notifier I/O Completion Ports is supported if
+<a class="reference external" href="http://sourceforge.net/projects/pywin32/files/pywin32/">pywin32</a> is
+available; otherwise, inefficient &#8216;select&#8217; notifier is used.</p>
+<p><a class="reference internal" href="dispycos.html#dispycosnode"><span>Node / Servers</span></a> sends node availability status (availability of CPU as percent,
+memory in bytes and disk space in bytes) at <em>pulse_interval</em> frequency if
+<a class="reference external" href="https://pypi.python.org/pypi/psutil">psutil</a> module is installed. This
+information may be useful to clients, for example, to analyze application
+performance, to filter nodes based on available resources etc.</p>
+<p>For IPv6, <a class="reference external" href="https://pypi.python.org/pypi/netifaces">netifaces</a> module is
+required with OS X. <cite>netifaces</cite> module is strongly recommended with Linux and
+Windows as well (for both IPv4 and IPv6). For IPv6 with Windows, <a class="reference external" href="https://pypi.python.org/pypi/win_inet_pton">win_inet_pton</a> module is required with Python
+2.7 (but not required with Python 3).</p>
+</div>
+<div class="section" id="download-installation">
+<h2>Download/Installation<a class="headerlink" href="#download-installation" title="Permalink to this headline">¶</a></h2>
+<ul>
+<li><p class="first">pycos package is available in <a class="reference external" href="https://pypi.python.org/pypi/pycos">Python Package Index (PyPI)</a> so it can be installed with:</p>
+<div class="highlight-python"><div class="highlight"><pre>python -m pip install pycos
+</pre></div>
+</div>
+</li>
+<li><p class="first"><a class="reference internal" href="dispycos.html#dockercontainer"><span>Docker Container</span></a> describes how to build <a class="reference external" href="https://www.docker.com">Docker</a> image and run pycos modules in containers.</p>
+</li>
+<li><p class="first">pycos can also be downloaded from <a class="reference external" href="http://sourceforge.net/projects/pycos/files">Sourceforge Files</a>. &#8216;py2&#8217; directory contains
+files to be used with Python 2.7+ and &#8216;py3&#8217; contains files to be used with
+Python 3.1+. To use pycos without installing, rename &#8216;py2&#8217; to &#8216;pycos&#8217; (to use
+with Python 2.7+); it can then be used from parent directory of &#8216;pycos&#8217;.</p>
+</li>
+</ul>
+</div>
+<div class="section" id="examples">
+<h2>Examples<a class="headerlink" href="#examples" title="Permalink to this headline">¶</a></h2>
+<p>Examples illustrating some of the features of pycos are installed in &#8216;examples&#8217;
+directory under where pycos module is installed, which can be obtained with the
+program:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">os</span><span class="o">,</span> <span class="nn">pycos</span>
+<span class="k">print</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">pycos</span><span class="o">.</span><span class="n">__file__</span><span class="p">),</span> <span class="s1">&#39;examples&#39;</span><span class="p">))</span>
+</pre></div>
+</div>
+<p>See <a class="reference download internal" href="_downloads/README" download=""><code class="xref download docutils literal"><span class="pre">README</span></code></a> file in that directory for brief
+description of each of the files.</p>
+<div class="section" id="citation">
+<h3>Citation<a class="headerlink" href="#citation" title="Permalink to this headline">¶</a></h3>
+<p>If you use pycos in academic/research work, please cite pycos as:</p>
+<div class="highlight-python"><div class="highlight"><pre>Giridhar Pemmasani, &quot;pycos: Concurrent, Asynchronous, Distributed,
+  Communicating Tasks with Python&quot;, http://pycos.sourceforge.io, 2017.
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="contents">
+<h2>Contents<a class="headerlink" href="#contents" title="Permalink to this headline">¶</a></h2>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="intro.html">1. Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pycos.html">2. Asynchronous Concurrenct Programming (pycos)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="pycos.html#examples">2.1. Examples</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pycos.html#pycos-scheduler">2.2. Pycos scheduler</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pycos.html#task">2.3. Task</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pycos.html#locking-primitives">2.4. Locking Primitives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pycos.html#channel">2.5. Channel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pycos.html#message-passing">2.6. Message Passing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pycos.html#asyncthreadpool">2.7. AsyncThreadPool</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="network.html">3. Asynchronous Network Programming (pycos)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="network.html#examples">3.1. Examples</a></li>
+<li class="toctree-l2"><a class="reference internal" href="network.html#asynchronous-socket">3.2. Asynchronous Socket</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="asyncfile.html">4. Asynchronous Files and Pipes (asyncfile)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="asyncfile.html#examples">4.1. Examples</a></li>
+<li class="toctree-l2"><a class="reference internal" href="asyncfile.html#asynchronous-file">4.2. Asynchronous File</a></li>
+<li class="toctree-l2"><a class="reference internal" href="asyncfile.html#asynchronous-pipe">4.3. Asynchronous Pipe</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="netpycos.html">5. Distributed Programming (netpycos)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="netpycos.html#examples">5.1. Examples</a></li>
+<li class="toctree-l2"><a class="reference internal" href="netpycos.html#location">5.2. Location</a></li>
+<li class="toctree-l2"><a class="reference internal" href="netpycos.html#pycos">5.3. Pycos</a></li>
+<li class="toctree-l2"><a class="reference internal" href="netpycos.html#distributed-tasks">5.4. Distributed Tasks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="netpycos.html#distributed-channels">5.5. Distributed Channels</a></li>
+<li class="toctree-l2"><a class="reference internal" href="netpycos.html#rti-remote-task-invocation">5.6. RTI (Remote Task Invocation)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="netpycos.html#ssl-security-encryption">5.7. SSL (Security / Encryption)</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="dispycos.html">6. Distributed Communicating Tasks (dispycos)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="dispycos.html#examples">6.1. Examples</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dispycos.html#node-servers">6.2. Node / Servers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dispycos.html#scheduler">6.3. Scheduler</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dispycos.html#computation">6.4. Computation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dispycos.html#dispycosstatus">6.5. DispycosStatus</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dispycos.html#dispycosnodeavailinfo">6.6. DispycosNodeAvailInfo</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dispycos.html#dispycosnodeallocate">6.7. DispycosNodeAllocate</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dispycos.html#http-server">6.8. HTTP Server</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dispycos.html#example">6.9. Example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dispycos.html#client-browser-interface">6.10. Client (Browser) Interface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dispycos.html#docker-container">6.11. Docker Container</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dispycos.html#cloud-computing">6.12. Cloud Computing</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">7. Tutorial / Examples</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tutorial.html#asynchronous-concurrent-programming">7.1. Asynchronous Concurrent Programming</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorial.html#asynchronous-network-programming">7.2. Asynchronous Network Programming</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorial.html#distributed-programming">7.3. Distributed Programming</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorial.html#distributed-communicating-tasks">7.4. Distributed Communicating Tasks</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="asyncoro2pycos.html">8. asyncoro2pycos</a></li>
+<li class="toctree-l1"><a class="reference internal" href="recommend.html">9. Contribute to / Recommend / Share pycos</a></li>
+</ul>
+</div>
+<!-- Piwik -->
+<script type="text/javascript">
+var _paq = _paq || [];
+_paq.push(["trackPageView"]);
+_paq.push(["enableLinkTracking"]);
+
+(function() {
+  var u=(("https:" == document.location.protocol) ? "https" : "http") + "://pycos.sourceforge.io/piwik/";
+  _paq.push(["setTrackerUrl", u+"piwik.php"]);
+  _paq.push(["setSiteId", "3"]);
+  var d=document, g=d.createElement("script"), s=d.getElementsByTagName("script")[0]; g.type="text/javascript";
+  g.defer=true; g.async=true; g.src=u+"piwik.js"; s.parentNode.insertBefore(g,s);
+})();
+</script>
+<!-- End Piwik Code --></div>
+<div class="section" id="indices-and-tables">
+<h2>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Permalink to this headline">¶</a></h2>
+<ul class="simple">
+<li><a class="reference internal" href="genindex.html"><span>Index</span></a></li>
+<li><a class="reference internal" href="py-modindex.html"><span>Module Index</span></a></li>
+<li><a class="reference internal" href="search.html"><span>Search Page</span></a></li>
+</ul>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="intro.html" class="btn btn-neutral float-right" title="1. Introduction" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2014, Giridhar Pemmasani (pgiri@yahoo.com).
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'4.6.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>
