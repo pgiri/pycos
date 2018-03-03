@@ -1,6 +1,12 @@
 pycos
 ######
 
+Note::
+
+    This project used to be hosted at sourceforge.net; however,
+    sourceforge has been unreliable for the past few weeks, so (for now)
+    documentation has been uploaded to github as well.
+
 `pycos <https://pgiri.github.io/pycos/index.html>`_ is a Python framework for
 asynchronous, concurrent, distributed programming with tasks, asynchronous
 completions and message passing.
