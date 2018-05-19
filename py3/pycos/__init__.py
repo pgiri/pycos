@@ -3898,6 +3898,7 @@ class Pycos(object, metaclass=Singleton):
         self._quit = True
         self._lock.release()
         if self == Task._pycos:
+            Task._pycos = None
             logger.debug('pycos terminated')
         else:
             logger.debug('pycos %s terminated', self.location)
