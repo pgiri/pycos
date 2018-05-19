@@ -50,12 +50,16 @@ class HTTPServer(object):
                   dispycos.Scheduler.NodeInitialized: 'Initialized',
                   dispycos.Scheduler.NodeClosed: 'Closed',
                   dispycos.Scheduler.NodeIgnore: 'Ignore',
-                  dispycos.Scheduler.NodeDisconnected: 'Disconnected'}
+                  dispycos.Scheduler.NodeDisconnected: 'Disconnected',
+                  dispycos.Scheduler.NodeSuspended: 'Suspended',
+                  dispycos.Scheduler.NodeResumed: 'Initialized'}
     ServerStatus = {dispycos.Scheduler.ServerDiscovered: 'Discovered',
                     dispycos.Scheduler.ServerInitialized: 'Initialized',
                     dispycos.Scheduler.ServerClosed: 'Closed',
                     dispycos.Scheduler.ServerIgnore: 'Ignore',
-                    dispycos.Scheduler.ServerDisconnected: 'Disconnected'}
+                    dispycos.Scheduler.ServerDisconnected: 'Disconnected',
+                    dispycos.Scheduler.ServerSuspended: 'Suspended',
+                    dispycos.Scheduler.ServerResumed: 'Initialized'}
 
     ip_re = re.compile(r'^((\d+\.\d+\.\d+\.\d+)|([0-9a-f:]+))$')
     loc_re = re.compile(r'^((\d+\.\d+\.\d+\.\d+)|([0-9a-f:]+)):(\d+)$')
@@ -99,7 +103,9 @@ class HTTPServer(object):
             return nodes
 
         def do_GET(self):
-            if self.path == '/cluster_updates':
+            client_request = self.path[1:]
+
+            if client_request == 'cluster_updates':
                 self._ctx._lock.acquire()
                 nodes = self.__class__.json_encode_nodes(self._ctx._updates)
                 self._ctx._updates.clear()
@@ -109,7 +115,8 @@ class HTTPServer(object):
                 self.end_headers()
                 self.wfile.write(json.dumps(nodes).encode())
                 return
-            elif self.path == '/cluster_status':
+
+            elif client_request == 'cluster_status':
                 self._ctx._lock.acquire()
                 nodes = self.__class__.json_encode_nodes(self._ctx._nodes)
                 self._ctx._lock.release()
@@ -118,9 +125,9 @@ class HTTPServer(object):
                 self.end_headers()
                 self.wfile.write(json.dumps(nodes).encode())
                 return
+
             else:
-                parsed_path = urlparse(self.path)
-                path = parsed_path.path.lstrip('/')
+                path = urlparse(client_request).path
                 if not path or path == 'index.html':
                     path = 'cluster.html'
                 path = os.path.join(self.DocumentRoot, path)
@@ -152,14 +159,17 @@ class HTTPServer(object):
                     pycos.logger.debug(traceback.format_exc())
                 self.send_error(404)
                 return
-            pycos.logger.debug('Bad GET request from %s: %s', self.client_address[0], self.path)
+            pycos.logger.debug('Bad GET request from %s: %s',
+                               self.client_address[0], client_request)
             self.send_error(400)
             return
 
         def do_POST(self):
             form = cgi.FieldStorage(fp=self.rfile, headers=self.headers,
                                     environ={'REQUEST_METHOD': 'POST'})
-            if self.path == '/server_info':
+            client_request = self.path[1:]
+
+            if client_request == 'server_info':
                 server = None
                 max_tasks = 0
                 for item in form.list:
@@ -203,7 +213,8 @@ class HTTPServer(object):
                 self.end_headers()
                 self.wfile.write(json.dumps(info).encode())
                 return
-            elif self.path == '/node_info':
+
+            elif client_request == 'node_info':
                 addr = None
                 for item in form.list:
                     if item.name == 'host':
@@ -243,7 +254,8 @@ class HTTPServer(object):
                 self.end_headers()
                 self.wfile.write(json.dumps(info).encode())
                 return
-            elif self.path == '/terminate_tasks':
+
+            elif client_request == 'terminate_tasks':
                 tasks = []
                 for item in form.list:
                     if item.name == 'task':
@@ -278,7 +290,7 @@ class HTTPServer(object):
                 self.wfile.write(json.dumps(terminated).encode())
                 return
 
-            elif self.path == '/update':
+            elif client_request == 'update':
                 for item in form.list:
                     if item.name == 'timeout':
                         try:
@@ -299,9 +311,45 @@ class HTTPServer(object):
                 self.send_header('Content-Type', 'text/html')
                 self.end_headers()
                 return
-            pycos.logger.debug('Bad POST request from %s: %s', self.client_address[0], self.path)
-            self.send_error(400)
-            return
+
+            elif (client_request == 'suspend_node' or client_request == 'resume_node'):
+                method = getattr(self._ctx.computation, client_request)
+                if not method:
+                    return
+                nodes = []
+                for item in form.list:
+                    if item.name == 'nodes':
+                        nodes = json.loads(item.value)
+                        break
+                for node in nodes:
+                    method(node)
+                return
+
+            elif (client_request == 'suspend_server' or client_request == 'resume_server'):
+                method = getattr(self._ctx.computation, client_request)
+                if not method:
+                    return
+                servers = []
+                for item in form.list:
+                    if item.name == 'servers':
+                        servers = json.loads(item.value)
+                        break
+                for loc in servers:
+                    loc = loc.split(':')
+                    if len(loc) != 2:
+                        continue
+                    try:
+                        loc = pycos.Location(loc[0], loc[1])
+                    except:
+                        continue
+                    method(loc)
+                return
+
+            else:
+                pycos.logger.debug('Bad POST request from %s: %s',
+                                   self.client_address[0], client_request)
+                self.send_error(400)
+                return
 
     def __init__(self, computation, host='', port=8181, poll_sec=10, DocumentRoot=None,
                  keyfile=None, certfile=None, show_task_args=True):
@@ -367,7 +415,8 @@ class HTTPServer(object):
                             node.tasks_submitted += 1
                             node.update_time = time.time()
                             self._updates[node.addr] = node
-                elif msg.status == dispycos.Scheduler.ServerInitialized:
+                elif (msg.status == dispycos.Scheduler.ServerInitialized or
+                      msg.status == dispycos.Scheduler.ServerResumed):
                     node = self._nodes.get(msg.info.addr)
                     if node:
                         server = node.servers.get(str(msg.info), None)
@@ -378,7 +427,8 @@ class HTTPServer(object):
                         node.update_time = time.time()
                         self._updates[node.addr] = node
                 elif (msg.status == dispycos.Scheduler.ServerClosed or
-                      msg.status == dispycos.Scheduler.ServerDisconnected):
+                      msg.status == dispycos.Scheduler.ServerDisconnected or
+                      msg.status == dispycos.Scheduler.ServerSuspended):
                     node = self._nodes.get(msg.info.addr)
                     if node:
                         server = node.servers.get(str(msg.info), None)
@@ -386,7 +436,8 @@ class HTTPServer(object):
                             server.status = HTTPServer.ServerStatus[msg.status]
                             node.update_time = time.time()
                             self._updates[node.addr] = node
-                elif msg.status == dispycos.Scheduler.NodeInitialized:
+                elif (msg.status == dispycos.Scheduler.NodeInitialized or
+                      msg.status == dispycos.Scheduler.NodeResumed):
                     node = self._nodes.get(msg.info.addr)
                     if not node:
                         node = HTTPServer._Node(msg.info.name, msg.info.addr)
@@ -397,7 +448,8 @@ class HTTPServer(object):
                     node.update_time = time.time()
                     self._updates[node.addr] = node
                 elif (msg.status == dispycos.Scheduler.NodeClosed or
-                      msg.status == dispycos.Scheduler.NodeDisconnected):
+                      msg.status == dispycos.Scheduler.NodeDisconnected or
+                      msg.status == dispycos.Scheduler.NodeSuspended):
                     node = self._nodes.get(msg.info.addr)
                     if node:
                         node.status = HTTPServer.NodeStatus[msg.status]

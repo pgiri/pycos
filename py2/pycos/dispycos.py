@@ -481,6 +481,32 @@ class Computation(object):
             self.scheduler.send({'req': 'enable_server', 'auth': self._auth, 'server': location,
                                  'setup_args': setup_args})
 
+    def suspend_node(self, location):
+        """Suspend submitting jobs (tasks) at this node. Any currently running
+        tasks are left running.
+        """
+        if self.scheduler:
+            self.scheduler.send({'req': 'suspend_node', 'auth': self._auth, 'server': location})
+
+    def resume_node(self, location):
+        """Resume submitting jobs (tasks) at this node.
+        """
+        if self.scheduler:
+            self.scheduler.send({'req': 'enable_node', 'auth': self._auth, 'server': location})
+
+    def suspend_server(self, location):
+        """Suspend submitting jobs (tasks) at this server. Any currently running
+        tasks are left running.
+        """
+        if self.scheduler:
+            self.scheduler.send({'req': 'suspend_server', 'auth': self._auth, 'server': location})
+
+    def resume_server(self, location):
+        """Resume submitting jobs (tasks) at this server.
+        """
+        if self.scheduler:
+            self.scheduler.send({'req': 'enable_server', 'auth': self._auth, 'server': location})
+
     def _run_request(self, request, where, cpu, gen, *args, **kwargs):
         """Internal use only.
         """
@@ -572,6 +598,8 @@ class Scheduler(object):
     NodeIgnore = 4
     NodeDisconnected = 5
     NodeAbandoned = 6
+    NodeSuspended = 7
+    NodeResumed = 8
 
     ServerDiscovered = 11
     ServerInitialized = 12
@@ -579,6 +607,8 @@ class Scheduler(object):
     ServerIgnore = 14
     ServerDisconnected = 15
     ServerAbandoned = 16
+    ServerSuspended = 17
+    ServerResumed = 18
 
     TaskCreated = 20
     TaskAbandoned = 21
@@ -726,8 +756,10 @@ class Scheduler(object):
                     continue
                 server = node.servers.get(rtask.location, None)
                 if not server:
-                    logger.warning('server "%s" is invalid', rtask.location)
-                    continue
+                    server = node.disabled_servers.get(rtask.location, None)
+                    if not server:
+                        logger.warning('server "%s" is invalid', rtask.location)
+                        continue
                 node.last_pulse = now
                 info = server.rtasks.pop(rtask, None)
                 if not info:
@@ -1255,30 +1287,78 @@ class Scheduler(object):
 
             if req == 'enable_server':
                 loc = msg.get('server', None)
-                if not loc:
+                if not isinstance(loc, pycos.Location):
                     continue
                 node = self._nodes.get(loc.addr, None)
                 if not node:
                     continue
                 server = node.disabled_servers.get(loc, None)
-                if not server or not server.task or server.status != Scheduler.ServerDiscovered:
+                if not server or not server.task:
                     continue
-                args = msg.get('setup_args', ())
-                server.task.send({'req': 'enable_server', 'setup_args': args,
-                                  'auth': self._cur_computation._auth})
+                if server.status == Scheduler.ServerDiscovered:
+                    args = msg.get('setup_args', ())
+                    server.task.send({'req': 'enable_server', 'setup_args': args,
+                                      'auth': self._cur_computation._auth})
+                elif server.status == Scheduler.ServerSuspended:
+                    node.disabled_servers.pop(loc)
+                    node.servers[loc] = server
+                    server.status = Scheduler.ServerInitialized
+                    if self._cur_computation.status_task:
+                        info = DispycosStatus(Scheduler.ServerResumed, loc)
+                        self._cur_computation.status_task.send(info)
 
             elif req == 'enable_node':
                 addr = msg.get('addr', None)
                 if not addr:
                     continue
-                node = self._disabled_nodes.pop(addr, None)
+                node = self._disabled_nodes.get(addr, None)
+                if not node or not node.task:
+                    continue
+                if node.status == Scheduler.NodeDiscovered:
+                    setup_args = msg.get('setup_args', ())
+                    SysTask(self.__init_node, node, setup_args=setup_args)
+                elif node.status == Scheduler.NodeSuspended:
+                    self._disabled_nodes.pop(addr, None)
+                    self._nodes[node.addr] = node
+                    node.status = Scheduler.NodeInitialized
+                    if self._cur_computation.status_task:
+                        info = DispycosNodeInfo(node.name, node.addr, node.cpus, node.platform,
+                                                node.avail_info)
+                        info = DispycosStatus(Scheduler.NodeResumed, info)
+                        self._cur_computation.status_task.send(info)
+
+            elif req == 'suspend_server':
+                loc = msg.get('server', None)
+                if not isinstance(loc, pycos.Location):
+                    continue
+
+                node = self._nodes.get(loc.addr, None)
                 if not node:
                     continue
-                if not node or not node.task or node.status != Scheduler.NodeDiscovered:
+                server = node.servers.get(loc, None)
+                if not server or not server.task or server.status != Scheduler.ServerInitialized:
                     continue
-                setup_args = msg.get('setup_args', ())
-                self._nodes[node.addr] = node
-                SysTask(self.__init_node, node, setup_args=setup_args)
+                node.servers.pop(loc)
+                node.disabled_servers[loc] = server
+                server.status = Scheduler.ServerSuspended
+                if self._cur_computation.status_task:
+                    info = DispycosStatus(server.status, loc)
+                    self._cur_computation.status_task.send(info)
+
+            elif req == 'suspend_node':
+                addr = msg.get('addr', None)
+                if not addr:
+                    continue
+                node = self._nodes.pop(addr, None)
+                if not node or not node.task:
+                    continue
+                self._disabled_nodes[node.addr] = node
+                node.status = Scheduler.NodeSuspended
+                if self._cur_computation.status_task:
+                    info = DispycosNodeInfo(node.name, node.addr, node.cpus, node.platform,
+                                            node.avail_info)
+                    info = DispycosStatus(node.status, info)
+                    self._cur_computation.status_task.send(info)
 
             elif req == 'nodes':
                 if isinstance(client, Task):

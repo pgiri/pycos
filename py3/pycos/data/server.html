@@ -229,6 +229,18 @@
         });
 
 
+        $('#server-execute').click(function() {
+          $('#messages').html('');
+          var servers = [server_location];
+          $.ajax({
+            url: '/' + server_action,
+            method: 'POST',
+            data: {servers: JSON.stringify(servers)},
+            dataType: 'json',
+            timeout: 5000
+          });
+        });
+
       });
 
     //]]>
@@ -321,6 +333,18 @@
       </div>
 
       <hr style="margin:10px;" />
+
+      <div style="margin:10px auto;">
+        <span class="border" style="display:inline-block;">
+	  <strong>This Server : </strong>
+          <select name="server-action" style="margin-left:5px;">
+            <option value="" selected="selected">Select</option>
+            <option value="suspend_server">Suspend</option>
+            <option value="resume_server">Resume</option>
+          </select>
+          <button type="button" id="server-execute" style="margin-left:5px;">Execute</button>
+        </span>
+      </div>
 
       <div>
         <ul id="messages" style="margin:1em auto;display:inline-block;"><li></li></ul>

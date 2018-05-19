@@ -61,7 +61,8 @@
 
               var rows = '';
               $.each(node.servers, function(i, server) {
-                rows += '<tr><td>' + (i + 1) + '</td>' +
+                rows += '<tr>' +
+                  '<td><input type="checkbox" name="server_select" value="' + server.location + '" /></td>' +
                   '<td><a href="server.html?location=' + server.location + '" ' + 'title="View tasks on ' +
                   server.location + '">' + server.location + '</a></td><td>' +
                   server.tasks_submitted + '</td><td>' +
@@ -163,6 +164,36 @@
           }
         });
 
+        $('#server-execute').click(function() {
+          $('#messages').html('');
+          var server_action = $('select[name="server-action"]').val();
+          var servers = [];
+          $('input[type="checkbox"][name="server_select"]').each(function(i) {
+            if ($(this).prop('checked')) {
+              servers.push($(this).val().trim());
+              $(this).prop('checked', false);
+            }
+          });
+          if (servers.length == 0) {
+            return false;
+          }
+
+          $.ajax({
+            url: '/' + server_action,
+            method: 'POST',
+            data: {servers: JSON.stringify(servers)},
+            dataType: 'json',
+            timeout: 5000
+          });
+        });
+
+        $('#all-servers').click(function() {
+	  var check = $(this).prop('checked') == true;
+          $('input[type="checkbox"][name="server_select"]').each(function(i) {
+            $(this).prop('checked', check);
+          });
+	});
+
       });
 
     //]]>
@@ -230,7 +261,8 @@
           <caption><span class="border" style="display:inline-block;">Servers</span></caption>
           <thead>
             <tr>
-	      <th rowspan="2"></th><th rowspan="2">Server</th><th colspan="3">Tasks</th>
+	      <th rowspan="2"><input type="checkbox" id="all-servers" /></th>
+	      <th rowspan="2">Server</th><th colspan="3">Tasks</th>
               <th rowspan="2">Last Update</th>
 	    </tr>
 	    <tr>
@@ -263,6 +295,18 @@
       </div>
 
       <hr style="margin:10px;" />
+
+      <div style="margin:10px auto;">
+        <span class="border" style="display:inline-block;">
+	  <strong>Selected Servers : </strong>
+          <select name="server-action" style="margin-left:5px;">
+            <option value="" selected="selected">Select</option>
+            <option value="suspend_server">Suspend Server</option>
+            <option value="resume_server">Resume Server</option>
+          </select>
+          <button type="button" id="server-execute" style="margin-left:5px;">Execute</button>
+        </span>
+      </div>
 
       <div>
         <ul id="messages" style="margin:1em auto;display:inline-block;"><li></li></ul>

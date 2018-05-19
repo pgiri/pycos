@@ -44,7 +44,8 @@
         var rows = '';
         $.each(sorted_keys, function(i, key) {
           var node = nodes[key];
-          rows += '<tr><td>' + (i + 1) + '</td>' +
+          rows += '<tr>' +
+            '<td><input type="checkbox" name="node_select" value="' + node.addr + '" /></td>' +
             '<td><a href="node.html?host=' + node.addr + '" ' + 'title="View servers on ' +
             node.addr + '">' + node.addr + '</a></td><td>' + node.name + '</td><td>' +
             node.servers + '</td>';
@@ -169,6 +170,36 @@
 
         });
 
+        $('#node-execute').click(function() {
+          $('#messages').html('');
+          var node_action = $('select[name="node-action"]').val();
+          var nodes = [];
+          $('input[type="checkbox"][name="node_select"]').each(function(i) {
+            if ($(this).prop('checked')) {
+              nodes.push($(this).val().trim());
+              $(this).prop('checked', false);
+            }
+          });
+          if (nodes.length == 0) {
+            return false;
+          }
+
+          $.ajax({
+            url: '/' + node_action,
+            method: 'POST',
+            data: {nodes: JSON.stringify(nodes)},
+            dataType: 'json',
+            timeout: 5000
+          });
+        });
+
+        $('#all-nodes').click(function() {
+	  var check = $(this).prop('checked') == true;
+          $('input[type="checkbox"][name="node_select"]').each(function(i) {
+            $(this).prop('checked', check);
+          });
+	});
+
       });
     //]]>
     </script>
@@ -206,7 +237,8 @@
         <caption><span class="border" style="display:inline-block;">Nodes</span></caption>
         <thead>
           <tr>
-            <th rowspan="2"></th><th rowspan="2">IP Address</th><th rowspan="2">Name</th>
+            <th rowspan="2"><input type="checkbox" id="all-nodes" /></th>
+	    <th rowspan="2">IP Address</th><th rowspan="2">Name</th>
 	    <th rowspan="2">Servers</th><th colspan="4">Available</th>
 	    <th colspan="3">Tasks</th><th rowspan="2">Last Update</th>
 	  </tr>
@@ -250,6 +282,19 @@
       </div>
 
       <hr style="margin:10px;" />
+
+      <div style="margin:10px auto;">
+        <span class="border" style="display:inline-block;">
+	  <strong>Selected Nodes : </strong>
+          <select name="node-action" style="margin-left:5px;">
+            <option value="" selected="selected">Select</option>
+            <option value="suspend_node">Suspend Node</option>
+            <option value="resume_node">Resume Node</option>
+          </select>
+          <button type="button" id="node-execute" style="margin-left:5px;">Execute</button>
+        </span>
+      </div>
+
       <div>
         <ul id="messages" style="margin:1em auto;display:inline-block;"><li></li></ul>
       </div>
