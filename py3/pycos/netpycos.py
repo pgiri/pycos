@@ -275,6 +275,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             Pycos._pycos.finish()
             super(self.__class__, self).finish()
             Pycos._instance = None
+            RTI._pycos = _Peer._pycos = SysTask._pycos = None
             for addrinfo in self._addrinfos:
                 addrinfo.tcp_sock.close()
                 if addrinfo.udp_sock:

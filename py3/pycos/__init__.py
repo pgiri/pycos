@@ -3899,6 +3899,8 @@ class Pycos(object, metaclass=Singleton):
         self._lock.release()
         if self == Task._pycos:
             Task._pycos = None
+            Channel._pycos = None
+            Pycos._instance = None
             logger.debug('pycos terminated')
         else:
             logger.debug('pycos %s terminated', self.location)
