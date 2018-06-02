@@ -224,7 +224,10 @@ class Pycos(pycos.Pycos):
                 mreq = socket.inet_pton(addrinfo.family, addrinfo.broadcast)
                 mreq += struct.pack('@I', addrinfo.ifn)
                 udp_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
-                udp_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+                try:
+                    udp_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+                except Exception:
+                    pass
             udp_sock.bind((bind_addr, udp_port))
             addrinfo.udp_sock = udp_sock
             logger.info('UDP server @ %s:%s', bind_addr, udp_sock.getsockname()[1])
