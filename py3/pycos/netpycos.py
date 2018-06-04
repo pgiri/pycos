@@ -92,7 +92,8 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
     """
 
     _instance = None
-    _pycos = pycos.Pycos.instance()
+    _pycos = None
+    _pycos_class = pycos.Pycos
 
     class AddrInfo(object):
         def __init__(self, family, ip, ifn, broadcast, netmask):
@@ -110,6 +111,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                  secret='', certfile=None, keyfile=None, notifier=None,
                  dest_path=None, max_file_size=None):
 
+        Pycos._pycos = Pycos._pycos_class.instance()
         self.__class__._instance = self
         super(self.__class__, self).__init__()
         self._rtis = {}
@@ -275,17 +277,13 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
 
     def finish(self):
         if Pycos._instance:
-            Pycos._pycos.finish()
-            super(self.__class__, self).finish()
-            Pycos._instance = None
+            Pycos._pycos.finish(cleanup=False)
+            super(self.__class__, self).finish(cleanup=True)
             RTI._pycos = _Peer._pycos = SysTask._pycos = None
-            for addrinfo in self._addrinfos:
-                addrinfo.tcp_sock.close()
-                if addrinfo.udp_sock:
-                    addrinfo.udp_sock.close()
-            self._addrinfos = []
-            self._notifier.terminate()
-            logger.shutdown()
+            Pycos._pycos._schedulers.clear()
+            Pycos._instance = None
+            Pycos._pycos = None
+            Task._pycos = Channel._pycos = Pycos._pycos_class._instance = None
 
     def locate(self, name, timeout=None):
         """Must be used with 'yield' as
@@ -724,7 +722,10 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         task.set_daemon()
         sock = addrinfo.udp_sock
         while 1:
-            msg, addr = yield sock.recvfrom(1024)
+            try:
+                msg, addr = yield sock.recvfrom(1024)
+            except GeneratorExit:
+                break
             if not msg.startswith(b'ping:'):
                 logger.warning('ignoring UDP message from %s:%s', addr[0], addr[1])
                 continue
@@ -755,6 +756,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
 
             if not peer:
                 SysTask(self._acquaint_, peer_location, ping_info['signature'], addrinfo)
+        sock.close()
 
     def _tcp_proc(self, addrinfo, task=None):
         """
@@ -774,6 +776,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 logger.debug(traceback.format_exc())
                 continue
             SysTask(self._tcp_conn_proc, conn, addrinfo)
+        sock.close()
 
     def _tcp_conn_proc(self, conn, addrinfo, task=None):
         """

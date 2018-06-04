@@ -1878,6 +1878,8 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
                 fd._notifier = None
             self._fds.clear()
             self._timeouts = []
+            if hasattr(self._poller, 'close'):
+                self._poller.close()
             if hasattr(self._poller, 'terminate'):
                 self._poller.terminate()
             self._poller = None
@@ -3898,9 +3900,6 @@ class Pycos(object, metaclass=Singleton):
         self._quit = True
         self._lock.release()
         if self == Task._pycos:
-            Task._pycos = None
-            Channel._pycos = None
-            Pycos._instance = None
             logger.debug('pycos terminated')
         else:
             logger.debug('pycos %s terminated', self.location)
@@ -3951,17 +3950,23 @@ class Pycos(object, metaclass=Singleton):
             self._lock.release()
             self._notifier.interrupt()
             self._complete.wait()
+            self._notifier.terminate()
         else:
             self._lock.release()
         logger.shutdown()
 
-    def finish(self):
+    def finish(self, cleanup=True):
         """Wait until all non-daemon tasks finish and then shutdown the
         scheduler.
 
         Should be called from main program (or a thread, but _not_ from tasks).
         """
         self._exit(True)
+        if self == Task._pycos and cleanup:
+            Task._pycos = None
+            Channel._pycos = None
+            Pycos._instance = None
+            self._schedulers.clear()
 
     def terminate(self):
         """Kill all non-daemon tasks and shutdown the scheduler.
