@@ -224,11 +224,13 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 mreq = socket.inet_pton(addrinfo.family, addrinfo.broadcast)
                 mreq += struct.pack('@I', addrinfo.ifn)
                 udp_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
+
+            udp_sock.bind((bind_addr, udp_port))
+            if addrinfo.family == socket.AF_INET6:
                 try:
                     udp_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
                 except Exception:
                     pass
-            udp_sock.bind((bind_addr, udp_port))
             addrinfo.udp_sock = udp_sock
             logger.info('UDP server @ %s:%s', bind_addr, udp_sock.getsockname()[1])
             SysTask(self._udp_proc, location, addrinfo)
@@ -277,8 +279,8 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
 
     def finish(self):
         if Pycos._instance:
-            Pycos._pycos.finish(cleanup=False)
-            super(self.__class__, self).finish(cleanup=True)
+            Pycos._pycos.finish(reset=False)
+            super(self.__class__, self).finish(reset=True)
             RTI._pycos = _Peer._pycos = SysTask._pycos = None
             Pycos._pycos._schedulers.clear()
             Pycos._instance = None
@@ -636,14 +638,14 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                             addr = link['addr']
                             if '%' not in addr.split(':')[-1]:
                                 addr = addr + '%' + interface
-                            for addrinfo in socket.getaddrinfo(addr, None):
-                                if addrinfo[2] == socket.IPPROTO_TCP:
-                                    ifn = addrinfo[4][-1]
+                            for addr in socket.getaddrinfo(addr, None):
+                                if addr[2] == socket.IPPROTO_TCP:
+                                    ifn = addr[4][-1]
                                     break
                         elif link['addr'].startswith('fd'):
-                            for addrinfo in socket.getaddrinfo(link['addr'], None):
-                                if addrinfo[2] == socket.IPPROTO_TCP:
-                                    addrinfo = addrinfo
+                            for addr in socket.getaddrinfo(link['addr'], None):
+                                if addr[2] == socket.IPPROTO_TCP:
+                                    addrinfo = addr
                                     break
         elif socket_family == socket.AF_INET6:
             logger.warning('IPv6 may not work without "netifaces" package!')

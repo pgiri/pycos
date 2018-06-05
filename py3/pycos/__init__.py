@@ -3955,14 +3955,14 @@ class Pycos(object, metaclass=Singleton):
             self._lock.release()
         logger.shutdown()
 
-    def finish(self, cleanup=True):
+    def finish(self, reset=True):
         """Wait until all non-daemon tasks finish and then shutdown the
         scheduler.
 
         Should be called from main program (or a thread, but _not_ from tasks).
         """
         self._exit(True)
-        if self == Task._pycos and cleanup:
+        if self == Task._pycos and reset:
             Task._pycos = None
             Channel._pycos = None
             Pycos._instance = None
