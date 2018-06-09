@@ -398,7 +398,7 @@ def _dispycos_spawn(_dispycos_config, _dispycos_id_ports, _dispycos_mp_queue,
             if (not proc.is_alive()) and proc.exitcode:
                 pycos.logger.warning('Server %s (process %s) reaped', _dispycos_id_ports[i][0],
                                      proc.pid)
-                _dispycos_mp_queue.put({'auth': _dipycos_config['computation_auth'], 'oid': 4,
+                _dispycos_mp_queue.put({'auth': _dispycos_config['computation_auth'], 'oid': 4,
                                         'server_id': _dispycos_id_ports[i][0], 'location': None})
             _dispycos_pid_path = os.path.join(_dispycos_config['dest_path'],
                                               'dispycosproc-%s.pid' % _dispycos_id_ports[i][0])
