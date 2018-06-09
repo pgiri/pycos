@@ -512,11 +512,11 @@ if __name__ == '__main__':
                         help='IP address or host name of this node')
     parser.add_argument('--ext_ip_addr', dest='ext_ip_addr', action='append', default=[],
                         help='External IP address to use (needed in case of NAT firewall/gateway)')
-    parser.add_argument('-u', '--udp_port', dest='udp_port', type=int, default=51351,
-                        help='UDP port number to use')
-    parser.add_argument('--tcp_ports', dest='tcp_ports', action='append', default=[],
+    parser.add_argument('--tcp_ports', dest='tcp_ports', action='append', default=['9706'],
                         help='TCP port numbers to use')
-    parser.add_argument('--scheduler_port', dest='scheduler_port', type=int, default=51350,
+    parser.add_argument('-u', '--udp_port', dest='udp_port', type=int, default=9706,
+                        help='UDP port number to use')
+    parser.add_argument('--scheduler_port', dest='scheduler_port', type=int, default=9705,
                         help='UDP port number used by dispycos scheduler')
     parser.add_argument('-n', '--name', dest='name', default='',
                         help='(symbolic) name given to Pycos schdulers on this node')

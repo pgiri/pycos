@@ -97,7 +97,7 @@ class Pycos(pycos.Pycos):
     _pycos = None
     _pycos_class = pycos.Pycos
 
-    def __init__(self, udp_port=0, tcp_port=0, node=None, ext_ip_addr=None,
+    def __init__(self, udp_port=9705, tcp_port=9705, node=None, ext_ip_addr=None,
                  socket_family=None, name=None, discover_peers=True,
                  secret='', certfile=None, keyfile=None, notifier=None,
                  dest_path=None, max_file_size=None):
@@ -112,8 +112,6 @@ class Pycos(pycos.Pycos):
         self._pending_replies = {}
         self._addrinfos = []
 
-        if not udp_port:
-            udp_port = 51350
         if not dest_path:
             dest_path = os.path.join(os.sep, tempfile.gettempdir(), 'pycos')
         self.__dest_path = os.path.abspath(os.path.normpath(dest_path))
