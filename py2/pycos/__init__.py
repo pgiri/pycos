@@ -1854,6 +1854,9 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
                 except:
                     logger.warning('unregister of %s failed with %s',
                                    fd._fileno, traceback.format_exc())
+                setblocking = getattr(fd, 'setblocking', None)
+                if setblocking:
+                    setblocking(True)
                 fd._notifier = None
             self._fds.clear()
             self._timeouts = []
@@ -3842,7 +3845,9 @@ class Pycos(object):
         self._timeouts = []
         self.__class__._instance = None
         self._quit = True
+        Pycos._schedulers.pop(id(threading.current_thread()))
         self._lock.release()
+        self._notifier.terminate()
         if self == Task._pycos:
             logger.debug('pycos terminated')
         else:
@@ -3894,7 +3899,6 @@ class Pycos(object):
             self._lock.release()
             self._notifier.interrupt()
             self._complete.wait()
-            self._notifier.terminate()
         else:
             self._lock.release()
         logger.shutdown()
@@ -3910,7 +3914,6 @@ class Pycos(object):
             Task._pycos = None
             Channel._pycos = None
             Pycos._instance = None
-            self._schedulers.clear()
 
     def terminate(self):
         """Kill all non-daemon tasks and shutdown the scheduler.

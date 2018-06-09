@@ -97,17 +97,6 @@ class Pycos(pycos.Pycos):
     _pycos = None
     _pycos_class = pycos.Pycos
 
-    class AddrInfo(object):
-        def __init__(self, family, ip, ifn, broadcast, netmask):
-            self.family = family
-            self.ip = ip
-            self.ifn = ifn
-            self.broadcast = broadcast
-            self.netmask = netmask
-            self.location = None
-            self.tcp_sock = None
-            self.udp_sock = None
-
     def __init__(self, udp_port=0, tcp_port=0, node=None, ext_ip_addr=None,
                  socket_family=None, name=None, discover_peers=True,
                  secret='', certfile=None, keyfile=None, notifier=None,
@@ -159,6 +148,8 @@ class Pycos(pycos.Pycos):
         else:
             ext_ip_addrs = [ext_ip_addr]
 
+        if not name:
+            name = socket.gethostname()
         location = None
         for i in range(len(nodes)):
             node = nodes[i]
@@ -170,10 +161,8 @@ class Pycos(pycos.Pycos):
             if not addrinfo:
                 logger.warning('Invalid node "%s" ignored', node)
                 continue
-            addrinfo = Pycos.AddrInfo(*addrinfo)
 
-            tcp_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_STREAM),
-                                   keyfile=self._keyfile, certfile=self._certfile)
+            tcp_sock = socket.socket(addrinfo.family, socket.SOCK_STREAM)
             if tcp_port:
                 if hasattr(socket, 'SO_REUSEADDR'):
                     tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -195,8 +184,6 @@ class Pycos(pycos.Pycos):
                     logger.warning('invalid ext_ip_addr "%s" ignored', ext_ip_addr)
 
             tcp_sock.listen(32)
-            if not name:
-                name = socket.gethostname()
             logger.info('TCP server "%s" @ %s', name if name else '', location)
 
             addrinfo.tcp_sock = tcp_sock
@@ -217,7 +204,7 @@ class Pycos(pycos.Pycos):
                 bind_addr = addrinfo.broadcast
             udp_addrinfos[bind_addr] = addrinfo
         for bind_addr, addrinfo in udp_addrinfos.items():
-            udp_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
+            udp_sock = socket.socket(addrinfo.family, socket.SOCK_DGRAM)
             if hasattr(socket, 'SO_REUSEADDR'):
                 udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             if hasattr(socket, 'SO_REUSEPORT'):
@@ -284,7 +271,6 @@ class Pycos(pycos.Pycos):
             Pycos._pycos.finish(reset=False)
             super(self.__class__, self).finish(reset=True)
             RTI._pycos = _Peer._pycos = SysTask._pycos = None
-            Pycos._pycos._schedulers.clear()
             Pycos._instance = None
             Pycos._pycos = None
             Task._pycos = Channel._pycos = Pycos._pycos_class._instance = None
@@ -673,7 +659,18 @@ class Pycos(pycos.Pycos):
             if not broadcast:
                 broadcast = '<broadcast>'
 
-        return (node[0], ip_addr, ifn, broadcast, netmask)
+        class AddrInfo(object):
+            def __init__(self, family, ip, ifn, broadcast, netmask):
+                self.family = family
+                self.ip = ip
+                self.ifn = ifn
+                self.broadcast = broadcast
+                self.netmask = netmask
+                self.location = None
+                self.tcp_sock = None
+                self.udp_sock = None
+
+        return AddrInfo(node[0], ip_addr, ifn, broadcast, netmask)
 
     # TODO: is there a better approach to find best suitable address to select
     # (with netmask)?
@@ -724,6 +721,7 @@ class Pycos(pycos.Pycos):
         Internal use only.
         """
         task.set_daemon()
+        addrinfo.udp_sock = AsyncSocket(addrinfo.udp_sock)
         sock = addrinfo.udp_sock
         while 1:
             try:
@@ -767,6 +765,8 @@ class Pycos(pycos.Pycos):
         Internal use only.
         """
         task.set_daemon()
+        addrinfo.tcp_sock = AsyncSocket(addrinfo.tcp_sock,
+                                        keyfile=self._keyfile, certfile=self._certfile)
         sock = addrinfo.tcp_sock
         while 1:
             try:
