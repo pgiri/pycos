@@ -77,7 +77,7 @@ if platform.system() == 'Windows':
                 pycos.logger.warning('connect failed: %s' % rc)
                 raise Exception(rc)
             return (rh, wh)
-        except:
+        except Exception:
             if rh is not None:
                 win32file.CloseHandle(rh)
             if wh is not None:
@@ -118,7 +118,7 @@ if platform.system() == 'Windows':
             try:
                 super(Popen, self).__init__(args, stdin=stdin_rfd, stdout=stdout_wfd,
                                             stderr=stderr_wfd, **kwargs)
-            except:
+            except Exception:
                 for handle in (stdin_rh, stdin_wh, stdout_rh, stdout_wh, stderr_rh, stderr_wh):
                     if handle is not None:
                         win32file.CloseHandle(handle)
@@ -215,7 +215,7 @@ if platform.system() == 'Windows':
                 try:
                     self._handle = win32file.CreateFile(path_handle, access, share, None, create,
                                                         flags, None)
-                except:
+                except Exception:
                     self._overlap = None
                     raise
                 if mode.startswith('r'):
@@ -459,7 +459,7 @@ if platform.system() == 'Windows':
             if self._handle:
                 try:
                     flags = win32pipe.GetNamedPipeInfo(self._handle)[0]
-                except:
+                except Exception:
                     flags = 0
 
                 if flags & win32con.PIPE_SERVER_END:
@@ -563,7 +563,7 @@ else:
                         return
                     else:
                         raise
-                except:
+                except Exception:
                     self._notifier.clear(self, _AsyncPoller._Read)
                     self._read_task.throw(*sys.exc_info())
                     self._read_task = self._read_fn = None

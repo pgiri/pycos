@@ -37,7 +37,7 @@ if platform.system() == 'Windows':
     _time()
     try:
         import win_inet_pton
-    except:
+    except ImportError:
         pass
     if not hasattr(socket, 'IPPROTO_IPV6'):
         socket.IPPROTO_IPV6 = 41
@@ -415,7 +415,7 @@ class _AsyncSocket(object):
         def _recv():
             try:
                 buf = self._rsock.recv(bufsize, *args)
-            except:
+            except Exception:
                 self._read_fn = None
                 self._notifier.clear(self, _AsyncPoller._Read)
                 self._read_task.throw(*sys.exc_info())
@@ -435,7 +435,7 @@ class _AsyncSocket(object):
         if self._certfile and self._rsock.pending():
             try:
                 buf = self._rsock.recv(bufsize, *args)
-            except:
+            except Exception:
                 self._read_fn = None
                 self._notifier.clear(self, _AsyncPoller._Read)
                 self._read_task.throw(*sys.exc_info())
@@ -457,7 +457,7 @@ class _AsyncSocket(object):
         def _recvall(self, view):
             try:
                 recvd = self._rsock.recv_into(view, len(view), *args)
-            except:
+            except Exception:
                 self._read_fn = self._read_result = None
                 self._notifier.clear(self, _AsyncPoller._Read)
                 self._read_task.throw(*sys.exc_info())
@@ -492,7 +492,7 @@ class _AsyncSocket(object):
         if self._certfile and self._rsock.pending():
             try:
                 recvd = self._rsock.recv_into(view, len(view), *args)
-            except:
+            except Exception:
                 self._read_fn = self._read_result = None
                 self._notifier.clear(self, _AsyncPoller._Read)
                 self._read_task.throw(*sys.exc_info())
@@ -530,7 +530,7 @@ class _AsyncSocket(object):
         def _recvfrom():
             try:
                 buf = self._rsock.recvfrom(*args)
-            except:
+            except Exception:
                 self._read_fn = None
                 self._notifier.clear(self, _AsyncPoller._Read)
                 self._read_task.throw(*sys.exc_info())
@@ -556,7 +556,7 @@ class _AsyncSocket(object):
         def _send():
             try:
                 sent = self._rsock.send(*args)
-            except:
+            except Exception:
                 self._write_fn = None
                 self._notifier.clear(self, _AsyncPoller._Write)
                 self._write_task.throw(*sys.exc_info())
@@ -582,7 +582,7 @@ class _AsyncSocket(object):
         def _sendto():
             try:
                 sent = self._rsock.sendto(*args)
-            except:
+            except Exception:
                 self._write_fn = None
                 self._notifier.clear(self, _AsyncPoller._Write)
                 self._write_task.throw(*sys.exc_info())
@@ -621,7 +621,7 @@ class _AsyncSocket(object):
                     self._write_fn = self._write_result = None
                     self._notifier.clear(self, _AsyncPoller._Write)
                     self._write_task.throw(*sys.exc_info())
-            except:
+            except Exception:
                 self._write_fn = self._write_result = None
                 self._notifier.clear(self, _AsyncPoller._Write)
                 self._write_task.throw(*sys.exc_info())
@@ -669,7 +669,7 @@ class _AsyncSocket(object):
         def _accept():
             try:
                 conn, addr = self._rsock.accept()
-            except:
+            except Exception:
                 self._read_fn = None
                 self._notifier.clear(self, _AsyncPoller._Read)
                 self._read_task.throw(*sys.exc_info())
@@ -699,7 +699,7 @@ class _AsyncSocket(object):
                                                   certfile=self._certfile,
                                                   ssl_version=self._ssl_version, server_side=True,
                                                   do_handshake_on_connect=False)
-            except:
+            except Exception:
                 self._read_task.throw(*sys.exc_info())
                 self._read_task = None
                 conn.close()
@@ -717,7 +717,7 @@ class _AsyncSocket(object):
                         conn._notifier.clear(conn, _AsyncPoller._Read | _AsyncPoller._Write)
                         conn._read_task.throw(*sys.exc_info())
                         conn.close()
-                except:
+                except Exception:
                     conn._read_fn = conn._write_fn = None
                     conn._notifier.clear(conn, _AsyncPoller._Read | _AsyncPoller._Write)
                     conn._read_task.throw(*sys.exc_info())
@@ -779,7 +779,7 @@ class _AsyncSocket(object):
                 self._rsock = ssl.wrap_socket(self._rsock, ca_certs=self._certfile,
                                               cert_reqs=ssl.CERT_REQUIRED, server_side=False,
                                               do_handshake_on_connect=False)
-            except:
+            except Exception:
                 self._write_task.throw(*sys.exc_info())
                 self._write_task = self._write_fn = None
                 self.close()
@@ -797,7 +797,7 @@ class _AsyncSocket(object):
                         self._notifier.clear(self, _AsyncPoller._Read | _AsyncPoller._Write)
                         self._write_task.throw(*sys.exc_info())
                         self.close()
-                except:
+                except Exception:
                     self._read_fn = self._write_fn = None
                     self._notifier.clear(self, _AsyncPoller._Read | _AsyncPoller._Write)
                     self._write_task.throw(*sys.exc_info())
@@ -930,7 +930,7 @@ if platform.system() == 'Windows':
         import win32file
         import win32event
         import winerror
-    except:
+    except ImportError:
         logger.warning('Could not load pywin32 for I/O Completion Ports; '
                        'using inefficient polling for sockets')
     else:
@@ -1128,7 +1128,7 @@ if platform.system() == 'Windows':
                             raise
                     write_sock.setblocking(True)
                     read_sock = srv_sock.accept()[0]
-                except:
+                except Exception:
                     write_sock.close()
                     raise
                 finally:
@@ -1558,7 +1558,7 @@ if platform.system() == 'Windows':
                                 self.close()
                                 if task:
                                     task.throw(*sys.exc_info())
-                        except:
+                        except Exception:
                             if self._timeout and self._notifier:
                                 self._notifier._del_timeout(self)
                             self._read_overlap.object = self._read_result = None
@@ -1584,7 +1584,7 @@ if platform.system() == 'Windows':
                         # TODO: is it required to bind to '::'?
                         try:
                             self._rsock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
-                        except:
+                        except Exception:
                             pass
                         self._rsock.bind(('::', 0))
                     else:
@@ -1673,7 +1673,7 @@ if platform.system() == 'Windows':
                                 conn.close()
                                 if task:
                                     task.throw(*sys.exc_info())
-                        except:
+                        except Exception:
                             if self._timeout and self._notifier:
                                 self._notifier._del_timeout(self)
                             self._read_overlap.object = self._read_result = None
@@ -1803,7 +1803,7 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
 
             try:
                 events = self._poller.poll(poll_timeout)
-            except:
+            except Exception:
                 logger.debug(traceback.format_exc())
                 # prevent tight loops
                 time.sleep(5)
@@ -1833,7 +1833,7 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
                     elif event & _AsyncPoller._Error:
                         logger.warning('error on fd %s', fd._fileno)
                         self.unregister(fd)
-            except:
+            except Exception:
                 logger.debug(traceback.format_exc())
 
             if self._timeouts:
@@ -1851,7 +1851,7 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
             for fd in self._fds.itervalues():
                 try:
                     self._poller.unregister(fd._fileno)
-                except:
+                except Exception:
                     logger.warning('unregister of %s failed with %s',
                                    fd._fileno, traceback.format_exc())
                 setblocking = getattr(fd, 'setblocking', None)
@@ -1970,7 +1970,7 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
                             raise
                     write_sock.setblocking(True)
                     read_sock = srv_sock.accept()[0]
-                except:
+                except Exception:
                     write_sock.close()
                     raise
                 finally:
@@ -2707,7 +2707,7 @@ class Task(object):
         """
         try:
             generator = Task.__get_generator(self, *args, **kwargs)
-        except:
+        except Exception:
             logger.warning('hot_swap is called with non-generator!')
             return -1
         self._swap_generator = generator
@@ -2900,7 +2900,7 @@ class Channel(object):
             try:
                 argspec = inspect.getargspec(transform)
                 assert len(argspec.args) == 2
-            except:
+            except Exception:
                 logger.warning('invalid "transform" function ignored')
                 transform = None
         self._transform = transform
@@ -2988,7 +2988,7 @@ class Channel(object):
         try:
             argspec = inspect.getargspec(transform)
             assert len(argspec.args) == 2
-        except:
+        except Exception:
             logger.warning('invalid "transform" function ignored')
             return -1
         self._transform = transform
@@ -3093,7 +3093,7 @@ class Channel(object):
             if self._transform:
                 try:
                     message = self._transform(self.name, message)
-                except:
+                except Exception:
                     message = None
                 if message is None:
                     return 0
@@ -3138,7 +3138,7 @@ class Channel(object):
             if self._transform:
                 try:
                     message = self._transform(self.name, message)
-                except:
+                except Exception:
                     message = None
                 if message is None:
                     raise StopIteration(0)
@@ -3168,7 +3168,7 @@ class Channel(object):
                             info['done'].set()
                     elif reply < 0:
                         info['invalid'].append(subscriber)
-                except:
+                except Exception:
                     pass
                 info['pending'] -= 1
                 if info['pending'] == 0:
@@ -3679,7 +3679,7 @@ class Pycos(object):
                             retval = task._generator.throw(*exc)
                     else:
                         retval = task._generator.send(task._value)
-                except:
+                except Exception:
                     self._lock.acquire()
                     exc = sys.exc_info()
                     if exc[0] == StopIteration:
@@ -3696,7 +3696,7 @@ class Pycos(object):
                             task._hot_swappable and not task._callers):
                             try:
                                 task._generator.close()
-                            except:
+                            except Exception:
                                 logger.warning('closing %s/%s raised exception: %s',
                                                task._name, task._id, traceback.format_exc())
                             task._generator = v[0]
@@ -3742,7 +3742,7 @@ class Pycos(object):
                             logger.warning('uncaught exception in %s:\n%s', task, exc)
                             try:
                                 task._generator.close()
-                            except:
+                            except Exception:
                                 logger.warning('closing %s raised exception: %s',
                                                task._name, traceback.format_exc())
                         # delete this task
@@ -3827,7 +3827,7 @@ class Pycos(object):
             while task._generator:
                 try:
                     task._generator.close()
-                except:
+                except Exception:
                     logger.warning('closing %s raised exception: %s',
                                    task._generator.__name__, traceback.format_exc())
                 if task._callers:
@@ -3881,7 +3881,7 @@ class Pycos(object):
                 priority, func, fargs, fkwargs = self._atexit.pop()
                 try:
                     func(*fargs, **fkwargs)
-                except:
+                except Exception:
                     logger.warning('running %s failed:', func.__name__)
                     logger.warning(traceback.format_exc())
             self._complete.wait()
@@ -4029,7 +4029,7 @@ class AsyncThreadPool(object):
             try:
                 val = target(*args, **kwargs)
                 task._proceed_(val)
-            except:
+            except Exception:
                 task.throw(*sys.exc_info())
             finally:
                 self._task_queue.task_done()

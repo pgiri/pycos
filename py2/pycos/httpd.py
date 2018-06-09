@@ -137,8 +137,8 @@ class HTTPServer(object):
                     if path.endswith('.html'):
                         if path.endswith('.html'):
                             data = data % {'TIMEOUT': str(self._ctx._poll_sec),
-                                           'SHOW_TASK_ARGS': 'true' if self._ctx._show_args \
-                                                              else 'false'}
+                                           'SHOW_TASK_ARGS': 'true' if self._ctx._show_args
+                                                                    else 'false'}
                         content_type = 'text/html'
                     elif path.endswith('.js'):
                         content_type = 'text/javascript'
@@ -153,7 +153,7 @@ class HTTPServer(object):
                     self.end_headers()
                     self.wfile.write(data.encode())
                     return
-                except:
+                except Exception:
                     pycos.logger.warning('HTTP client %s: Could not read/send "%s"',
                                          self.client_address[0], path)
                     pycos.logger.debug(traceback.format_exc())
@@ -182,7 +182,7 @@ class HTTPServer(object):
                     elif item.name == 'limit':
                         try:
                             max_tasks = int(item.value)
-                        except:
+                        except Exception:
                             pass
                 if server:
                     if 0 < max_tasks < len(server.tasks):
@@ -195,10 +195,10 @@ class HTTPServer(object):
                         rtasks = server.tasks.values()
                     show_args = self._ctx._show_args
                     rtasks = [{'task': str(rtask.task), 'name': rtask.task.name,
-                               'args': ', '.join(str(arg) for arg in rtask.args) \
+                               'args': ', '.join(str(arg) for arg in rtask.args)
                                        if show_args else '',
                                'kwargs': ', '.join('%s=%s' % (key, val)
-                                                   for key, val in rtask.kwargs.items()) \
+                                                   for key, val in rtask.kwargs.items())
                                          if show_args else '',
                                'start_time': rtask.start_time
                                } for rtask in rtasks]
@@ -229,7 +229,7 @@ class HTTPServer(object):
                                     ip_addr = re.sub(r':0+', ':', ip_addr)
                                     ip_addr = re.sub(r'::+', '::', ip_addr)
                                 addr = ip_addr
-                            except:
+                            except Exception:
                                 addr = item.value
                         break
                 node = self._ctx._nodes.get(addr)
@@ -298,9 +298,9 @@ class HTTPServer(object):
                             if timeout < 1:
                                 timeout = 0
                             self._ctx._poll_sec = timeout
-                        except:
+                        except Exception:
                             pycos.logger.warning('HTTP client %s: invalid timeout "%s" ignored',
-                                                    self.client_address[0], item.value)
+                                                 self.client_address[0], item.value)
                     elif item.name == 'show_task_args':
                         if item.value == 'true':
                             self._ctx._show_args = True
@@ -340,7 +340,7 @@ class HTTPServer(object):
                         continue
                     try:
                         loc = pycos.Location(loc[0], loc[1])
-                    except:
+                    except Exception:
                         continue
                     method(loc)
                 return

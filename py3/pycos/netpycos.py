@@ -120,7 +120,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         if not os.path.isdir(self.__dest_path):
             try:
                 os.makedirs(self.__dest_path)
-            except:
+            except Exception:
                 # likely another pycos created this directory
                 if not os.path.isdir(self.__dest_path):
                     logger.warning('failed to create "%s"', self.__dest_path)
@@ -178,7 +178,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                         ip_addr = re.sub(r':0+', ':', ip_addr)
                         ip_addr = re.sub(r'::+', '::', ip_addr)
                     location.addr = ip_addr
-                except:
+                except Exception:
                     logger.warning('invalid ext_ip_addr "%s" ignored', ext_ip_addr)
 
             tcp_sock.listen(32)
@@ -336,7 +336,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                     ip_addr = re.sub(r':0+', ':', ip_addr)
                     ip_addr = re.sub(r'::+', '::', ip_addr)
                 loc = Location(ip_addr, 0)
-            except:
+            except Exception:
                 logger.warning('invalid node: "%s"', str(loc))
                 raise StopIteration(-1)
 
@@ -377,7 +377,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 yield sock.send_msg(serialize(req))
                 sign = yield sock.recv_msg()
                 ret = yield self._acquaint_(loc, sign.decode(), addrinfo, task=task)
-            except:
+            except Exception:
                 ret = -1
             finally:
                 sock.close()
@@ -404,7 +404,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             ping_sock.bind((addrinfo.ip, 0))
             try:
                 yield ping_sock.sendto(ping_msg, (loc.addr, udp_port))
-            except:
+            except Exception:
                 pass
             ping_sock.close()
         raise StopIteration(0)
@@ -432,7 +432,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             try:
                 yield ping_sock.sendto('ping:'.encode() + serialize(ping_msg),
                                        (addrinfo.broadcast, port))
-            except:
+            except Exception:
                 pass
             ping_sock.close()
 
@@ -497,7 +497,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         """
         try:
             stat_buf = os.stat(file)
-        except:
+        except Exception:
             logger.warning('send_file: File "%s" is not valid', file)
             raise StopIteration(-1)
         if not ((stat.S_IMODE(stat_buf.st_mode) & stat.S_IREAD) and stat.S_ISREG(stat_buf.st_mode)):
@@ -552,7 +552,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             if len(exc.args) == 1 and exc.args[0] == 'hangup':
                 logger.warning('peer "%s" not reachable', location)
                 # TODO: remove peer?
-        except:
+        except Exception:
             logger.warning('send_file: Could not send "%s" to %s', file, location)
             reply = -1
         finally:
@@ -587,7 +587,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         if node:
             try:
                 node = socket.getaddrinfo(node, None)[0]
-            except:
+            except Exception:
                 return None
             if not socket_family:
                 socket_family = node[0]
@@ -708,7 +708,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 _Peer(peer_info['name'], peer_location, peer_signature,
                       self._keyfile, self._certfile, addrinfo)
             reply = 0
-        except:
+        except Exception:
             logger.debug(traceback.format_exc())
             reply = -1
         sock.close()
@@ -731,7 +731,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 continue
             try:
                 ping_info = deserialize(msg[len(b'ping:'):])
-            except:
+            except Exception:
                 continue
             peer_location = ping_info.get('location', None)
             if not isinstance(peer_location, Location) or peer_location in self._locations:
@@ -774,7 +774,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 continue
             except GeneratorExit:
                 break
-            except:
+            except Exception:
                 logger.debug(traceback.format_exc())
                 continue
             SysTask(self._tcp_conn_proc, conn, addrinfo)
@@ -787,13 +787,13 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         while 1:
             try:
                 msg = yield conn.recv_msg()
-            except:
+            except Exception:
                 break
             if not msg:
                 break
             try:
                 req = deserialize(msg)
-            except:
+            except Exception:
                 logger.debug('%s ignoring invalid message', addrinfo.location)
                 break
             if req.auth != self._auth_code:
@@ -902,7 +902,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                             Task._pycos._lock.release()
                         else:
                             reply = Task(rti._method, *args, **kwargs)
-                    except:
+                    except Exception:
                         reply = Exception(traceback.format_exc())
                 else:
                     reply = Exception('RTI "%s" is not registered' % req.kwargs['name'])
@@ -1060,7 +1060,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                         if not os.path.isdir(os.path.dirname(tgt)):
                             os.makedirs(os.path.dirname(tgt))
                         fd = open(tgt, 'wb')
-                    except:
+                    except Exception:
                         logger.debug('failed to create "%s" : %s', tgt, traceback.format_exc())
                         resp = -1
                 if resp == 0:
@@ -1073,7 +1073,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                                 break
                             fd.write(data)
                             recvd += len(data)
-                    except:
+                    except Exception:
                         logger.warning('copying file "%s" failed', tgt)
                     finally:
                         fd.close()
@@ -1099,7 +1099,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                         while d > self.__dest_path and os.path.isdir(d):
                             os.rmdir(d)
                             d = os.path.dirname(d)
-                    except:
+                    except Exception:
                         # logger.debug(traceback.format_exc())
                         pass
                     reply = 0
@@ -1168,7 +1168,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 ping_sock.bind((addrinfo.ip, 0))
                 try:
                     yield ping_sock.sendto(ping_msg, (addrinfo.broadcast, port))
-                except:
+                except Exception:
                     pass
                 finally:
                     ping_sock.close()
@@ -1633,11 +1633,11 @@ class _Peer(object):
                         try:
                             self.conn.shutdown(socket.SHUT_WR)
                             self.conn.close()
-                        except:
+                        except Exception:
                             pass
                         self.conn = None
                     break
-                except:
+                except Exception:
                     if self.conn:
                         # self.conn.shutdown(socket.SHUT_WR)
                         self.conn.close()
@@ -1679,7 +1679,7 @@ class _Peer(object):
                 try:
                     self.conn.shutdown(socket.SHUT_WR)
                     self.conn.close()
-                except:
+                except Exception:
                     pass
                 self.conn = None
                 req.reply = None
@@ -1690,7 +1690,7 @@ class _Peer(object):
                 try:
                     self.conn.shutdown(socket.SHUT_WR)
                     self.conn.close()
-                except:
+                except Exception:
                     pass
                 self.conn = None
                 req.reply = None
@@ -1701,17 +1701,17 @@ class _Peer(object):
                     try:
                         self.conn.shutdown(socket.SHUT_WR)
                         self.conn.close()
-                    except:
+                    except Exception:
                         pass
                     self.conn = None
                 break
-            except:
+            except Exception:
                 # logger.debug(traceback.format_exc())
                 if self.conn:
                     try:
                         self.conn.shutdown(socket.SHUT_WR)
                         self.conn.close()
-                    except:
+                    except Exception:
                         pass
                     self.conn = None
                 req.reply = None
@@ -1758,7 +1758,7 @@ class _Peer(object):
             for peer in _Peer.peers.values():
                 try:
                     task.send(PeerStatus(peer.location, peer.name, PeerStatus.Online))
-                except:
+                except Exception:
                     logger.debug(traceback.format_exc())
                     break
             else:
