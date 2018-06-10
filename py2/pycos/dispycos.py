@@ -1668,7 +1668,7 @@ if __name__ == '__main__':
                         help='External IP address to use (needed in case of NAT firewall/gateway)')
     parser.add_argument('-u', '--udp_port', dest='udp_port', type=int, default=9705,
                         help='UDP port number to use')
-    parser.add_argument('-t', '--tcp_port', dest='tcp_port', type=int, default=0,
+    parser.add_argument('-t', '--tcp_port', dest='tcp_port', type=int, default=9705,
                         help='TCP port number to use')
     parser.add_argument('-n', '--name', dest='name', default=None,
                         help='(symbolic) name given to schduler')
