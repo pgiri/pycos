@@ -203,6 +203,8 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             logger.warning('Could not initialize networking')
             raise Exception('Invalid "node"?')
 
+        if udp_port is None:
+            udp_port = 9705
         udp_addrinfos = {}
         for addrinfo in self._addrinfos:
             if addrinfo.broadcast == '<broadcast>':
