@@ -95,7 +95,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
     _pycos = None
     _pycos_class = pycos.Pycos
 
-    def __init__(self, udp_port=9705, tcp_port=9705, node=None, ext_ip_addr=None,
+    def __init__(self, udp_port=9705, tcp_port=None, node=None, ext_ip_addr=None,
                  socket_family=None, name=None, discover_peers=True,
                  secret='', certfile=None, keyfile=None, notifier=None,
                  dest_path=None, max_file_size=None):
@@ -130,7 +130,6 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         self._ignore_peers = False
 
         RTI._pycos = _Peer._pycos = SysTask._pycos = self
-        pycos.Task._pycos = pycos.Channel._pycos = Pycos._pycos
 
         if isinstance(node, list):
             if node:
@@ -159,12 +158,24 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 continue
 
             tcp_sock = socket.socket(addrinfo.family, socket.SOCK_STREAM)
-            if tcp_port:
+            if tcp_port is None:
                 if hasattr(socket, 'SO_REUSEADDR'):
                     tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                if hasattr(socket, 'SO_REUSEPORT'):
-                    tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-            tcp_sock.bind((addrinfo.ip, tcp_port))
+                try:
+                    tcp_sock.bind((addrinfo.ip, 9705))
+                except socket.error as e:
+                    if e.errno == errno.EADDRINUSE:
+                        tcp_sock.bind((addrinfo.ip, 0))
+                    else:
+                        raise
+            else:
+                if tcp_port:
+                    if hasattr(socket, 'SO_REUSEADDR'):
+                        tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    if hasattr(socket, 'SO_REUSEPORT'):
+                        tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                tcp_sock.bind((addrinfo.ip, tcp_port))
+
             location = Location(addrinfo.ip, tcp_sock.getsockname()[1])
             if ext_ip_addr:
                 try:
@@ -264,12 +275,10 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
 
     def finish(self):
         if Pycos._instance:
-            Pycos._pycos.finish(reset=False)
-            super(self.__class__, self).finish(reset=True)
-            RTI._pycos = _Peer._pycos = SysTask._pycos = None
-            Pycos._instance = None
+            Pycos._pycos.finish(_reset=False)
+            super(self.__class__, self).finish(_reset=True)
+            RTI._pycos = _Peer._pycos = SysTask._pycos = Pycos._instance = None
             Pycos._pycos = None
-            Task._pycos = Channel._pycos = Pycos._pycos_class._instance = None
 
     def locate(self, name, timeout=None):
         """Must be used with 'yield' as

@@ -56,7 +56,7 @@ __maintainer__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __license__ = "Apache 2.0"
 __url__ = "https://pycos.sourceforge.io"
 __status__ = "Production"
-__version__ = "4.6.7"
+__version__ = "4.7.0"
 
 __all__ = ['Task', 'Pycos', 'Lock', 'RLock', 'Event', 'Condition', 'Semaphore',
            'AsyncSocket', 'HotSwapException', 'MonitorException', 'Location', 'Channel',
@@ -3903,17 +3903,15 @@ class Pycos(object):
             self._lock.release()
         logger.shutdown()
 
-    def finish(self, reset=True):
+    def finish(self, _reset=True):
         """Wait until all non-daemon tasks finish and then shutdown the
         scheduler.
 
         Should be called from main program (or a thread, but _not_ from tasks).
         """
         self._exit(True)
-        if self == Task._pycos and reset:
-            Task._pycos = None
-            Channel._pycos = None
-            Pycos._instance = None
+        if _reset:
+            Task._pycos = Channel._pycos = Pycos._instance = None
 
     def terminate(self):
         """Kill all non-daemon tasks and shutdown the scheduler.
