@@ -3427,6 +3427,8 @@ class Pycos(object, metaclass=Singleton):
         Pycos._schedulers[id(self._scheduler)] = self
         self._scheduler.daemon = True
         self._scheduler.start()
+        if not Task._pycos:
+            Task._pycos = Channel._pycos = self
         if Pycos._instance == self:
             atexit.register(self.finish)
             logger.info('version %s with %s I/O notifier', __version__, self._notifier._poller_name)
