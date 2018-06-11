@@ -272,12 +272,30 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 raise
         self.__dest_path = path
 
-    def finish(self):
+    def _exit(self, await_non_daemons):
+        """
+        Internal use only.
+        """
         if Pycos._instance:
-            Pycos._pycos.finish(_reset=False)
-            super(self.__class__, self).finish(_reset=True)
+            Pycos._pycos._exit(await_non_daemons, False)
+            super(self.__class__, self)._exit(await_non_daemons, True)
             SysTask._pycos = RTI._pycos = _Peer._pycos = Pycos._instance = None
             Pycos._pycos = None
+
+    def finish(self):
+        """Wait until all non-daemon tasks finish and then shutdown the
+        scheduler.
+
+        Should be called from main program (or a thread, but _not_ from tasks).
+        """
+        self._exit(True)
+
+    def terminate(self):
+        """Kill all non-daemon tasks and shutdown the scheduler.
+
+        Should be called from main program (or a thread, but _not_ from tasks).
+        """
+        self._exit(False)
 
     def locate(self, name, timeout=None):
         """Must be used with 'yield' as

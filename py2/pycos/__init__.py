@@ -3852,7 +3852,7 @@ class Pycos(object):
             logger.debug('pycos %s terminated', self.location)
         self._complete.set()
 
-    def _exit(self, await_non_daemons):
+    def _exit(self, await_non_daemons, reset):
         """Internal use only.
         """
         if self._quit:
@@ -3900,23 +3900,23 @@ class Pycos(object):
         else:
             self._lock.release()
         logger.shutdown()
+        if reset:
+            Task._pycos = Channel._pycos = Pycos._instance = None
 
-    def finish(self, _reset=True):
+    def finish(self):
         """Wait until all non-daemon tasks finish and then shutdown the
         scheduler.
 
         Should be called from main program (or a thread, but _not_ from tasks).
         """
-        self._exit(True)
-        if _reset:
-            Task._pycos = Channel._pycos = Pycos._instance = None
+        self._exit(True, True)
 
     def terminate(self):
         """Kill all non-daemon tasks and shutdown the scheduler.
 
         Should be called from main program (or a thread, but _not_ from tasks).
         """
-        self._exit(False)
+        self._exit(False, True)
 
     def join(self, show_running=False):
         """Wait for currently scheduled tasks to finish. Pycos continues to
