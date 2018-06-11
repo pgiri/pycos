@@ -415,7 +415,7 @@ class Pycos(pycos.Pycos):
             raise StopIteration(ret)
         else:
             if not udp_port:
-                udp_port = 51350
+                udp_port = 9705
             ping_msg = {'location': addrinfo.location, 'signature': self._signature,
                         'name': self._name, 'version': __version__, 'broadcast': broadcast}
             ping_msg = 'ping:'.encode() + serialize(ping_msg)
