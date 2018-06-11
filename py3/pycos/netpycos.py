@@ -101,7 +101,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                  dest_path=None, max_file_size=None):
 
         Pycos._pycos = Pycos._pycos_class.instance()
-        self.__class__._instance = self
+        SysTask._pycos = RTI._pycos = _Peer._pycos = Pycos._instance = self
         super(self.__class__, self).__init__()
         self._rtis = {}
         self._locations = set()
@@ -128,8 +128,6 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         self._certfile = certfile
         self._keyfile = keyfile
         self._ignore_peers = False
-
-        RTI._pycos = _Peer._pycos = SysTask._pycos = self
 
         if isinstance(node, list):
             if node:
@@ -248,7 +246,6 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         pycos.Task._sign = pycos.Channel._sign = SysTask._sign = RTI._sign = self._signature
         if discover_peers:
             self.discover_peers()
-        atexit.register(self.finish)
 
     @classmethod
     def instance(cls, *args, **kwargs):
@@ -279,7 +276,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         if Pycos._instance:
             Pycos._pycos.finish(_reset=False)
             super(self.__class__, self).finish(_reset=True)
-            RTI._pycos = _Peer._pycos = SysTask._pycos = Pycos._instance = None
+            SysTask._pycos = RTI._pycos = _Peer._pycos = Pycos._instance = None
             Pycos._pycos = None
 
     def locate(self, name, timeout=None):

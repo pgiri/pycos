@@ -3403,7 +3403,7 @@ class Pycos(object, metaclass=Singleton):
 
     def __init__(self):
         if not Pycos._instance:
-            Pycos._instance = self
+            Task._pycos = Channel._pycos = Pycos._instance = self
         self._notifier = _AsyncNotifier()
         self._locations = set()
         self._location = None
@@ -3427,11 +3427,8 @@ class Pycos(object, metaclass=Singleton):
         Pycos._schedulers[id(self._scheduler)] = self
         self._scheduler.daemon = True
         self._scheduler.start()
-        if not Task._pycos:
-            Task._pycos = Channel._pycos = self
-        if Pycos._instance == self:
-            atexit.register(self.finish)
-            logger.info('version %s with %s I/O notifier', __version__, self._notifier._poller_name)
+        atexit.register(self.finish)
+        logger.info('version %s with %s I/O notifier', __version__, self._notifier._poller_name)
 
     @classmethod
     def instance(cls, *args, **kwargs):
@@ -3901,7 +3898,6 @@ class Pycos(object, metaclass=Singleton):
         self._tasks.clear()
         self._channels.clear()
         self._timeouts = []
-        self.__class__._instance = None
         self._quit = True
         Pycos._schedulers.pop(id(threading.current_thread()))
         self._lock.release()
