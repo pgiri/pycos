@@ -62,11 +62,13 @@ class Pycos(pycos.Pycos):
     peers.
 
     If 'node' is not None, it must be either hostname or IP address, or list of
-    hostnames or IP addresses where pycos runs network services. If 'udp_port' is
-    not None, it is port number where pycos runs network services. If 'udp_port'
-    is 0, the default port number 51350 is used. If multiple instances of pycos
-    are to be running on same host, they all can be started with the same
-    'udp_port', so that pycos instances automatically find each other.
+    hostnames or IP addresses where pycos runs network services.
+
+    'udp_port' is port number where pycos listens for broadcast messages to find
+    other peers. Default value for udp_port is set to 9705.
+
+    'tcp_port' is port number used for TCP services. Its default value is None,
+    in which case, port 9705 is used.
 
     'name' is used in locating peers. They must be unique. If 'name' is not
     given, it is set to string 'node:tcp_port'.
