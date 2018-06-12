@@ -1848,16 +1848,18 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
             if hasattr(self.cmd_write, 'getsockname'):
                 self.cmd_write.close()
             self.cmd_read.close()
-            for fd in self._fds.itervalues():
-                try:
-                    self._poller.unregister(fd._fileno)
-                except Exception:
-                    logger.warning('unregister of %s failed with %s',
-                                   fd._fileno, traceback.format_exc())
+            for fd in self._fds.values():
                 setblocking = getattr(fd, 'setblocking', None)
                 if setblocking:
                     setblocking(True)
+                else:
+                    try:
+                        self._poller.unregister(fd._fileno)
+                    except Exception:
+                        logger.warning('unregister of %s failed with %s',
+                                       fd._fileno, traceback.format_exc())
                 fd._notifier = None
+            self._events.clear()
             self._fds.clear()
             self._timeouts = []
             if hasattr(self._poller, 'close'):
