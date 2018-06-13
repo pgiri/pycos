@@ -76,11 +76,23 @@ unserialize = deserialize
 
 
 class Singleton(type):
+    """
+    Meta class for singleton instances.
+    """
+
+    _instances = {}
 
     def __call__(cls, *args, **kwargs):
-        if not cls._instance:
-            cls._instance = super(Singleton, cls).__call__(*args, **kwargs)
-        return cls._instance
+        if cls not in cls._instances:
+            cls._instances[cls] = super().__call__(*args, **kwargs)
+        return cls._instances[cls]
+
+    @classmethod
+    def empty(_, cls):
+        """
+        Forget singleton instance.
+        """
+        cls._instances.pop(cls, None)
 
 
 class Logger(object):
@@ -1114,7 +1126,6 @@ if platform.system() == 'Windows':
                 self.cmd_rsock.close()
                 self.cmd_wsock.close()
                 self.cmd_rsock = self.cmd_wsock = None
-                self.__class__._instance = None
 
             def terminate(self):
                 if not self._terminate:
@@ -1282,7 +1293,6 @@ if platform.system() == 'Windows':
                     win32file.CloseHandle(iocp)
                     self._timeouts = []
                     self.cmd_rsock = self.cmd_wsock = None
-                    self.__class__._instance = None
 
         class AsyncSocket(_AsyncSocket):
             """AsyncSocket with I/O Completion Ports (under Windows). See
@@ -3389,7 +3399,6 @@ class Pycos(object, metaclass=Singleton):
     distributed programming, Pycos in netpycos module should be used.
     """
 
-    _instance = None
     _schedulers = {}
 
     # in _scheduled set, waiting for turn to execute
@@ -3404,8 +3413,8 @@ class Pycos(object, metaclass=Singleton):
     _AwaitMsg_ = 5
 
     def __init__(self):
-        if not Pycos._instance:
-            Task._pycos = Channel._pycos = Pycos._instance = self
+        if not Task._pycos:
+            Task._pycos = Channel._pycos = self
         self._notifier = _AsyncNotifier()
         self._locations = set()
         self._location = None
@@ -3436,9 +3445,7 @@ class Pycos(object, metaclass=Singleton):
     def instance(cls, *args, **kwargs):
         """Returns (singleton) instance of Pycos.
         """
-        if not cls._instance:
-            cls._instance = cls(*args, **kwargs)
-        return cls._instance
+        return cls(*args, **kwargs)
 
     @property
     def location(self):
@@ -3959,7 +3966,8 @@ class Pycos(object, metaclass=Singleton):
             self._lock.release()
         logger.shutdown()
         if reset:
-            Task._pycos = Channel._pycos = Pycos._instance = None
+            Task._pycos = Channel._pycos = None
+            Singleton.empty(self.__class__)
 
     def finish(self):
         """Wait until all non-daemon tasks finish and then shutdown the

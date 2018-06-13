@@ -93,7 +93,6 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
     files. If it is 0 or None (default), there is no limit.
     """
 
-    _instance = None
     _pycos = None
     _pycos_class = pycos.Pycos
 
@@ -103,7 +102,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                  dest_path=None, max_file_size=None):
 
         Pycos._pycos = Pycos._pycos_class.instance()
-        SysTask._pycos = RTI._pycos = _Peer._pycos = Pycos._instance = self
+        SysTask._pycos = RTI._pycos = _Peer._pycos = self
         super(self.__class__, self).__init__()
         self._rtis = {}
         self._locations = set()
@@ -253,9 +252,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
     def instance(cls, *args, **kwargs):
         """Returns (singleton) instance of Pycos.
         """
-        if not cls._instance:
-            cls._instance = cls(*args, **kwargs)
-        return cls._instance
+        return cls(*args, **kwargs)
 
     @property
     def dest_path(self):
@@ -278,10 +275,11 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         """
         Internal use only.
         """
-        if Pycos._instance:
+        if Pycos._pycos:
             Pycos._pycos._exit(await_non_daemons, False)
             super(self.__class__, self)._exit(await_non_daemons, True)
-            SysTask._pycos = RTI._pycos = _Peer._pycos = Pycos._instance = None
+            SysTask._pycos = RTI._pycos = _Peer._pycos = None
+            Singleton.empty(self.__class__)
             Pycos._pycos = None
 
     def finish(self):
