@@ -2487,8 +2487,6 @@ class Task(object):
         self._hot_swappable = False
         if not Task._pycos:
             Pycos.instance()
-            if not Task._pycos:
-                Task._pycos = Pycos.instance()
         self._scheduler = self.__class__._pycos
         self._location = None
         self._scheduler._add(self)
