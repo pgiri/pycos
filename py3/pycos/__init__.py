@@ -80,21 +80,19 @@ class Singleton(type):
     Meta class for singleton instances.
     """
 
-    _instances = {}
+    _memo = {}
 
     def __call__(cls, *args, **kwargs):
-        inst = Singleton._instances.get(cls, None)
-        if not inst:
-            inst = super(Singleton, cls).__call__(*args, **kwargs)
-            Singleton._instances[cls] = inst
-        return inst
+        if cls not in Singleton._memo:
+            Singleton._memo[cls] = super(Singleton, cls).__call__(*args, **kwargs)
+        return Singleton._memo[cls]
 
     @classmethod
     def empty(_, cls):
         """
         Forget singleton instance.
         """
-        Singleton._instances.pop(cls, None)
+        Singleton._memo.pop(cls, None)
 
 
 class Logger(object):
