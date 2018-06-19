@@ -261,30 +261,32 @@ class _AsyncSocket(object):
         self._blocking = blocking
         if self._blocking:
             self._unregister()
-            self._rsock.setblocking(1)
-            if self._certfile:
-                self._rsock = ssl.wrap_socket(self._rsock, keyfile=self._keyfile,
-                                              certfile=self._certfile,
-                                              ssl_version=self._ssl_version)
-            for name in ['recv', 'send', 'recvfrom', 'sendto', 'accept', 'connect']:
-                setattr(self, name, getattr(self._rsock, name))
-            if self._rsock.type & socket.SOCK_STREAM:
-                self.recvall = self._sync_recvall
-                self.sendall = self._sync_sendall
-                self.recv_msg = self._sync_recv_msg
-                self.send_msg = self._sync_send_msg
-                self.accept = self._sync_accept
+            if self._rsock is not None:
+                self._rsock.setblocking(1)
+                if self._certfile:
+                    self._rsock = ssl.wrap_socket(self._rsock, keyfile=self._keyfile,
+                                                  certfile=self._certfile,
+                                                  ssl_version=self._ssl_version)
+                for name in ['recv', 'send', 'recvfrom', 'sendto', 'accept', 'connect']:
+                    setattr(self, name, getattr(self._rsock, name))
+                if self._rsock.type & socket.SOCK_STREAM:
+                    self.recvall = self._sync_recvall
+                    self.sendall = self._sync_sendall
+                    self.recv_msg = self._sync_recv_msg
+                    self.send_msg = self._sync_send_msg
+                    self.accept = self._sync_accept
             self._scheduler = None
             self._notifier = None
         else:
-            self._rsock.setblocking(0)
+            if self._rsock is not None:
+                self._rsock.setblocking(0)
             self.recv = self._async_recv
             self.send = self._async_send
             self.recvfrom = self._async_recvfrom
             self.sendto = self._async_sendto
             self.accept = self._async_accept
             self.connect = self._async_connect
-            if self._rsock.type & socket.SOCK_STREAM:
+            if self._rsock is not None and self._rsock.type & socket.SOCK_STREAM:
                 self.recvall = self._async_recvall
                 self.sendall = self._async_sendall
                 self.recv_msg = self._async_recv_msg
