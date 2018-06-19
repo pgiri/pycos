@@ -1860,8 +1860,8 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
             self.cmd_read.close()
             for fd in self._fds.values():
                 setblocking = getattr(fd, 'setblocking', None)
-                if setblocking:
-                    setblocking(True)
+                if setblocking and fd._rsock:
+                   setblocking(True)
                 else:
                     try:
                         self._poller.unregister(fd._fileno)

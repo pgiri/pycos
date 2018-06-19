@@ -1881,7 +1881,7 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
             self.cmd_read.close()
             for fd in list(self._fds.values()):
                 setblocking = getattr(fd, 'setblocking', None)
-                if setblocking:
+                if setblocking and fd._rsock:
                     setblocking(True)
                 else:
                     try:
