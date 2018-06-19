@@ -423,13 +423,13 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             ping_msg = 'ping:'.encode() + serialize(ping_msg)
             ping_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
             ping_sock.settimeout(2)
+            ping_sock.bind((addrinfo.ip, 0))
             if addrinfo.family == socket.AF_INET:
                 ping_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             else:  # addrinfo.family == socket.AF_INET6
                 ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS,
                                      struct.pack('@i', 1))
                 ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF, addrinfo.ifn)
-            ping_sock.bind((addrinfo.ip, 0))
             try:
                 yield ping_sock.sendto(ping_msg, (loc.addr, udp_port))
             except Exception:
@@ -447,13 +447,13 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         def _discover(addrinfo, port, task=None):
             ping_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
             ping_sock.settimeout(2)
+            ping_sock.bind((addrinfo.ip, 0))
             if addrinfo.family == socket.AF_INET:
                 ping_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             else:  # addrinfo.family == socket.AF_INET6
                 ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS,
                                      struct.pack('@i', 1))
                 ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF, addrinfo.ifn)
-            ping_sock.bind((addrinfo.ip, 0))
             if not port:
                 port = addrinfo.udp_sock.getsockname()[1]
             ping_msg['location'] = addrinfo.location
@@ -1186,6 +1186,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 port = addrinfo.udp_sock.getsockname()[1]
                 ping_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
                 ping_sock.settimeout(2)
+                ping_sock.bind((addrinfo.ip, 0))
                 if addrinfo.family == socket.AF_INET:
                     ping_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
                 else:  # addrinfo.family == socket.AF_INET6
@@ -1193,7 +1194,6 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                                          struct.pack('@i', 1))
                     ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF,
                                          addrinfo.ifn)
-                ping_sock.bind((addrinfo.ip, 0))
                 try:
                     yield ping_sock.sendto(ping_msg, (addrinfo.broadcast, port))
                 except Exception:
