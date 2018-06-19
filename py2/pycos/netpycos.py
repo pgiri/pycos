@@ -208,10 +208,14 @@ class Pycos(pycos.Pycos):
             udp_port = 9705
         udp_addrinfos = {}
         for addrinfo in self._addrinfos:
-            if addrinfo.broadcast == '<broadcast>':
-                bind_addr = ''
+            if os.name == 'nt':
+                # Windows does not allow binding to a broadcast address
+                bind_addr = ip_addr
             else:
-                bind_addr = addrinfo.broadcast
+                if addrinfo.broadcast == '<broadcast>':
+                    bind_addr = ''
+                else:
+                    bind_addr = addrinfo.broadcast
             udp_addrinfos[bind_addr] = addrinfo
         for bind_addr, addrinfo in udp_addrinfos.items():
             udp_sock = socket.socket(addrinfo.family, socket.SOCK_DGRAM)
@@ -682,10 +686,6 @@ class Pycos(pycos.Pycos):
         else:
             if not broadcast:
                 broadcast = '<broadcast>'
-
-        if os.name == 'nt':
-            # Windows does not allow binding to a broadcast address
-            bind_addr = ip_addr
 
         class AddrInfo(object):
             def __init__(self, family, ip, ifn, broadcast, netmask):
