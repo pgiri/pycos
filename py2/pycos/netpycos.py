@@ -683,6 +683,10 @@ class Pycos(pycos.Pycos):
             if not broadcast:
                 broadcast = '<broadcast>'
 
+        if os.name == 'nt':
+            # Windows does not allow binding to a broadcast address
+            bind_addr = ip_addr
+
         class AddrInfo(object):
             def __init__(self, family, ip, ifn, broadcast, netmask):
                 self.family = family
