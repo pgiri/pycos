@@ -1791,6 +1791,7 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
             if hasattr(self.cmd_write, 'getsockname'):
                 self.cmd_read = AsyncSocket(self.cmd_read)
                 self.cmd_read._read_fn = lambda: self.cmd_read._rsock.recv(128)
+                self.cmd_read._notifier = self
                 self.interrupt = lambda: self.cmd_write.send('I')
             else:
                 self.interrupt = lambda: os.write(self.cmd_write._fileno, 'I')
@@ -1857,7 +1858,6 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
         def terminate(self):
             if hasattr(self.cmd_write, 'getsockname'):
                 self.cmd_write.close()
-                self._fds.pop(self.cmd_read._fileno, None)
             self.cmd_read.close()
             for fd in self._fds.values():
                 setblocking = getattr(fd, 'setblocking', None)
