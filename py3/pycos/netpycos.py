@@ -8,6 +8,7 @@ import socket
 import inspect
 import traceback
 import os
+import sys
 import stat
 import hashlib
 import collections
@@ -226,6 +227,8 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 mreq += struct.pack('@I', addrinfo.ifn)
                 udp_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
 
+            if sys.platform.startswith('win'):
+                bind_addr = ''
             udp_sock.bind((bind_addr, udp_port))
             if addrinfo.family == socket.AF_INET6:
                 try:
