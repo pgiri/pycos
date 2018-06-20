@@ -187,9 +187,9 @@ class _AsyncSocket(object):
 
     __slots__ = ('_rsock', '_keyfile', '_certfile', '_ssl_version', '_fileno', '_timeout',
                  '_timeout_id', '_read_task', '_read_fn', '_read_result', '_write_task',
-                 '_write_fn', '_write_result', '_scheduler', '_notifier', 'recvall', 'sendall',
-                 'recv_msg', 'send_msg', '_blocking', 'recv', 'send', 'recvfrom', 'sendto',
-                 'accept', 'connect', 'ssl_server_ctx')
+                 '_write_fn', '_write_result', '_scheduler', '_notifier', '_event',
+                 'recvall', 'sendall', 'recv_msg', 'send_msg', '_blocking', 'recv', 'send',
+                 'recvfrom', 'sendto', 'accept', 'connect', 'ssl_server_ctx')
 
     _default_timeout = None
     _MsgLengthSize = struct.calcsize('>L')
@@ -234,6 +234,7 @@ class _AsyncSocket(object):
             self._write_result = None
             self._scheduler = None
             self._notifier = None
+            self._event = None
             self.ssl_server_ctx = None
 
             self.recvall = None
@@ -975,7 +976,6 @@ if platform.system() == 'Windows':
             def __init__(self, iocp_notifier):
                 self._poller_name = 'select'
                 self._fds = {}
-                self._events = {}
                 self._terminate = False
                 self.rset = set()
                 self.wset = set()
@@ -1001,9 +1001,10 @@ if platform.system() == 'Windows':
                         self._lock.release()
                         logger.debug('fd %s is not registered', fid)
                         return
-                    event = self._events.pop(fid, 0)
+                    event = fd._event
+                    fd._event = None
                 else:
-                    event = self._events.get(fd, 0)
+                    event = fd._event
                 if event & _AsyncPoller._Read:
                     self.rset.discard(fid)
                 if event & _AsyncPoller._Write:
@@ -1019,7 +1020,10 @@ if platform.system() == 'Windows':
                 if fd._timeout:
                     self.iocp_notifier._del_timeout(fd)
                 self._lock.acquire()
-                cur_event = self._events.get(fid, 0)
+                if fd._event:
+                    cur_event = fd._event
+                else:
+                    cur_event = 0
                 if cur_event & _AsyncPoller._Read:
                     self.rset.discard(fid)
                 if cur_event & _AsyncPoller._Write:
@@ -1027,7 +1031,7 @@ if platform.system() == 'Windows':
                 if cur_event & _AsyncPoller._Error:
                     self.xset.discard(fid)
                 event |= cur_event
-                self._events[fid] = event
+                fd._event = event
                 self._fds[fid] = fd
                 if event:
                     if event & _AsyncPoller._Read:
@@ -1046,7 +1050,7 @@ if platform.system() == 'Windows':
             def clear(self, fd, event=0):
                 fid = fd._fileno
                 self._lock.acquire()
-                cur_event = self._events.get(fid, 0)
+                cur_event = fd._event
                 if cur_event:
                     if cur_event & _AsyncPoller._Read:
                         self.rset.discard(fid)
@@ -1058,7 +1062,7 @@ if platform.system() == 'Windows':
                         cur_event &= ~event
                     else:
                         cur_event = 0
-                    self._events[fid] = cur_event
+                    fd._event = cur_event
                     if cur_event:
                         if cur_event & _AsyncPoller._Read:
                             self.rset.add(fid)
@@ -1806,7 +1810,6 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
                 _AsyncPoller._Block = None
 
             self._fds = {}
-            self._events = {}
             self._timeouts = []
             self.cmd_read, self.cmd_write = _AsyncPoller._cmd_read_write_fds(self)
             if hasattr(self.cmd_write, 'getsockname'):
@@ -1892,7 +1895,6 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
                         logger.warning('unregister of %s failed with %s',
                                        fd._fileno, traceback.format_exc())
                 fd._notifier = None
-            self._events.clear()
             self._fds.clear()
             self._timeouts = []
             if hasattr(self._poller, 'close'):
@@ -1929,19 +1931,17 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
             if self._fds.pop(fd._fileno, None) is None:
                 logger.debug('fd %s is not registered', fd._fileno)
                 return
-            self._events.pop(fd._fileno, None)
+            fd._event = None
             self._poller.unregister(fd._fileno)
             self._del_timeout(fd)
 
         def add(self, fd, event):
-            cur_event = self._events.get(fd._fileno, None)
-            if cur_event is None:
+            if fd._event is None:
                 self._fds[fd._fileno] = fd
-                self._events[fd._fileno] = event
+                fd._event = event
                 self._poller.register(fd._fileno, event)
             else:
-                event |= cur_event
-                self._events[fd._fileno] = event
+                fd._event |= event
                 self._poller.modify(fd._fileno, event)
             if fd._timeout:
                 self._add_timeout(fd)
@@ -1949,13 +1949,13 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
                 fd._timeout_id = None
 
         def clear(self, fd, event=0):
-            cur_event = self._events.get(fd._fileno, None)
+            cur_event = fd._event
             if cur_event:
                 if event:
                     cur_event &= ~event
                 else:
                     cur_event = 0
-                self._events[fd._fileno] = cur_event
+                fd._event = cur_event
                 self._poller.modify(fd._fileno, cur_event)
                 if not cur_event:
                     self._del_timeout(fd)
@@ -1970,6 +1970,7 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
                         self._timeout = None
                         self._timeout_id = None
                         self._notifier = notifier
+                        self._event = None
                         flags = fcntl.fcntl(self._fileno, fcntl.F_GETFL)
                         fcntl.fcntl(self._fileno, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
