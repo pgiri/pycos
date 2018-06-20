@@ -1857,9 +1857,8 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
         def terminate(self):
             if hasattr(self.cmd_write, 'getsockname'):
                 self.cmd_write.close()
-            self.cmd_read.close()
-            if hasattr(self.cmd_write, 'getsockname'):
                 self._fds.pop(self.cmd_read._fileno, None)
+            self.cmd_read.close()
             for fd in self._fds.values():
                 setblocking = getattr(fd, 'setblocking', None)
                 if setblocking and fd._rsock:
