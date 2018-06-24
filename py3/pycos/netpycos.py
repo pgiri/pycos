@@ -8,6 +8,7 @@ import socket
 import inspect
 import traceback
 import os
+import sys
 import stat
 import hashlib
 import collections
@@ -39,6 +40,8 @@ __all__ = pycos.__all__ + ['PeerStatus', 'RTI']
 # times, peer is assumed dead and removed
 MaxConnectionErrors = 10
 MsgTimeout = pycos.MsgTimeout
+IPV4_MULTICAST_GROUP = '239.255.97.5'
+IPV6_MULTICAST_GROUP = 'ff05::1'
 
 
 class PeerStatus(object):
@@ -97,7 +100,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
     _pycos_class = pycos.Pycos
 
     def __init__(self, udp_port=9705, tcp_port=None, node=None, ext_ip_addr=None,
-                 socket_family=None, name=None, discover_peers=True,
+                 socket_family=None, ipv4_udp_broadcast=True, name=None, discover_peers=True,
                  secret='', certfile=None, keyfile=None, notifier=None,
                  dest_path=None, max_file_size=None):
 
@@ -158,21 +161,17 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
 
             tcp_sock = socket.socket(addrinfo.family, socket.SOCK_STREAM)
             if tcp_port is None:
-                if hasattr(socket, 'SO_REUSEADDR'):
-                    tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 try:
                     tcp_sock.bind((addrinfo.ip, 9705))
                 except socket.error as e:
-                    if e.errno == errno.EADDRINUSE:
+                    if e.errno == errno.EADDRINUSE or e.errno == getattr(errno, 'WSAEACCES', None):
                         tcp_sock.bind((addrinfo.ip, 0))
                     else:
                         raise
             else:
                 if tcp_port:
-                    if hasattr(socket, 'SO_REUSEADDR'):
-                        tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    if hasattr(socket, 'SO_REUSEPORT'):
-                        tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                    tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 tcp_sock.bind((addrinfo.ip, tcp_port))
 
             location = Location(addrinfo.ip, tcp_sock.getsockname()[1])
@@ -202,36 +201,41 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             logger.warning('Could not initialize networking')
             raise Exception('Invalid "node"?')
 
+        self.ipv4_udp_broadcast = bool(ipv4_udp_broadcast)
         if udp_port is None:
             udp_port = 9705
         udp_addrinfos = {}
         for addrinfo in self._addrinfos:
             if os.name == 'nt':
-                # Windows does not allow binding to a broadcast address
-                bind_addr = ip_addr
+                bind_addr = addrinfo.ip
+            elif sys.platform == 'darwin':
+                bind_addr = ''
             else:
-                if addrinfo.broadcast == '<broadcast>':
-                    bind_addr = ''
-                else:
-                    bind_addr = addrinfo.broadcast
+                bind_addr = addrinfo.broadcast
+            if (not self.ipv4_udp_broadcast) and addrinfo.broadcast == '<broadcast>':
+                addrinfo.broadcast = IPV4_MULTICAST_GROUP
             udp_addrinfos[bind_addr] = addrinfo
         for bind_addr, addrinfo in udp_addrinfos.items():
             udp_sock = socket.socket(addrinfo.family, socket.SOCK_DGRAM)
-            if hasattr(socket, 'SO_REUSEADDR'):
-                udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             if hasattr(socket, 'SO_REUSEPORT'):
                 udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-            if addrinfo.family == socket.AF_INET6:
+
+            udp_sock.bind((bind_addr, udp_port))
+            if addrinfo.family == socket.AF_INET:
+                if not self.ipv4_udp_broadcast:
+                    mreq = socket.inet_pton(addrinfo.family, IPV4_MULTICAST_GROUP)
+                    mreq += struct.pack('=I', socket.INADDR_ANY)
+                    udp_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+            else:  # addrinfo.family == socket.AF_INET6:
                 mreq = socket.inet_pton(addrinfo.family, addrinfo.broadcast)
                 mreq += struct.pack('@I', addrinfo.ifn)
                 udp_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
-
-            udp_sock.bind((bind_addr, udp_port))
-            if addrinfo.family == socket.AF_INET6:
                 try:
                     udp_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
                 except Exception:
                     pass
+
             addrinfo.udp_sock = udp_sock
             logger.info('UDP server @ %s:%s', bind_addr, udp_sock.getsockname()[1])
             SysTask(self._udp_proc, location, addrinfo)
@@ -423,13 +427,6 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             ping_msg = 'ping:'.encode() + serialize(ping_msg)
             ping_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
             ping_sock.settimeout(2)
-            ping_sock.bind((addrinfo.ip, 0))
-            if addrinfo.family == socket.AF_INET:
-                ping_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            else:  # addrinfo.family == socket.AF_INET6
-                ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS,
-                                     struct.pack('@i', 1))
-                ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF, addrinfo.ifn)
             try:
                 yield ping_sock.sendto(ping_msg, (loc.addr, udp_port))
             except Exception:
@@ -447,13 +444,18 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         def _discover(addrinfo, port, task=None):
             ping_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
             ping_sock.settimeout(2)
-            ping_sock.bind((addrinfo.ip, 0))
+            ttl_bin = struct.pack('@i', 2)
             if addrinfo.family == socket.AF_INET:
                 ping_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                if not self.ipv4_udp_broadcast:
+                    ping_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl_bin)
             else:  # addrinfo.family == socket.AF_INET6
-                ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS,
-                                     struct.pack('@i', 1))
-                ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF, addrinfo.ifn)
+                ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, ttl_bin)
+                try:
+                    ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF,
+                                         addrinfo.ifn)
+                except Exception:
+                    pass
             if not port:
                 port = addrinfo.udp_sock.getsockname()[1]
             ping_msg['location'] = addrinfo.location
@@ -608,82 +610,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         raise StopIteration(reply)
 
     @staticmethod
-    def node_addrinfo(node, socket_family=None):
-        """Given node (either host name or IP address) is resolved to IP address and
-        fills in and returns information with AddrInfo structure.
-        """
-        if node:
-            try:
-                node = socket.getaddrinfo(node, None)[0]
-            except Exception:
-                return None
-            if not socket_family:
-                socket_family = node[0]
-            elif node[0] != socket_family:
-                node = None
-            if node:
-                node = node[4][0]
-            if not socket_family:
-                socket_family = socket.AF_INET
-        if not socket_family:
-            socket_family = socket.getaddrinfo(socket.gethostname(), None)[0][0]
-        assert socket_family in (socket.AF_INET, socket.AF_INET6)
-
-        ifn, addrinfo, netmask, broadcast = 0, None, None, None
-        if netifaces:
-            for iface in netifaces.interfaces():
-                if socket_family == socket.AF_INET:
-                    if addrinfo:
-                        break
-                else:  # socket_family == socket.AF_INET6
-                    if ifn and addrinfo:
-                        break
-                    ifn, addrinfo, netmask = 0, None, None
-                for link in netifaces.ifaddresses(iface).get(socket_family, []):
-                    netmask = link.get('netmask', None)
-                    broadcast = link.get('broadcast', None)
-                    if socket_family == socket.AF_INET:
-                        if link.get('broadcast', '').startswith(link['addr'].split('.')[0]):
-                            if (not node) or (link['addr'] == node):
-                                addrinfo = socket.getaddrinfo(link['addr'], None)[0]
-                                break
-                    else:  # socket_family == socket.AF_INET6
-                        if link['addr'].startswith('fe80:'):
-                            addr = link['addr']
-                            if '%' not in addr.split(':')[-1]:
-                                addr = addr + '%' + interface
-                            for addr in socket.getaddrinfo(addr, None):
-                                if addr[2] == socket.IPPROTO_TCP:
-                                    ifn = addr[4][-1]
-                                    break
-                        elif link['addr'].startswith('fd'):
-                            for addr in socket.getaddrinfo(link['addr'], None):
-                                if addr[2] == socket.IPPROTO_TCP:
-                                    addrinfo = addr
-                                    break
-        elif socket_family == socket.AF_INET6:
-            logger.warning('IPv6 may not work without "netifaces" package!')
-
-        if addrinfo:
-            if not node:
-                node = addrinfo[4][0]
-            if not socket_family:
-                socket_family = addrinfo[0]
-        if not node:
-            node = socket.gethostname()
-
-        node = socket.getaddrinfo(node, None, socket_family, socket.SOCK_STREAM)[0]
-        ip_addr = node[4][0]
-        if node[0] == socket.AF_INET6:
-            # canonicalize so different platforms resolve to same string
-            ip_addr = re.sub(r'^0+', '', ip_addr)
-            ip_addr = re.sub(r':0+', ':', ip_addr)
-            ip_addr = re.sub(r'::+', '::', ip_addr)
-            if not broadcast:
-                broadcast = 'ff05::1'
-        else:
-            if not broadcast:
-                broadcast = '<broadcast>'
+    def node_addrinfo(node=None, socket_family=None):
 
         class AddrInfo(object):
             def __init__(self, family, ip, ifn, broadcast, netmask):
@@ -692,11 +619,143 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 self.ifn = ifn
                 self.broadcast = broadcast
                 self.netmask = netmask
-                self.location = None
-                self.tcp_sock = None
-                self.udp_sock = None
+                self.ext_ip_addr = None
 
-        return AddrInfo(node[0], ip_addr, ifn, broadcast, netmask)
+        def canonical_ipv6(ip_addr):
+            # canonicalize so different platforms resolve to same string
+            ip_addr = ip_addr.split('%')[0]
+            ip_addr = re.sub(r'^0+', '', ip_addr)
+            ip_addr = re.sub(r':0+', ':', ip_addr)
+            ip_addr = re.sub(r'::+', '::', ip_addr)
+            return ip_addr
+
+        nodes = []
+        if node:
+            best = None
+            for addr in socket.getaddrinfo(node, None):
+                if socket_family and addr[0] != socket_family:
+                    continue
+                if not best or addr[0] == socket.AF_INET:
+                    best = addr
+            if best:
+                socket_family = best[0]
+                if best[0] == socket.AF_INET6:
+                    addr = canonical_ipv6(best[4][0])
+                else:
+                    addr = best[4][0]
+                nodes.append(addr)
+            else:
+                return None
+
+        if socket_family:
+            sock_families = [socket_family]
+        else:
+            sock_families = [socket.AF_INET, socket.AF_INET6]
+
+        sf_addrinfos = {}
+        for sock_family in sock_families:
+            sf_addrinfos[sock_family] = []
+
+        if netifaces:
+            for iface in netifaces.interfaces():
+                for sock_family in sock_families:
+                    for link in netifaces.ifaddresses(iface).get(sock_family, []):
+                        netmask = link.get('netmask', None)
+                        if sock_family == socket.AF_INET:
+                            addr = str(link['addr'])
+                            broadcast = link.get('broadcast', '<broadcast>')
+                            # Windows seems to have broadcast same as addr
+                            if broadcast.startswith(addr):
+                                broadcast = '<broadcast>'
+                            if nodes and addr not in nodes:
+                                continue
+                            try:
+                                addrs = socket.getaddrinfo(addr, None, sock_family,
+                                                           socket.SOCK_STREAM)
+                            except Exception:
+                                addrs = []
+                            for addr in addrs:
+                                addrinfo = AddrInfo(sock_family, addr[4][0], 0, broadcast, netmask)
+                                sf_addrinfos[sock_family].append(addrinfo)
+                        else:  # sock_family == socket.AF_INET6
+                            addr = str(link['addr'])
+                            broadcast = link.get('broadcast', IPV6_MULTICAST_GROUP)
+                            # Windows seems to have broadcast same as addr
+                            if broadcast.startswith(addr):
+                                broadcast = IPV6_MULTICAST_GROUP
+                            scope_sfx = []
+                            if '%' not in addr.split(':')[-1]:
+                                scope_sfx.append('%' + iface)
+                            scope_sfx.append('')
+                            for sfx in scope_sfx:
+                                try:
+                                    addrs = socket.getaddrinfo(addr + sfx, None, sock_family,
+                                                               socket.SOCK_STREAM)
+                                except Exception:
+                                    continue
+                                for addr in addrs:
+                                    ifn = addr[4][-1]
+                                    if not ifn and sfx != scope_sfx[-1]:
+                                        continue
+                                    addr = canonical_ipv6(addr[4][0])
+                                    if nodes and addr not in nodes:
+                                        continue
+                                    addrinfo = AddrInfo(sock_family, addr, ifn, broadcast, netmask)
+                                    sf_addrinfos[sock_family].append(addrinfo)
+
+        else:
+            if not node:
+                node = socket.gethostname()
+            netmask = None
+            for sock_family in sock_families:
+                for addrinfo in socket.getaddrinfo(node, None):
+                    if addrinfo[0] != sock_family or addrinfo[1] != socket.SOCK_STREAM:
+                        continue
+                    ifn = addrinfo[4][-1]
+                    if sock_family == socket.AF_INET6:
+                        addr = canonical_ipv6(addrinfo[4][0])
+                        if nodes and addr not in nodes:
+                            continue
+                        broadcast = IPV6_MULTICAST_GROUP
+                        logger.warning('IPv6 may not work without "netifaces" package!')
+                    else:
+                        addr = addrinfo[4][0]
+                        if nodes and addr not in nodes:
+                            continue
+                        broadcast = '<broadcast>'
+                    addrinfo = AddrInfo(sock_family, addr, ifn, broadcast, netmask)
+                    sf_addrinfos[sock_family].append(addrinfo)
+
+        for sock_family in sock_families:
+            addrinfos = sf_addrinfos.get(sock_family, [])
+            if node:
+                for addrinfo in addrinfos:
+                    if addrinfo.ip == node:
+                        return addrinfo
+            if sock_family == socket.AF_INET:
+                best = None
+                for addrinfo in addrinfos:
+                    if not best or (len(best.ip) < len(addrinfo.ip)) or best.ip.startswith('127'):
+                        best = addrinfo
+                if best:
+                    return best
+            else:
+                best = None
+                for addrinfo in addrinfos:
+                    if addrinfo.ip.startswith('fd'):
+                        # TODO: How to detect / avoid temporary addresses (privacy extensions)?
+                        if addrinfo.ifn:
+                            return addrinfo
+                    if not best or (len(best.ip) < len(addrinfo.ip)) or best.ip.startswith('fe80'):
+                        best = addrinfo
+                if best:
+                    return best
+                for addrinfo in addrinfos:
+                    if not best or (len(best.ip) < len(addrinfo.ip)):
+                        best = addrinfo
+                if best:
+                    return best
+        return None
 
     # TODO: is there a better approach to find best suitable address to select
     # (with netmask)?
@@ -1186,14 +1245,18 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 port = addrinfo.udp_sock.getsockname()[1]
                 ping_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
                 ping_sock.settimeout(2)
-                ping_sock.bind((addrinfo.ip, 0))
+                ttl_bin = struct.pack('@i', 2)
                 if addrinfo.family == socket.AF_INET:
                     ping_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                    if not self.ipv4_udp_broadcast:
+                        ping_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl_bin)
                 else:  # addrinfo.family == socket.AF_INET6
-                    ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS,
-                                         struct.pack('@i', 1))
-                    ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF,
-                                         addrinfo.ifn)
+                    ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, ttl_bin)
+                    try:
+                        ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF,
+                                             addrinfo.ifn)
+                    except Exception:
+                        pass
                 try:
                     yield ping_sock.sendto(ping_msg, (addrinfo.broadcast, port))
                 except Exception:
