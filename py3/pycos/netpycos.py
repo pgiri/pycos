@@ -100,7 +100,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
     _pycos_class = pycos.Pycos
 
     def __init__(self, udp_port=9705, tcp_port=None, node=None, ext_ip_addr=None,
-                 socket_family=None, ipv4_udp_broadcast=True, name=None, discover_peers=True,
+                 socket_family=None, ipv4_udp_multicast=True, name=None, discover_peers=True,
                  secret='', certfile=None, keyfile=None, notifier=None,
                  dest_path=None, max_file_size=None):
 
@@ -201,19 +201,19 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             logger.warning('Could not initialize networking')
             raise Exception('Invalid "node"?')
 
-        self.ipv4_udp_broadcast = bool(ipv4_udp_broadcast)
+        self.ipv4_udp_multicast = bool(ipv4_udp_multicast)
         if udp_port is None:
             udp_port = 9705
         udp_addrinfos = {}
         for addrinfo in self._addrinfos:
+            if addrinfo.family == socket.AF_INET and self.ipv4_udp_multicast:
+                addrinfo.broadcast = IPV4_MULTICAST_GROUP
             if os.name == 'nt':
                 bind_addr = addrinfo.ip
             elif sys.platform == 'darwin':
                 bind_addr = ''
             else:
                 bind_addr = addrinfo.broadcast
-            if (not self.ipv4_udp_broadcast) and addrinfo.broadcast == '<broadcast>':
-                addrinfo.broadcast = IPV4_MULTICAST_GROUP
             udp_addrinfos[bind_addr] = addrinfo
         for bind_addr, addrinfo in udp_addrinfos.items():
             udp_sock = socket.socket(addrinfo.family, socket.SOCK_DGRAM)
@@ -223,9 +223,8 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
 
             udp_sock.bind((bind_addr, udp_port))
             if addrinfo.family == socket.AF_INET:
-                if not self.ipv4_udp_broadcast:
-                    mreq = socket.inet_pton(addrinfo.family, IPV4_MULTICAST_GROUP)
-                    mreq += struct.pack('=I', socket.INADDR_ANY)
+                if self.ipv4_udp_multicast:
+                    mreq = socket.inet_aton(IPV4_MULTICAST_GROUP) + socket.inet_aton(addrinfo.ip)
                     udp_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
             else:  # addrinfo.family == socket.AF_INET6:
                 mreq = socket.inet_pton(addrinfo.family, addrinfo.broadcast)
@@ -447,7 +446,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             ttl_bin = struct.pack('@i', 2)
             if addrinfo.family == socket.AF_INET:
                 ping_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-                if not self.ipv4_udp_broadcast:
+                if self.ipv4_udp_multicast:
                     ping_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl_bin)
             else:  # addrinfo.family == socket.AF_INET6
                 ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, ttl_bin)
@@ -1248,7 +1247,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 ttl_bin = struct.pack('@i', 2)
                 if addrinfo.family == socket.AF_INET:
                     ping_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-                    if not self.ipv4_udp_broadcast:
+                    if self.ipv4_udp_multicast:
                         ping_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl_bin)
                 else:  # addrinfo.family == socket.AF_INET6
                     ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, ttl_bin)
