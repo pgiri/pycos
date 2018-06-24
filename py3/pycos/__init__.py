@@ -1005,34 +1005,27 @@ if platform.system() == 'Windows':
                     fd._event = None
                 else:
                     event = fd._event
-                if event & _AsyncPoller._Read:
-                    self.rset.discard(fid)
-                if event & _AsyncPoller._Write:
-                    self.wset.discard(fid)
-                if event & _AsyncPoller._Error:
-                    self.xset.discard(fid)
+                    fd._event = 0
+                if event:
+                    if event & _AsyncPoller._Read:
+                        self.rset.discard(fid)
+                    if event & _AsyncPoller._Write:
+                        self.wset.discard(fid)
+                    if event & _AsyncPoller._Error:
+                        self.xset.discard(fid)
                 if update and self._polling:
                     self.cmd_wsock.send(b'u')
                 self._lock.release()
 
             def add(self, fd, event):
                 fid = fd._fileno
-                if fd._timeout:
-                    self.iocp_notifier._del_timeout(fd)
                 self._lock.acquire()
                 if fd._event:
-                    cur_event = fd._event
+                    event = event & ~fd._event
+                    fd._event |= event
                 else:
-                    cur_event = 0
-                if cur_event & _AsyncPoller._Read:
-                    self.rset.discard(fid)
-                if cur_event & _AsyncPoller._Write:
-                    self.wset.discard(fid)
-                if cur_event & _AsyncPoller._Error:
-                    self.xset.discard(fid)
-                event |= cur_event
-                fd._event = event
-                self._fds[fid] = fd
+                    fd._event = event
+                    self._fds[fid] = fd
                 if event:
                     if event & _AsyncPoller._Read:
                         self.rset.add(fid)
@@ -1041,6 +1034,7 @@ if platform.system() == 'Windows':
                     if event & _AsyncPoller._Error:
                         self.xset.add(fid)
                     if fd._timeout:
+                        # TODO: add timeout only if not already in timeouts?
                         self.iocp_notifier._add_timeout(fd)
                         self.iocp_notifier.interrupt(fd._timeout)
                 self._lock.release()
@@ -1050,27 +1044,17 @@ if platform.system() == 'Windows':
             def clear(self, fd, event=0):
                 fid = fd._fileno
                 self._lock.acquire()
-                cur_event = fd._event
-                if cur_event:
-                    if cur_event & _AsyncPoller._Read:
-                        self.rset.discard(fid)
-                    if cur_event & _AsyncPoller._Write:
-                        self.wset.discard(fid)
-                    if cur_event & _AsyncPoller._Error:
-                        self.xset.discard(fid)
-                    if event:
-                        cur_event &= ~event
-                    else:
-                        cur_event = 0
-                    fd._event = cur_event
-                    if cur_event:
-                        if cur_event & _AsyncPoller._Read:
-                            self.rset.add(fid)
-                        if cur_event & _AsyncPoller._Write:
-                            self.wset.add(fid)
-                        if cur_event & _AsyncPoller._Error:
-                            self.xset.add(fid)
-                    elif fd._timeout_id:
+                if fd._event:
+                    d = fd._event & event
+                    if d:
+                        if d & _AsyncPoller._Read:
+                            self.rset.discard(fid)
+                        if d & _AsyncPoller._Write:
+                            self.wset.discard(fid)
+                        if d & _AsyncPoller._Error:
+                            self.xset.discard(fid)
+                    fd._event &= ~event
+                    if (not fd._event) and fd._timeout_id:
                         self.iocp_notifier._del_timeout(fd)
                     if self._polling:
                         self.cmd_wsock.send(b'm')
