@@ -1254,9 +1254,10 @@ class Pycos(pycos.Pycos):
                 ping_sock.settimeout(2)
                 ttl_bin = struct.pack('@i', 2)
                 if addrinfo.family == socket.AF_INET:
-                    ping_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
                     if self.ipv4_udp_multicast:
                         ping_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl_bin)
+                    else:
+                        ping_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
                 else:  # addrinfo.family == socket.AF_INET6
                     ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, ttl_bin)
                     try:
