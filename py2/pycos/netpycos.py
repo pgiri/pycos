@@ -217,8 +217,6 @@ class Pycos(pycos.Pycos):
                 addrinfo.broadcast = IPV4_MULTICAST_GROUP
             if os.name == 'nt':
                 bind_addr = addrinfo.ip
-            elif sys.platform == 'darwin':
-                bind_addr = ''
             else:
                 bind_addr = addrinfo.broadcast
             udp_addrinfos[bind_addr] = addrinfo
