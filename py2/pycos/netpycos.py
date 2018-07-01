@@ -161,7 +161,7 @@ class Pycos(pycos.Pycos):
                 ext_ip_addr = ext_ip_addrs[i]
             else:
                 ext_ip_addr = None
-            addrinfo = Pycos.node_addrinfo(node, socket_family=socket_family)
+            addrinfo = Pycos.host_addrinfo(host=node, socket_family=socket_family)
             if not addrinfo:
                 logger.warning('Invalid node "%s" ignored', node)
                 continue
@@ -617,7 +617,13 @@ class Pycos(pycos.Pycos):
         raise StopIteration(reply)
 
     @staticmethod
-    def node_addrinfo(node=None, socket_family=None):
+    def host_addrinfo(host=None, socket_family=None):
+        """If 'host' is given (as either host name or IP address), resolve it and
+        fill AddrInfo structure. If 'host' is not given, netifaces module is used to
+        find appropriate IP address. If 'socket_family' is given, IP address with that
+        'socket_family' is used. It should be either 'socket.AF_INET' (for IPv4) or
+        'socket.AF_INET6' (for IPv6).
+        """
 
         class AddrInfo(object):
             def __init__(self, family, ip, ifn, broadcast, netmask):
@@ -636,10 +642,13 @@ class Pycos(pycos.Pycos):
             ip_addr = re.sub(r'::+', '::', ip_addr)
             return ip_addr
 
-        nodes = []
-        if node:
+        if socket_family:
+            if socket_family not in (socket.AF_INET, socket.AF_INET6):
+                return None
+        hosts = []
+        if host:
             best = None
-            for addr in socket.getaddrinfo(node, None):
+            for addr in socket.getaddrinfo(host, None):
                 if socket_family and addr[0] != socket_family:
                     continue
                 if not best or addr[0] == socket.AF_INET:
@@ -647,25 +656,24 @@ class Pycos(pycos.Pycos):
             if best:
                 socket_family = best[0]
                 if best[0] == socket.AF_INET6:
-                    addr = canonical_ipv6(best[4][0])
+                    addr = canonical_ipv6(best[-1][0])
                 else:
-                    addr = best[4][0]
-                nodes.append(addr)
+                    addr = best[-1][0]
+                hosts.append(addr)
             else:
                 return None
 
         if socket_family:
-            sock_families = [socket_family]
+            socket_families = [socket_family]
         else:
-            sock_families = [socket.AF_INET, socket.AF_INET6]
+            socket_families = [socket.AF_INET, socket.AF_INET6]
 
-        sf_addrinfos = {}
-        for sock_family in sock_families:
-            sf_addrinfos[sock_family] = []
-
+        addrinfos = []
         if netifaces:
             for iface in netifaces.interfaces():
-                for sock_family in sock_families:
+                ifn = 0
+                iface_infos = []
+                for sock_family in socket_families:
                     for link in netifaces.ifaddresses(iface).get(sock_family, []):
                         netmask = link.get('netmask', None)
                         if sock_family == socket.AF_INET:
@@ -674,95 +682,95 @@ class Pycos(pycos.Pycos):
                             # Windows seems to have broadcast same as addr
                             if broadcast.startswith(addr):
                                 broadcast = '<broadcast>'
-                            if nodes and addr not in nodes:
-                                continue
                             try:
-                                addrs = socket.getaddrinfo(addr, None, sock_family,
-                                                           socket.SOCK_STREAM)
+                                addrs = socket.getaddrinfo(addr, None, sock_family, socket.SOCK_STREAM)
                             except Exception:
                                 addrs = []
                             for addr in addrs:
-                                addrinfo = AddrInfo(sock_family, addr[4][0], 0, broadcast, netmask)
-                                sf_addrinfos[sock_family].append(addrinfo)
+                                if hosts and addr[-1][0] not in hosts:
+                                    continue
+                                addrinfo = AddrInfo(sock_family, addr[-1][0], addr[-1][-1],
+                                                    broadcast, netmask)
+                                iface_infos.append(addrinfo)
                         else:  # sock_family == socket.AF_INET6
                             addr = str(link['addr'])
                             broadcast = link.get('broadcast', IPV6_MULTICAST_GROUP)
-                            # Windows seems to have broadcast same as addr
                             if broadcast.startswith(addr):
                                 broadcast = IPV6_MULTICAST_GROUP
-                            scope_sfx = []
-                            if '%' not in addr.split(':')[-1]:
-                                scope_sfx.append('%' + iface)
-                            scope_sfx.append('')
-                            for sfx in scope_sfx:
+                            if_sfx = ['']
+                            if not ifn and ('%' not in addr.split(':')[-1]):
+                                if_sfx.append('%' + iface)
+                            for sfx in if_sfx:
+                                if ifn and sfx:
+                                    break
                                 try:
                                     addrs = socket.getaddrinfo(addr + sfx, None, sock_family,
                                                                socket.SOCK_STREAM)
                                 except Exception:
                                     continue
                                 for addr in addrs:
-                                    ifn = addr[4][-1]
-                                    if not ifn and sfx != scope_sfx[-1]:
+                                    if addr[-1][-1]:
+                                        if ifn and addr[-1][-1] != ifn:
+                                            logger.warning('inconsistent scope IDs for %s: %s != %s',
+                                                           iface, ifn, addr[-1][-1])
+                                        ifn = addr[-1][-1]
+                                    if sfx:
                                         continue
-                                    addr = canonical_ipv6(addr[4][0])
-                                    if nodes and addr not in nodes:
+                                    addr = canonical_ipv6(addr[-1][0])
+                                    if hosts and addr not in hosts:
                                         continue
                                     addrinfo = AddrInfo(sock_family, addr, ifn, broadcast, netmask)
-                                    sf_addrinfos[sock_family].append(addrinfo)
+                                    iface_infos.append(addrinfo)
+                            if ifn:
+                                for addrinfo in iface_infos:
+                                    if not addrinfo.ifn:
+                                        addrinfo.ifn = ifn
+                addrinfos.extend(iface_infos)
 
         else:
-            if not node:
-                node = socket.gethostname()
+            if not host:
+                host = socket.gethostname()
             netmask = None
-            for sock_family in sock_families:
-                for addrinfo in socket.getaddrinfo(node, None):
-                    if addrinfo[0] != sock_family or addrinfo[1] != socket.SOCK_STREAM:
+            for sock_family in socket_families:
+                for addr in socket.getaddrinfo(host, None):
+                    if addr[0] != sock_family or addr[1] != socket.SOCK_STREAM:
                         continue
-                    ifn = addrinfo[4][-1]
-                    if sock_family == socket.AF_INET6:
-                        addr = canonical_ipv6(addrinfo[4][0])
-                        if nodes and addr not in nodes:
-                            continue
+                    ifn = addr[-1][-1]
+                    if sock_family == socket.AF_INET:
+                        broadcast = '<broadcast>'
+                        addr = addr[-1][0]
+                    else:  # sock_family == socket.AF_INET6
+                        addr = canonical_ipv6(addr[-1][0])
                         broadcast = IPV6_MULTICAST_GROUP
                         logger.warning('IPv6 may not work without "netifaces" package!')
-                    else:
-                        addr = addrinfo[4][0]
-                        if nodes and addr not in nodes:
-                            continue
-                        broadcast = '<broadcast>'
                     addrinfo = AddrInfo(sock_family, addr, ifn, broadcast, netmask)
-                    sf_addrinfos[sock_family].append(addrinfo)
+                    if hosts:
+                        if addrinfo.ip in hosts:
+                            return addrinfo
+                        else:
+                            continue
+                    addrinfos.append(addrinfo)
 
-        for sock_family in sock_families:
-            addrinfos = sf_addrinfos.get(sock_family, [])
-            if node:
-                for addrinfo in addrinfos:
-                    if addrinfo.ip == node:
-                        return addrinfo
-            if sock_family == socket.AF_INET:
-                best = None
-                for addrinfo in addrinfos:
+        best = None
+        for sock_family in socket_families:
+            for addrinfo in addrinfos:
+                if addrinfo.ip in hosts:
+                    return addrinfo
+                if addrinfo.family != sock_family:
+                    continue
+                if addrinfo.family == socket.AF_INET:
                     if not best or (len(best.ip) < len(addrinfo.ip)) or best.ip.startswith('127'):
                         best = addrinfo
-                if best:
-                    return best
-            else:
-                best = None
-                for addrinfo in addrinfos:
+                else:
                     if addrinfo.ip.startswith('fd'):
                         # TODO: How to detect / avoid temporary addresses (privacy extensions)?
                         if addrinfo.ifn:
                             return addrinfo
                     if not best or (len(best.ip) < len(addrinfo.ip)) or best.ip.startswith('fe80'):
                         best = addrinfo
-                if best:
-                    return best
-                for addrinfo in addrinfos:
-                    if not best or (len(best.ip) < len(addrinfo.ip)):
-                        best = addrinfo
-                if best:
-                    return best
-        return None
+            if best and best.family == socket.AF_INET and (not best.ip.startswith('127')):
+                return best
+        return best
 
     # TODO: is there a better approach to find best suitable address to select
     # (with netmask)?
