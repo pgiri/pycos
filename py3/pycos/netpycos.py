@@ -41,7 +41,7 @@ __all__ = pycos.__all__ + ['PeerStatus', 'RTI']
 MaxConnectionErrors = 10
 MsgTimeout = pycos.MsgTimeout
 IPV4_MULTICAST_GROUP = '239.255.97.5'
-IPV6_MULTICAST_GROUP = 'ff05::1'
+IPV6_MULTICAST_GROUP = 'ff05::674f:48ba:b409:3171:9705'
 
 
 class PeerStatus(object):
