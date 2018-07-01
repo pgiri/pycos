@@ -100,7 +100,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
     _pycos_class = pycos.Pycos
 
     def __init__(self, udp_port=9705, tcp_port=None, node=None, ext_ip_addr=None,
-                 socket_family=None, ipv4_udp_multicast=True, name=None, discover_peers=True,
+                 socket_family=None, ipv4_udp_multicast=False, name=None, discover_peers=True,
                  secret='', certfile=None, keyfile=None, notifier=None,
                  dest_path=None, max_file_size=None):
 
