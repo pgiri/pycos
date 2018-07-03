@@ -1675,6 +1675,8 @@ if __name__ == '__main__':
                         help='UDP port number to use')
     parser.add_argument('-t', '--tcp_port', dest='tcp_port', type=int, default=9705,
                         help='TCP port number to use')
+    parser.add_argument('--ipv4_udp_multicast', dest='ipv4_udp_multicast', action='store_true',
+                        default=False, help='use multicast for IPv4 UDP instead of broadcast')
     parser.add_argument('-n', '--name', dest='name', default=None,
                         help='(symbolic) name given to schduler')
     parser.add_argument('--dest_path', dest='dest_path', default=None,
