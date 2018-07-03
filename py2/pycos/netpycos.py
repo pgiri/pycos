@@ -24,11 +24,6 @@ try:
     import netifaces
 except ImportError:
     netifaces = None
-if not hasattr(socket, 'inet_pton') and os.name == 'nt':
-    try:
-        import win_inet_pton
-    except ImportError:
-        pass
 
 import pycos
 from pycos import *
@@ -165,6 +160,9 @@ class Pycos(pycos.Pycos):
             if not addrinfo:
                 logger.warning('Invalid node "%s" ignored', node)
                 continue
+            if addrinfo.family == socket.AF_INET6 and not hasattr(socket, 'inet_pton'):
+                if os.name == 'nt':
+                    raise Exception('"win_inet_pton" module is required for IPv6')
 
             tcp_sock = socket.socket(addrinfo.family, socket.SOCK_STREAM)
             if tcp_port is None:
