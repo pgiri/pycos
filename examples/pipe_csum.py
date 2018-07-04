@@ -6,25 +6,26 @@
 # argv[1] must be a text file
 
 import sys, os, traceback, subprocess, platform
-import asyncoro
-import asyncoro.asyncfile
+import pycos
+import pycos.asyncfile
     
-def communicate(input, coro=None):
+def communicate(input, task=None):
     if platform.system() == 'Windows':
         # asyncfile.Popen must be used instead of subprocess.Popen
-        pipe = asyncoro.asyncfile.Popen([r'\cygwin64\bin\sha1sum.exe'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        pipe = pycos.asyncfile.Popen([r'\cygwin64\bin\sha1sum.exe'],
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     else:
         pipe = subprocess.Popen(['sha1sum'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     # convert pipe to asynchronous version
-    async_pipe = asyncoro.asyncfile.AsyncPipe(pipe)
+    async_pipe = pycos.asyncfile.AsyncPipe(pipe)
     # 'communicate' takes either the data or file descriptor with data
     # (if file is too large to read in full) as input
     input = open(input)
     stdout, stderr = yield async_pipe.communicate(input)
     print('communicate sha1sum: %s' % stdout)
 
-def custom_feeder(input, coro=None):
-    def write_proc(fin, pipe, coro=None):
+def custom_feeder(input, task=None):
+    def write_proc(fin, pipe, task=None):
         while True:
             data = yield os.read(fin.fileno(), 8*1024)
             if not data:
@@ -34,7 +35,7 @@ def custom_feeder(input, coro=None):
         fin.close()
         pipe.stdin.close()
 
-    def read_proc(pipe, coro=None):
+    def read_proc(pipe, task=None):
         # output from sha1sum is small, so read until EOF
         data = yield pipe.stdout.read()
         pipe.stdout.close()
@@ -42,22 +43,22 @@ def custom_feeder(input, coro=None):
 
     if platform.system() == 'Windows':
         # asyncfile.Popen must be used instead of subprocess.Popen
-        pipe = asyncoro.asyncfile.Popen([r'\cygwin64\bin\sha1sum.exe'],
-                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        pipe = pycos.asyncfile.Popen([r'\cygwin64\bin\sha1sum.exe'],
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     else:
         pipe = subprocess.Popen(['sha1sum'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
-    async_pipe = asyncoro.asyncfile.AsyncPipe(pipe)
-    reader = asyncoro.Coro(read_proc, async_pipe)
-    writer = asyncoro.Coro(write_proc, open(input), async_pipe)
+    async_pipe = pycos.asyncfile.AsyncPipe(pipe)
+    reader = pycos.Task(read_proc, async_pipe)
+    writer = pycos.Task(write_proc, open(input), async_pipe)
     stdout = yield reader.finish()
     print('     feeder sha1sum: %s' % stdout)
 
-# asyncoro.logger.setLevel(asyncoro.Logger.DEBUG)
+# pycos.logger.setLevel(pycos.Logger.DEBUG)
 
 # simpler version using 'communicate'
-coro = asyncoro.Coro(communicate, sys.argv[1] if len(sys.argv) > 1 else sys.argv[0])
-coro.value() # wait for it to finish
+task = pycos.Task(communicate, sys.argv[1] if len(sys.argv) > 1 else sys.argv[0])
+task.value() # wait for it to finish
 
 # alternate version with custom read and write processes
-asyncoro.Coro(custom_feeder, sys.argv[1] if len(sys.argv) > 1 else sys.argv[0])
+pycos.Task(custom_feeder, sys.argv[1] if len(sys.argv) > 1 else sys.argv[0])
