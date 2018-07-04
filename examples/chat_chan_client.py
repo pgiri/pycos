@@ -22,7 +22,10 @@ def send_proc(task=None):
     # if server is in a remote network, use 'peer' as (optionally enabling
     # streaming for efficiency):
     # yield pycos.Pycos.instance().peer('server node/ip')
-    server = yield pycos.Task.locate('chat_server')
+    server = yield pycos.Task.locate('chat_server', timeout=5)
+    if not server:
+        print('Could not locate server')
+        raise StopIteration
     server.send(('join', task))
     client_id = yield task.receive()
     

@@ -23,21 +23,23 @@ def receiver_proc(task=None):
             print('Received "%s" from %s at %s' % \
                   (msg['msg'], msg['sender'].name, msg['sender'].location))
 
-# pycos.logger.setLevel(logging.DEBUG)
-channel = pycos.Channel('2clients')
-# register channel so client can get a reference to it
-channel.register()
 
-recv = pycos.Task(receiver_proc)
+if __name__ == '__main__':
+    # pycos.logger.setLevel(logging.DEBUG)
+    channel = pycos.Channel('2clients')
+    # register channel so client can get a reference to it
+    channel.register()
 
-if sys.version_info.major > 2:
-    read_input = input
-else:
-    read_input = raw_input
-while True:
-    try:
-        cmd = read_input('Enter "quit" or "exit" to terminate: ').strip().lower()
-        if cmd in ('quit', 'exit'):
+    recv = pycos.Task(receiver_proc)
+
+    if sys.version_info.major > 2:
+        read_input = input
+    else:
+        read_input = raw_input
+    while True:
+        try:
+            cmd = read_input('Enter "quit" or "exit" to terminate: ').strip().lower()
+            if cmd in ('quit', 'exit'):
+                break
+        except:
             break
-    except:
-        break

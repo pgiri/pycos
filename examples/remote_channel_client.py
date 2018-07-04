@@ -22,7 +22,10 @@ def receiver_proc2(task=None):
     # scheduler = pycos.Pycos.instance()
     # yield scheduler.peer('remote.ip')
     # yield scheduler.peer(pycos.Location('remote.ip', tcp_port))
-    rchannel = yield pycos.Channel.locate('2clients')
+    rchannel = yield pycos.Channel.locate('2clients', timeout=5)
+    if not rchannel:
+        print('Could not locate server!')
+        raise StopIteration
     # this task subscribes to the channel to get messages to server channel
     print('server is at %s' % rchannel.location)
     if (yield rchannel.subscribe(task)) != 0:
@@ -36,5 +39,7 @@ def receiver_proc2(task=None):
             break
     yield rchannel.unsubscribe(task)
 
-# pycos.logger.setLevel(logging.DEBUG)
-pycos.Task(receiver_proc2)
+
+if __name__ == '__main__':
+    # pycos.logger.setLevel(logging.DEBUG)
+    pycos.Task(receiver_proc2)

@@ -41,7 +41,6 @@ def chat(host, port, task=None):
             pycos.Task(client_send, clients, conn)
     except:
         for client in clients:
-            client.shutdown(socket.SHUT_RDWR)
             client.close()
         raise
 
