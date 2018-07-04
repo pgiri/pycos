@@ -242,6 +242,7 @@ if platform.system() == 'Windows':
                 self._notifier.register(self._handle)
             else:
                 self._notifier = None
+            self._event = None
 
         def read(self, size=0, full=False, timeout=None):
             """Read at most 'size' bytes from file; if 'size' <= 0,
@@ -530,6 +531,7 @@ else:
             self._write_task = None
             self._write_fn = None
             self._buflist = []
+            self._event = None
             flags = fcntl.fcntl(self._fileno, fcntl.F_GETFL)
             fcntl.fcntl(self._fileno, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
