@@ -36,6 +36,8 @@ def _dispycos_server_proc():
     import pycos.netpycos as pycos
     from pycos.netpycos import Task, SysTask, Location, MonitorException, logger
 
+    for _dispycos_var in ('_dispycos_server_process', '_dispycos_server_proc'):
+       globals().pop(_dispycos_var, None)
     _dispycos_task = pycos.Pycos.cur_task()
     _dispycos_task.register('dispycos_server')
     _dispycos_config = yield _dispycos_task.receive()
@@ -370,6 +372,8 @@ def _dispycos_spawn(_dispycos_config, _dispycos_id_ports, _dispycos_mp_queue,
     server_process = _dispycos_server_process
     for _dispycos_var in list(globals()):
         if _dispycos_var.startswith('_dispycos_'):
+            if _dispycos_var in ('_dispycos_server_process', '_dispycos_server_proc'):
+                continue
             globals().pop(_dispycos_var)
 
     for _dispycos_var in sys.modules.keys():
