@@ -152,46 +152,54 @@ class Pycos(pycos.Pycos):
         location = None
         for i in range(len(nodes)):
             node = nodes[i]
-            if len(ext_ip_addrs) > i:
-                ext_ip_addr = ext_ip_addrs[i]
+            if len(ext_ip_addrs) > i and ext_ip_addrs[i]:
+                ext_ip_addr = Pycos.host_ipaddr(ext_ip_addrs[i])
+                if not ext_ip_addr:
+                    logger.warning('invalid ext_ip_addr "%s" ignored', ext_ip_addrs[i])
             else:
                 ext_ip_addr = None
             addrinfo = Pycos.host_addrinfo(host=node, socket_family=socket_family)
             if not addrinfo:
                 logger.warning('Invalid node "%s" ignored', node)
                 continue
-            if addrinfo.family == socket.AF_INET6 and not hasattr(socket, 'inet_pton'):
-                if os.name == 'nt':
-                    raise Exception('"win_inet_pton" module is required for IPv6')
+            addrs = [addrinfo.ip]
+            if addrinfo.family == socket.AF_INET6:
+                if not hasattr(socket, 'inet_pton'):
+                    if os.name == 'nt':
+                        raise Exception('"win_inet_pton" module is required for IPv6')
+                if addrinfo.ip.startswith('fe80:'):
+                    # apparently binding to link-local address with OS X may fail in
+                    # some cases, so try with 'localhost' also
+                    addrs.append('localhost')
 
             tcp_sock = socket.socket(addrinfo.family, socket.SOCK_STREAM)
-            if tcp_port is None:
-                tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                try:
-                    tcp_sock.bind((addrinfo.ip, 9705))
-                except socket.error as e:
-                    if e.errno == errno.EADDRINUSE or e.errno == getattr(errno, 'WSAEACCES', None):
-                        tcp_sock.bind((addrinfo.ip, 0))
-                    else:
-                        raise
-            else:
-                if tcp_port:
+            for addr in addrs:
+                if tcp_port is None:
                     tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                tcp_sock.bind((addrinfo.ip, tcp_port))
+                    try:
+                        tcp_sock.bind((addr, 9705))
+                    except socket.error as e:
+                        if (e.errno == EADDRINUSE):
+                            tcp_sock.bind((addr, 0))
+                        elif (addrinfo.ip.startswith('fe80:') and e.errno == EADDRNOTAVAIL):
+                            continue
+                        else:
+                            raise
+                else:
+                    if tcp_port:
+                        tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    try:
+                        tcp_sock.bind((addr, tcp_port))
+                    except socket.error as e:
+                        if (addrinfo.ip.startswith('fe80:') and e.errno == EADDRNOTAVAIL):
+                            continue
+                        else:
+                            raise
 
-            location = Location(addrinfo.ip, tcp_sock.getsockname()[1])
+            location = Location(*(tcp_sock.getsockname()[0:2]))
+            addrinfo.ip = location.addr
             if ext_ip_addr:
-                try:
-                    info = socket.getaddrinfo(ext_ip_addr, None)[0]
-                    ip_addr = info[4][0]
-                    if info[0] == socket.AF_INET6:
-                        # canonicalize so different platforms resolve to same string
-                        ip_addr = re.sub(r'^0+', '', ip_addr)
-                        ip_addr = re.sub(r':0+', ':', ip_addr)
-                        ip_addr = re.sub(r'::+', '::', ip_addr)
-                    location.addr = ip_addr
-                except Exception:
-                    logger.warning('invalid ext_ip_addr "%s" ignored', ext_ip_addr)
+                location.addr = ext_ip_addr
 
             tcp_sock.listen(32)
             logger.info('TCP server "%s" @ %s', name if name else '', location)
@@ -370,10 +378,7 @@ class Pycos(pycos.Pycos):
                 info = socket.getaddrinfo(loc, None)[0]
                 ip_addr = info[4][0]
                 if info[0] == socket.AF_INET6:
-                    # canonicalize so different platforms resolve to same string
-                    ip_addr = re.sub(r'^0+', '', ip_addr)
-                    ip_addr = re.sub(r':0+', ':', ip_addr)
-                    ip_addr = re.sub(r'::+', '::', ip_addr)
+                    ip_addr = Pycos.host_ipaddr(ip_addr)
                 loc = Location(ip_addr, 0)
             except Exception:
                 logger.warning('invalid node: "%s"', str(loc))
@@ -618,6 +623,21 @@ class Pycos(pycos.Pycos):
         raise StopIteration(reply)
 
     @staticmethod
+    def host_ipaddr(host):
+        try:
+            info = socket.getaddrinfo(host, None)[0]
+        except:
+            return None
+        ip_addr = info[4][0]
+        if info[0] == socket.AF_INET6:
+            # canonicalize so different platforms resolve to same string
+            ip_addr = ip_addr.split('%')[0]
+            ip_addr = re.sub(r'^0+', '', ip_addr)
+            ip_addr = re.sub(r':0+', ':', ip_addr)
+            ip_addr = re.sub(r'::+', '::', ip_addr)
+        return ip_addr
+
+    @staticmethod
     def host_addrinfo(host=None, socket_family=None):
         """If 'host' is given (as either host name or IP address), resolve it and
         fill AddrInfo structure. If 'host' is not given, netifaces module is used to
@@ -635,14 +655,6 @@ class Pycos(pycos.Pycos):
                 self.netmask = netmask
                 self.ext_ip_addr = None
 
-        def canonical_ipv6(ip_addr):
-            # canonicalize so different platforms resolve to same string
-            ip_addr = ip_addr.split('%')[0]
-            ip_addr = re.sub(r'^0+', '', ip_addr)
-            ip_addr = re.sub(r':0+', ':', ip_addr)
-            ip_addr = re.sub(r'::+', '::', ip_addr)
-            return ip_addr
-
         if socket_family:
             if socket_family not in (socket.AF_INET, socket.AF_INET6):
                 return None
@@ -657,7 +669,7 @@ class Pycos(pycos.Pycos):
             if best:
                 socket_family = best[0]
                 if best[0] == socket.AF_INET6:
-                    addr = canonical_ipv6(best[-1][0])
+                    addr = Pycos.host_ipaddr(best[-1][0])
                 else:
                     addr = best[-1][0]
                 hosts.append(addr)
@@ -684,7 +696,8 @@ class Pycos(pycos.Pycos):
                             if broadcast.startswith(addr):
                                 broadcast = '<broadcast>'
                             try:
-                                addrs = socket.getaddrinfo(addr, None, sock_family, socket.SOCK_STREAM)
+                                addrs = socket.getaddrinfo(addr, None, sock_family,
+                                                           socket.SOCK_STREAM)
                             except Exception:
                                 addrs = []
                             for addr in addrs:
@@ -717,7 +730,7 @@ class Pycos(pycos.Pycos):
                                         ifn = addr[-1][-1]
                                     if sfx:
                                         continue
-                                    addr = canonical_ipv6(addr[-1][0])
+                                    addr = Pycos.host_ipaddr(addr[-1][0])
                                     if hosts and addr not in hosts:
                                         continue
                                     addrinfo = AddrInfo(sock_family, addr, ifn, broadcast, netmask)
@@ -741,7 +754,7 @@ class Pycos(pycos.Pycos):
                         broadcast = '<broadcast>'
                         addr = addr[-1][0]
                     else:  # sock_family == socket.AF_INET6
-                        addr = canonical_ipv6(addr[-1][0])
+                        addr = Pycos.host_ipaddr(addr[-1][0])
                         broadcast = IPV6_MULTICAST_GROUP
                         logger.warning('IPv6 may not work without "netifaces" package!')
                     addrinfo = AddrInfo(sock_family, addr, ifn, broadcast, netmask)
@@ -767,7 +780,7 @@ class Pycos(pycos.Pycos):
                         # TODO: How to detect / avoid temporary addresses (privacy extensions)?
                         if addrinfo.ifn:
                             return addrinfo
-                    if not best or (len(best.ip) < len(addrinfo.ip)) or best.ip.startswith('fe80'):
+                    if not best or (len(best.ip) < len(addrinfo.ip)) or best.ip.startswith('fe80:'):
                         best = addrinfo
             if best and best.family == socket.AF_INET and (not best.ip.startswith('127')):
                 return best
