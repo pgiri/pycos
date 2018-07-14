@@ -55,7 +55,7 @@ __maintainer__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __license__ = "Apache 2.0"
 __url__ = "https://pycos.sourceforge.io"
 __status__ = "Production"
-__version__ = "4.7.3"
+__version__ = "4.7.4"
 
 __all__ = ['Task', 'Pycos', 'Lock', 'RLock', 'Event', 'Condition', 'Semaphore',
            'AsyncSocket', 'HotSwapException', 'MonitorException', 'Location', 'Channel',
@@ -263,7 +263,7 @@ class _AsyncSocket(object):
         if self._blocking:
             self._unregister()
             self._rsock.setblocking(1)
-            if self._certfile:
+            if self._certfile and (not hasattr(self._rsock, 'do_handshake')):
                 self._rsock = ssl.wrap_socket(self._rsock, keyfile=self._keyfile,
                                               certfile=self._certfile,
                                               ssl_version=self._ssl_version)
