@@ -12,7 +12,7 @@ else:
 
 setup(
     name='pycos',
-    version='4.7.4',
+    version='4.7.5',
     description='Concurrent, Asynchronous, Distributed, Communicating Tasks with Python',
     long_description=open('README.rst').read(),
     keywords='concurrency, asynchronous, network programming, distributed, tasks, message passing',
