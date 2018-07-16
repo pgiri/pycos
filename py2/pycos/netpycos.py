@@ -24,6 +24,12 @@ try:
     import netifaces
 except ImportError:
     netifaces = None
+if os.name == 'nt':
+    from errno import WSAEACCES as EADDRINUSE
+    from errno import WSAEADDRNOTAVAIL as EADDRNOTAVAIL
+else:
+    from errno import EADDRINUSE
+    from errno import EADDRNOTAVAIL
 
 import pycos
 from pycos import *

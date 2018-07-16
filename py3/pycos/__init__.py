@@ -33,8 +33,6 @@ if platform.system() == 'Windows':
     from errno import WSAEINPROGRESS as EINPROGRESS
     from errno import WSAEWOULDBLOCK as EWOULDBLOCK
     from errno import WSAEINVAL as EINVAL
-    from errno import WSAEACCES as EADDRINUSE
-    from errno import WSAEADDRNOTAVAIL as EADDRNOTAVAIL
     from time import clock as _time
     _time()
     if not hasattr(socket, 'IPPROTO_IPV6'):
@@ -43,8 +41,6 @@ else:
     from errno import EINPROGRESS
     from errno import EWOULDBLOCK
     from errno import EINVAL
-    from errno import EADDRINUSE
-    from errno import EADDRNOTAVAIL
     from time import time as _time
 
 if sys.version_info >= (3, 3):
