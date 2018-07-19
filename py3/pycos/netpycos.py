@@ -746,7 +746,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             netmask = None
             for sock_family in socket_families:
                 for addr in socket.getaddrinfo(host, None):
-                    if addr[0] != sock_family or addr[1] != socket.SOCK_STREAM:
+                    if addr[0] != sock_family:
                         continue
                     ifn = addr[-1][-1]
                     if sock_family == socket.AF_INET:
