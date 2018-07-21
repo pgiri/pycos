@@ -3975,13 +3975,15 @@ class Pycos(object, metaclass=Singleton):
         """Internal use only.
         """
         self._lock.acquire()
-        cur = self._rchannels.get(name, None)
-        if cur is None or self._channels.get(cur.name, None) is None:
-            self._rchannels[name] = channel
-            ret = 0
-        else:
+        if name in self._rchannels:
             logger.warning('channel "%s" is already registered', name)
             ret = -1
+        elif channel.name not in self._channels:
+            logger.warning('channel "%s" is invalid', channel)
+            ret = -1
+        else:
+            self._rchannels[name] = channel
+            ret = 0
         self._lock.release()
         return ret
 
@@ -3989,7 +3991,8 @@ class Pycos(object, metaclass=Singleton):
         """Internal use only.
         """
         self._lock.acquire()
-        if self._rchannels.pop(name, None) is channel:
+        if self._rchannels.get(name, None) is channel:
+            self._rchannels.pop(name, None)
             ret = 0
         else:
             # logger.warning('channel "%s" is not registered', name)
@@ -4001,13 +4004,15 @@ class Pycos(object, metaclass=Singleton):
         """Internal use only.
         """
         self._lock.acquire()
-        cur = self._rtasks.get(name, None)
-        if cur is None or self._tasks.get(cur._id, None) is None:
-            self._rtasks[name] = task
-            ret = 0
-        else:
+        if name in self._rtasks:
             logger.warning('task "%s" is already registered', name)
             ret = -1
+        elif task._id not in self._tasks:
+            logger.warning('task "%s" is invalid', task)
+            ret = -1
+        else:
+            self._rtasks[name] = task
+            ret = 0
         self._lock.release()
         return ret
 
@@ -4015,7 +4020,8 @@ class Pycos(object, metaclass=Singleton):
         """Internal use only.
         """
         self._lock.acquire()
-        if self._rtasks.pop(name, None) is task:
+        if self._rtasks.get(name, None) is task:
+            self._rtasks.pop(name, None)
             ret = 0
         else:
             # logger.warning('task "%s" is not registered', name)
