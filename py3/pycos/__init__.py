@@ -2884,7 +2884,7 @@ class Task(object):
         if self._location:
             return hash(str(self))
         else:
-            return hash(id(self))
+            return id(self)
 
 
 class Location(object):
