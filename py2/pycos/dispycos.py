@@ -75,17 +75,10 @@ class DispycosNodeAllocate(object):
     only nodes that run 64-bit Linux.
     """
 
-    def __init__(self, node, platform='', cpus=0, memory=0, disk=0):
+    def __init__(self, node, platform='', cpus=None, memory=None, disk=None):
         if node.find('*') < 0:
-            try:
-                info = socket.getaddrinfo(node, None)[0]
-                ip_addr = info[4][0]
-                if info[0] == socket.AF_INET6:
-                    ip_addr = re.sub(r'^0*', '', ip_addr)
-                    ip_addr = re.sub(r':0*', ':', ip_addr)
-                    ip_addr = re.sub(r'::+', '::', ip_addr)
-                node = ip_addr
-            except Exception:
+            node = pycos.Pycos.host_ipaddr(node)
+            if not node:
                 node = ''
 
         if node:
@@ -113,12 +106,14 @@ class DispycosNodeAllocate(object):
         if ((self.memory and memory and self.memory > memory) or
             (self.disk and disk and self.disk > disk)):
             return 0
-        if self.cpus > 0:
+        if not isinstance(self.cpus, int):
+            return cpus
+        if self.cpus == 0:
+            return 0
+        elif self.cpus > 0:
             if self.cpus > cpus:
                 return 0
             return self.cpus
-        elif self.cpus == 0:
-            return 0
         else:
             cpus += self.cpus
             if cpus < 0:
