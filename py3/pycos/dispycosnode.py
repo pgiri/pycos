@@ -934,6 +934,7 @@ if __name__ == '__main__':
         # TODO: create new pipe for each computation instead?
         _dispycos_parent_pipe, _dispycos_child_pipe = multiprocessing.Pipe(duplex=True)
 
+        cpus_reserved = 0
         while 1:
             msg = yield task.receive(timeout=interval)
             now = time.time()
@@ -1005,18 +1006,22 @@ if __name__ == '__main__':
                                 cpus = len(_dispycos_servers)
                         if ((yield client.deliver(cpus, timeout=min(msg_timeout, interval))) == 1 and
                             cpus):
+                            cpus_reserved = cpus
                             cur_computation_auth = auth
                             last_pulse = now
                             _dispycos_busy_time.value = int(time.time())
                             scheduler_task = msg['status_task']
-                    elif isinstance(client, pycos.Task):
-                        client.send(0)
+                    else:
+                        cpus_reserved = 0
+                        if isinstance(client, pycos.Task):
+                            client.send(0)
 
                 elif req == 'computation':
                     client = msg.get('client', None)
                     computation = msg.get('computation', None)
                     if (cur_computation_auth == msg.get('auth', None) and
-                        isinstance(client, pycos.Task) and isinstance(computation, Computation)):
+                        isinstance(client, pycos.Task) and isinstance(computation, Computation) and
+                        cpus_reserved > 0):
                         last_pulse = now
                         _dispycos_busy_time.value = int(time.time())
                         _dispycos_config['scheduler_task'] = pycos.serialize(scheduler_task)
@@ -1035,6 +1040,7 @@ if __name__ == '__main__':
 
                         id_ports = [(server.id, _dispycos_tcp_ports[server.id - 1])
                                     for server in _dispycos_servers if not server.task]
+                        id_ports = id_ports[:cpus_reserved]
                         args = (_dispycos_config, id_ports, _dispycos_mp_queue, _dispycos_child_pipe,
                                 pycos.serialize(computation) if os.name == 'nt'
                                 else computation, msg.get('setup_args', ()))
@@ -1060,6 +1066,7 @@ if __name__ == '__main__':
                         scheduler_task = None
                         interval = _dispycos_config['max_pulse_interval']
                         released = 'released'
+                        cpus_reserved = 0
                     else:
                         released = 'invalid'
                     client = msg.get('client', None)
@@ -1077,6 +1084,7 @@ if __name__ == '__main__':
                         cur_computation_auth = None
                         scheduler_task = None
                         interval = _dispycos_config['max_pulse_interval']
+                        cpus_reserved = 0
                         if req == 'quit' or req == 'terminate':
                             _dispycos_config['serve'] = 0
                             if all(not server.task for server in _dispycos_servers):
