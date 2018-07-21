@@ -56,7 +56,7 @@ __maintainer__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __license__ = "Apache 2.0"
 __url__ = "https://pycos.sourceforge.io"
 __status__ = "Production"
-__version__ = "4.7.5"
+__version__ = "4.7.6"
 
 __all__ = ['Task', 'Pycos', 'Lock', 'RLock', 'Event', 'Condition', 'Semaphore',
            'AsyncSocket', 'HotSwapException', 'MonitorException', 'Location', 'Channel',
@@ -1845,6 +1845,7 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
         def terminate(self):
             if hasattr(self.cmd_write, 'getsockname'):
                 self.cmd_write.close()
+                self._fds.pop(self.cmd_read._fileno, None)
             self.cmd_read.close()
             for fd in self._fds.values():
                 setblocking = getattr(fd, 'setblocking', None)
@@ -3329,15 +3330,15 @@ class Pycos(object):
     __metaclass__ = Singleton
     _schedulers = {}
 
-    # in _scheduled set, waiting for turn to execute
+    # waiting for turn to execute, in _scheduled set
     _Scheduled = 1
-    # in _scheduled, currently executing
+    # currently executing, in _scheduled set
     _Running = 2
-    # in _suspended, waiting for resume
+    # waiting for resume
     _Suspended = 3
-    # in _suspended, waiting for I/O operation
+    # waiting for I/O operation
     _AwaitIO_ = 4
-    # in _suspended, waiting for message
+    # waiting for message
     _AwaitMsg_ = 5
 
     def __init__(self):
@@ -3350,7 +3351,6 @@ class Pycos(object):
         self.__cur_task = None
         self._tasks = {}
         self._scheduled = set()
-        self._suspended = set()
         self._timeouts = []
         self._quit = False
         self._daemons = 0
@@ -3414,7 +3414,7 @@ class Pycos(object):
         self._tasks[task._id] = task
         self._complete.clear()
         task._state = Pycos._Scheduled
-        self._scheduled.add(task._id)
+        self._scheduled.add(task)
         if self._polling and len(self._scheduled) == 1:
             self._notifier.interrupt()
         self._lock.release()
@@ -3423,13 +3423,11 @@ class Pycos(object):
         """Internal use only.
         """
         self._lock.acquire()
-        try:
-            self._scheduled.remove(task._id)
-        except KeyError:
-            ret = -1
-        else:
-            self._tasks.pop(task._id, None)
-            ret = 0
+        ret = -1
+        if task._state == Pycos._Scheduled or task._state == Pycos._Running:
+            if self._tasks.pop(task._id, None) == task:
+                self._scheduled.discard(task)
+                ret = 0
         self._lock.release()
         return ret
 
@@ -3459,9 +3457,9 @@ class Pycos(object):
         self._lock.acquire()
         tid = task._id
         task = self._tasks.get(tid, None)
-        if task is None or not isinstance(monitor, Task):
+        if (not task) or (not isinstance(monitor, Task)):
             self._lock.release()
-            logger.warning('monitor: invalid task: %s / %s', task, type(monitor))
+            logger.warning('monitor: invalid task: %s / %s', tid, type(monitor))
             return -1
         task._monitors.add(monitor)
         self._lock.release()
@@ -3475,7 +3473,6 @@ class Pycos(object):
             self._lock.release()
             logger.warning('invalid "suspend" - "%s" != "%s"', task, self.__cur_task)
             return -1
-        tid = task._id
         if state == Pycos._AwaitMsg_ and task._msgs:
             s, update = task._msgs[0]
             if s == state:
@@ -3494,9 +3491,8 @@ class Pycos(object):
                 return alarm_value
             else:
                 task._timeout = _time() + timeout + 0.0001
-                heappush(self._timeouts, (task._timeout, tid, alarm_value))
-        self._scheduled.discard(tid)
-        self._suspended.add(tid)
+                heappush(self._timeouts, (task._timeout, task._id, alarm_value))
+        self._scheduled.discard(task)
         task._state = state
         self._lock.release()
         return 0
@@ -3514,8 +3510,7 @@ class Pycos(object):
         if task._state == state:
             task._timeout = None
             task._value = update
-            self._suspended.discard(tid)
-            self._scheduled.add(tid)
+            self._scheduled.add(task)
             task._state = Pycos._Scheduled
             if self._polling and len(self._scheduled) == 1:
                 self._notifier.interrupt()
@@ -3532,16 +3527,15 @@ class Pycos(object):
         self._lock.acquire()
         tid = task._id
         task = self._tasks.get(tid, None)
-        if task is None or task._state not in (Pycos._Scheduled, Pycos._Suspended,
-                                               Pycos._AwaitIO_, Pycos._AwaitMsg_):
+        if ((not task) or task._state not in (Pycos._Scheduled, Pycos._Suspended,
+                                              Pycos._AwaitIO_, Pycos._AwaitMsg_)):
             logger.warning('invalid task %s to throw exception', tid)
             self._lock.release()
             return -1
         task._timeout = None
         task._exceptions.append(args)
         if task._state in (Pycos._AwaitIO_, Pycos._Suspended, Pycos._AwaitMsg_):
-            self._suspended.discard(tid)
-            self._scheduled.add(tid)
+            self._scheduled.add(task)
             task._state = Pycos._Scheduled
             if self._polling and len(self._scheduled) == 1:
                 self._notifier.interrupt()
@@ -3554,16 +3548,15 @@ class Pycos(object):
         self._lock.acquire()
         tid = task._id
         task = self._tasks.get(tid, None)
-        if task is None:
+        if not task:
             logger.warning('invalid task %s to terminate', tid)
             self._lock.release()
             return -1
         # TODO: if currently waiting I/O or holding locks, warn?
         if task._state == Pycos._Running:
-            logger.warning('task to terminate %s/%s is running', task._name, tid)
+            logger.warning('task to terminate %s is running', task)
         else:
-            self._suspended.discard(tid)
-            self._scheduled.add(tid)
+            self._scheduled.add(task)
             task._state = Pycos._Scheduled
             task._timeout = None
             task._callers = []
@@ -3579,7 +3572,7 @@ class Pycos(object):
         self._lock.acquire()
         tid = task._id
         task = self._tasks.get(tid, None)
-        if task is None:
+        if not task:
             logger.warning('invalid task %s to swap', tid)
             self._lock.release()
             return -1
@@ -3591,23 +3584,20 @@ class Pycos(object):
             task._timeout = None
             # TODO: check that another HotSwapException is not pending?
             if task._state is None:
-                # assert task._id not in self._scheduled
-                # assert task._id not in self._suspended
                 task._generator = task._swap_generator
                 task._value = None
                 if task._complete == 0:
                     task._complete = None
                 elif isinstance(task._complete, Event):
                     task._complete.clear()
-                self._scheduled.add(tid)
+                self._scheduled.add(task)
                 task._state = Pycos._Scheduled
                 task._hot_swappable = False
             else:
                 task._exceptions.append((HotSwapException, HotSwapException(task._swap_generator)))
                 # assert task._state != Pycos._AwaitIO_
                 if task._state in (Pycos._Suspended, Pycos._AwaitMsg_):
-                    self._suspended.discard(tid)
-                    self._scheduled.add(tid)
+                    self._scheduled.add(task)
                     task._state = Pycos._Scheduled
             if self._polling and len(self._scheduled) == 1:
                 self._notifier.interrupt()
@@ -3640,21 +3630,14 @@ class Pycos(object):
                 now = _time() + 0.0001
                 while self._timeouts and self._timeouts[0][0] <= now:
                     timeout, tid, alarm_value = heappop(self._timeouts)
-                    # assert timeout <= now
                     task = self._tasks.get(tid, None)
                     if not task or task._timeout != timeout:
                         continue
-                    # if task._state not in (Pycos._AwaitIO_, Pycos._Suspended,
-                    #                        Pycos._AwaitMsg_):
-                    #     logger.warning('task %s/%s is in state %s for resume; ignored',
-                    #                    task._name, task._id, task._state)
-                    #     continue
                     task._timeout = None
-                    self._suspended.discard(tid)
-                    self._scheduled.add(tid)
                     task._state = Pycos._Scheduled
+                    self._scheduled.add(task)
                     task._value = alarm_value
-            scheduled = [self._tasks[tid] for tid in self._scheduled]
+            scheduled = list(self._scheduled)
             self._lock.release()
 
             for task in scheduled:
@@ -3718,8 +3701,7 @@ class Pycos(object):
                         elif task._exceptions:
                             # exception in callee, restore saved value
                             task._value = caller[1]
-                            self._suspended.discard(task._id)
-                            self._scheduled.add(task._id)
+                            self._scheduled.add(task)
                             task._state = Pycos._Scheduled
                         elif task._state == Pycos._Running:
                             task._state = Pycos._Scheduled
@@ -3774,21 +3756,19 @@ class Pycos(object):
                             task._msgs.clear()
                             task._monitors.clear()
                             task._exceptions = []
-                            if self._tasks.pop(task._id, None) != task:
-                                logger.warning('invalid task: %s, %s', task._id, task._state)
                             if task._daemon is True:
                                 self._daemons -= 1
+                            self._tasks.pop(task._id, None)
                         elif task._monitors:
                             # a (local) monitor can restart it with hot_swap
                             task._hot_swappable = True
                             task._exceptions = []
-                        task._state = None
                         task._generator = None
                         if task._complete:
                             task._complete.set()
                         else:
                             task._complete = 0
-                        self._scheduled.discard(task._id)
+                        self._scheduled.discard(task)
                         if len(self._tasks) == self._daemons:
                             self._complete.set()
                     self._lock.release()
@@ -3831,7 +3811,6 @@ class Pycos(object):
             else:
                 task._complete = 0
         self._scheduled.clear()
-        self._suspended.clear()
         self._tasks.clear()
         self._channels.clear()
         self._timeouts = []
