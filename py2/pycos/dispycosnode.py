@@ -515,7 +515,7 @@ if __name__ == '__main__':
                         help='IP address or host name of this node')
     parser.add_argument('--ext_ip_addr', dest='ext_ip_addr', action='append', default=[],
                         help='External IP address to use (needed in case of NAT firewall/gateway)')
-    parser.add_argument('--tcp_ports', dest='tcp_ports', action='append', default=['9706'],
+    parser.add_argument('--tcp_ports', dest='tcp_ports', action='append', default=[],
                         help='TCP port numbers to use')
     parser.add_argument('-u', '--udp_port', dest='udp_port', type=int, default=9706,
                         help='UDP port number to use')
@@ -650,16 +650,16 @@ if __name__ == '__main__':
                                                                   int(tcp_ports[1]) + 1))
         else:
             raise Exception('Invalid TCP port range "%s"' % tcp_ports)
-    _dispycos_tcp_ports = sorted(_dispycos_tcp_ports)
-
     if _dispycos_tcp_ports:
-        for tcp_port in range(_dispycos_tcp_ports[-1] + 1,
-                              _dispycos_tcp_ports[-1] + 1 +
-                              (_dispycos_cpus + 1) - len(_dispycos_tcp_ports)):
-            _dispycos_tcp_ports.append(int(tcp_port))
-        # _dispycos_tcp_ports = _dispycos_tcp_ports[:(_dispycos_cpus + 1)]
+        _dispycos_tcp_ports = sorted(_dispycos_tcp_ports)
     else:
-        _dispycos_tcp_ports = [0] * (_dispycos_cpus + 1)
+        _dispycos_tcp_ports = [9706]
+
+    for tcp_port in range(_dispycos_tcp_ports[-1] + 1,
+                          _dispycos_tcp_ports[-1] + 1 +
+                          (_dispycos_cpus + 1) - len(_dispycos_tcp_ports)):
+        _dispycos_tcp_ports.append(int(tcp_port))
+    # _dispycos_tcp_ports = _dispycos_tcp_ports[:(_dispycos_cpus + 1)]
     del tcp_port, tcp_ports
 
     peers, _dispycos_config['peers'] = _dispycos_config['peers'], []
