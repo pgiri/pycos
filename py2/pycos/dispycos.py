@@ -75,7 +75,7 @@ class DispycosNodeAllocate(object):
     only nodes that run 64-bit Linux.
     """
 
-    def __init__(self, node, platform='', cpus=None, memory=None, disk=None):
+    def __init__(self, node, port=None, platform='', cpus=None, memory=None, disk=None):
         if node.find('*') < 0:
             node = pycos.Pycos.host_ipaddr(node)
             if not node:
@@ -86,6 +86,7 @@ class DispycosNodeAllocate(object):
         else:
             logger.warning('node "%s" is invalid', node)
             self.ip_rex = ''
+        self.port = port
         self.platform = platform.lower()
         self.cpus = cpus
         self.memory = memory
@@ -1132,8 +1133,9 @@ class Scheduler(object):
 
     def __computation_scheduler_proc(self, nodes, task=None):
         task.set_daemon()
+        pycos_scheduler = pycos.Pycos.instance()
         for node in nodes:
-            yield pycos.Pycos.instance().peer(node, broadcast=True)
+            yield pycos_scheduler.peer(node, broadcast=True)
         while 1:
             if self._cur_computation:
                 self.__computation_sched_event.clear()
@@ -1170,6 +1172,12 @@ class Scheduler(object):
                 self._cur_client_auth = None
                 self._cur_computation = None
                 continue
+            for node in self.__cur_node_allocations:
+                if node.ip_rex.find('*') >= 0:
+                    pass
+                loc = pycos.Location(node.ip_rex.replace('\\.', '.'),
+                                     node.port if node.port else self._node_port)
+                SysTask(pycos_scheduler.peer, loc)
             for node in self._disabled_nodes.itervalues():
                 SysTask(self.__get_node_info, node)
             self.__timer_task.send(None)
