@@ -66,26 +66,29 @@ class DispycosNodeAllocate(object):
     """Allocation of nodes can be customized by specifying 'node_allocations' of
     Computation with DispycosNodeAllocate instances.
 
-    'ip_addr' must be a regular expression, e.g., "192\.168\.1\..*" (note that
-    "." without escape stands for "any" character), 'cpus' must be minimum
-    number of servers running on that node, 'memory' is available memory in
-    bytes, 'disk' is available disk space (on the partition where dispycosnode
-    servers are running from), and 'platform' is regular expression to match
-    output of"platform.platform()" on that node, e.g., "Linux.*x86_64" to accept
-    only nodes that run 64-bit Linux.
+
+    'node' must be hostname or IP address (with possibly '*' to match rest of IP
+    address), 'port must be TCP port used by node (only if 'node' doesn't have
+    '*'), 'cpus', if given, must be number of servers running on that node if
+    positive, or number of CPUs not to use if negative, 'memory' is minimum
+    available memory in bytes, 'disk' is minimum available disk space (on the
+    partition where dispycosnode servers are running from), and 'platform' is
+    regular expression to match output of"platform.platform()" on that node,
+    e.g., "Linux.*x86_64" to accept only nodes that run 64-bit Linux.
     """
 
     def __init__(self, node, port=None, platform='', cpus=None, memory=None, disk=None):
         if node.find('*') < 0:
-            node = pycos.Pycos.host_ipaddr(node)
-            if not node:
-                node = ''
+            self.ip_rex = pycos.Pycos.host_ipaddr(node)
+        else:
+            self.ip_rex = node
 
-        if node:
-            self.ip_rex = node.replace('.', '\\.').replace('*', '.*')
+        if self.ip_rex:
+            self.ip_rex = self.ip_rex.replace('.', '\\.').replace('*', '.*')
         else:
             logger.warning('node "%s" is invalid', node)
             self.ip_rex = ''
+
         self.port = port
         self.platform = platform.lower()
         self.cpus = cpus
@@ -1138,8 +1141,9 @@ class Scheduler(object, metaclass=pycos.Singleton):
 
     def __computation_scheduler_proc(self, nodes, task=None):
         task.set_daemon()
+        pycos_scheduler = pycos.Pycos.instance()
         for node in nodes:
-            yield pycos.Pycos.instance().peer(node, broadcast=True)
+            yield pycos_scheduler.peer(node, broadcast=True)
         while 1:
             if self._cur_computation:
                 self.__computation_sched_event.clear()
