@@ -809,7 +809,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         Internal use only.
         """
         if peer_signature in _Peer._sign_locations:
-            raise StopIteration
+            raise StopIteration(0)
         sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_STREAM),
                            keyfile=self._keyfile, certfile=self._certfile)
         sock.settimeout(MsgTimeout)
