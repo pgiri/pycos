@@ -445,6 +445,7 @@ class Pycos(pycos.Pycos):
             ping_msg = 'ping:'.encode() + serialize(ping_msg)
             ping_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
             ping_sock.settimeout(2)
+            ping_sock.bind((addrinfo.ip, 0))
             try:
                 yield ping_sock.sendto(ping_msg, (loc.addr, udp_port))
             except Exception:
@@ -462,7 +463,7 @@ class Pycos(pycos.Pycos):
         def _discover(addrinfo, port, task=None):
             ping_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
             ping_sock.settimeout(2)
-            ttl_bin = struct.pack('@i', 2)
+            ttl_bin = struct.pack('@i', 1)
             if addrinfo.family == socket.AF_INET:
                 if self.ipv4_udp_multicast:
                     ping_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl_bin)
@@ -478,6 +479,7 @@ class Pycos(pycos.Pycos):
             if not port:
                 port = addrinfo.udp_sock.getsockname()[1]
             ping_msg['location'] = addrinfo.location
+            ping_sock.bind((addrinfo.ip, 0))
             try:
                 yield ping_sock.sendto('ping:'.encode() + serialize(ping_msg),
                                        (addrinfo.broadcast, port))
@@ -1278,7 +1280,7 @@ class Pycos(pycos.Pycos):
                 port = addrinfo.udp_sock.getsockname()[1]
                 ping_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
                 ping_sock.settimeout(2)
-                ttl_bin = struct.pack('@i', 2)
+                ttl_bin = struct.pack('@i', 1)
                 if addrinfo.family == socket.AF_INET:
                     if self.ipv4_udp_multicast:
                         ping_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl_bin)
@@ -1291,6 +1293,7 @@ class Pycos(pycos.Pycos):
                                              addrinfo.ifn)
                     except Exception:
                         pass
+                ping_sock.bind((addrinfo.ip, 0))
                 try:
                     yield ping_sock.sendto(ping_msg, (addrinfo.broadcast, port))
                 except Exception:
