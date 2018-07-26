@@ -349,7 +349,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             self._lock.release()
         raise StopIteration(loc)
 
-    def peer(self, loc, udp_port=0, stream_send=False, broadcast=False, task=None):
+    def peer(self, loc, udp_port=0, stream_send=False, relay=False, task=None):
         """Must be used with 'yield', as 'status = yield scheduler.peer("loc")'.
 
         Add pycos running at 'loc' as peer to communicate. Peers on a local
@@ -364,7 +364,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         again to send messages (i.e., as a stream) to peer 'host' (instead of
         one message per connection).
 
-        If 'broadcast' is True, the client information is broadcast on the
+        If 'relay' is True, the client information is relayed on the
         network of peer. This can be used if client is on remote network and
         needs to communicate with all pycos's available on the network of peer
         (at 'loc').
@@ -395,7 +395,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             _Peer._lock.release()
             if peer:
                 peer.stream = stream_send
-                if not broadcast:
+                if not relay:
                     self._lock.release()
                     raise StopIteration(0)
         else:
@@ -419,13 +419,14 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 yield sock.connect((loc.addr, loc.port))
                 yield sock.send_msg(serialize(req))
                 sign = yield sock.recv_msg()
-                ret = yield self._acquaint_(loc, sign.decode(), addrinfo, task=task)
+                ret = yield self._acquaint_({'location': loc, 'signature': sign.decode()},
+                                            addrinfo, task=task)
             except Exception:
                 ret = -1
             finally:
                 sock.close()
 
-            if broadcast and ret == 0:
+            if relay and ret == 0:
                 kwargs = {'location': addrinfo.location, 'signature': self._signature,
                           'name': self._name, 'version': __version__}
                 _Peer.send_req_to(_NetRequest('relay_ping', kwargs=kwargs, dst=loc), loc)
@@ -434,7 +435,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             if not udp_port:
                 udp_port = 9705
             ping_msg = {'location': addrinfo.location, 'signature': self._signature,
-                        'name': self._name, 'version': __version__, 'broadcast': broadcast}
+                        'name': self._name, 'version': __version__, 'relay': relay}
             ping_msg = 'ping:'.encode() + serialize(ping_msg)
             ping_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
             ping_sock.settimeout(2)
@@ -804,12 +805,34 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 best = (i, addrinfo)
         return best[1]
 
-    def _acquaint_(self, peer_location, peer_signature, addrinfo, task=None):
+    def _acquaint_(self, ping_info, addrinfo, task=None):
         """
         Internal use only.
         """
-        if peer_signature in _Peer._sign_locations:
+        if self._ignore_peers:
+            raise StopIteration(-1)
+        if ping_info.pop('relay', None):
+            SysTask(self._relay_ping_, ping_info, addrinfo)
+
+        peer_location = ping_info.get('location', None)
+        if not isinstance(peer_location, Location):
+            raise StopIteration(-1)
+        peer_signature = ping_info['signature']
+        if peer_location in self._locations or peer_signature in _Peer._sign_locations:
             raise StopIteration(0)
+        _Peer._lock.acquire()
+        peer = _Peer.peers.get((peer_location.addr, peer_location.port), None)
+        _Peer._lock.release()
+        if peer:
+            if self._secret is None:
+                auth_code = None
+            else:
+                auth_code = peer_signature + self._secret
+                auth_code = hashlib.sha1(auth_code.encode()).hexdigest()
+            if peer.auth == auth_code:
+                raise StopIteration(0)
+            _Peer.remove(peer_location)
+
         sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_STREAM),
                            keyfile=self._keyfile, certfile=self._certfile)
         sock.settimeout(MsgTimeout)
@@ -833,6 +856,37 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         sock.close()
         raise StopIteration(0)
 
+    def _relay_ping_(self, ping_msg, addrinfo, task=None):
+        """
+        Internal use only.
+        """
+        ping_msg = 'ping:'.encode() + serialize(ping_msg)
+        port = addrinfo.udp_sock.getsockname()[1]
+        ping_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
+        ping_sock.settimeout(2)
+        ttl_bin = struct.pack('@i', 1)
+        if addrinfo.family == socket.AF_INET:
+            if self.ipv4_udp_multicast:
+                ping_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl_bin)
+                # ping_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 0)
+            else:
+                ping_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        else:  # addrinfo.family == socket.AF_INET6
+            ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, ttl_bin)
+            # ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_LOOP, 0)
+            try:
+                ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF,
+                                     addrinfo.ifn)
+            except Exception:
+                pass
+        ping_sock.bind((addrinfo.ip, 0))
+        try:
+            yield ping_sock.sendto(ping_msg, (addrinfo.broadcast, port))
+        except Exception:
+            pass
+        finally:
+            ping_sock.close()
+
     def _udp_proc(self, location, addrinfo, task=None):
         """
         Internal use only.
@@ -852,29 +906,11 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 ping_info = deserialize(msg[len(b'ping:'):])
             except Exception:
                 continue
-            peer_location = ping_info.get('location', None)
-            if not isinstance(peer_location, Location) or peer_location in self._locations:
-                continue
             if ping_info['version'] != __version__:
                 logger.warning('Peer %s version %s is not %s',
                                peer_location, ping_info['version'], __version__)
                 continue
-            if self._ignore_peers:
-                continue
-            if self._secret is None:
-                auth_code = None
-            else:
-                auth_code = ping_info.get('signature', '') + self._secret
-                auth_code = hashlib.sha1(auth_code.encode()).hexdigest()
-            _Peer._lock.acquire()
-            peer = _Peer.peers.get((peer_location.addr, peer_location.port), None)
-            _Peer._lock.release()
-            if peer and peer.auth != auth_code:
-                _Peer.remove(peer_location)
-                peer = None
-
-            if not peer:
-                SysTask(self._acquaint_, peer_location, ping_info['signature'], addrinfo)
+            SysTask(self._acquaint_, ping_info, addrinfo)
         sock.close()
 
     def _tcp_proc(self, addrinfo, task=None):
@@ -1252,51 +1288,12 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                                  req.kwargs.get('version', None), __version__)
                     yield conn.send_msg(serialize(-1))
                     break
-                peer_location = req.kwargs.get('location', None)
-                if not isinstance(peer_location, Location) or peer_location in self._locations:
-                    yield conn.send_msg(serialize(-1))
-                    break
-                _Peer._lock.acquire()
-                peer = _Peer.peers.get((peer_location.addr, peer_location.port), None)
-                _Peer._lock.release()
-                if self._secret is None:
-                    auth_code = None
-                else:
-                    auth = req.kwargs['signature'] + self._secret
-                    auth = hashlib.sha1(auth.encode()).hexdigest()
-                if peer and peer.auth != auth_code:
-                    _Peer.remove(peer_location)
-                    peer = None
-                if not peer:
-                    SysTask(self._acquaint_, peer_location, req.kwargs['signature'], addrinfo)
+                SysTask(self._acquaint_, req.kwargs, addrinfo)
                 yield conn.send_msg(serialize(0))
 
             elif req.name == 'relay_ping':
                 yield conn.send_msg(serialize(0))
-                ping_msg = 'ping:'.encode() + serialize(req.kwargs)
-                port = addrinfo.udp_sock.getsockname()[1]
-                ping_sock = AsyncSocket(socket.socket(addrinfo.family, socket.SOCK_DGRAM))
-                ping_sock.settimeout(2)
-                ttl_bin = struct.pack('@i', 1)
-                if addrinfo.family == socket.AF_INET:
-                    if self.ipv4_udp_multicast:
-                        ping_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl_bin)
-                    else:
-                        ping_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-                else:  # addrinfo.family == socket.AF_INET6
-                    ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, ttl_bin)
-                    try:
-                        ping_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF,
-                                             addrinfo.ifn)
-                    except Exception:
-                        pass
-                ping_sock.bind((addrinfo.ip, 0))
-                try:
-                    yield ping_sock.sendto(ping_msg, (addrinfo.broadcast, port))
-                except Exception:
-                    pass
-                finally:
-                    ping_sock.close()
+                SysTask(self._relay_ping_, req.kwargs, addrinfo)
 
             else:
                 logger.warning('invalid request "%s" ignored', req.name)
