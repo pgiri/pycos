@@ -23,6 +23,7 @@ import shutil
 import operator
 import functools
 import re
+import copy
 
 import pycos.netpycos as pycos
 from pycos import Task, SysTask, logger
@@ -506,6 +507,21 @@ class Computation(object):
         if self.scheduler:
             self.scheduler.send({'req': 'enable_server', 'auth': self._auth, 'server': location})
 
+    def node_allocate(self, node_allocate):
+        """Request scheduler to add 'node_allocate' to any previously sent
+        'node_allocations'.
+        """
+        if not isinstance(node_allocate, DispycosNodeAllocate):
+            return -1
+        if not self._pulse_task:
+            return -1
+        if (node_allocate.__class__ != DispycosNodeAllocate and
+            self._pulse_task.location != self.scheduler.location):
+            node_allocate = copy.copy(node_allocate)
+            node_allocate.__class__ = DispycosNodeAllocate
+        return self.scheduler.send({'req': 'node_allocate', 'auth': self._auth,
+                                    'node': node_allocate})
+
     def _run_request(self, request, where, cpu, gen, *args, **kwargs):
         """Internal use only.
         """
@@ -547,23 +563,59 @@ class Computation(object):
         timeout = 2 * self._pulse_interval
         while 1:
             msg = yield task.receive(timeout=timeout)
+
             if msg == 'pulse':
                 last_pulse = time.time()
+
+            elif isinstance(msg, dict):
+                if msg.get('auth', None) != self._auth:
+                    continue
+                if msg.get('req', None) == 'allocate':
+                    reply = msg.get('reply', None)
+                    args = msg.get('args', ())
+                    if not isinstance(reply, Task) or not args:
+                        logger.warning('Ignoring allocate request: %s', type(reply))
+                        continue
+                    ip_addr = args[0]
+                    for node_allocation in self._node_allocations:
+                        if not re.match(node_allocation.ip_rex, ip_addr):
+                            continue
+                        try:
+                            cpus = node_allocation.allocate(*args)
+                        except Exception:
+                            cpus = 0
+                        reply.send({'auth': self._auth, 'req': 'allocate',
+                                    'ip_addr': ip_addr, 'cpus': cpus})
+                        break
+
             elif msg == 'quit':
                 break
-            elif msg is None and (time.time() - last_pulse) > (10 * self._pulse_interval):
+
+            elif msg is None:
                 logger.warning('scheduler may have gone away!')
+                if (time.time() - last_pulse) > (10 * self._pulse_interval):
+                    # TODO: inform status and / or "close"?
+                    pass
+
             else:
                 logger.debug('ignoring invalid pulse message')
+
         self._pulse_task = None
 
     def __getstate__(self):
         state = {}
         for attr in ['_code', '_xfer_funcs', '_xfer_files', '_auth',  'scheduler', 'status_task',
-                     '_pulse_interval', '_pulse_task', '_node_allocations',
-                     '_node_setup', '_server_setup', '_disable_nodes', '_disable_servers',
-                     '_peers_communicate', '_zombie_period']:
+                     '_pulse_interval', '_pulse_task', '_node_setup', '_server_setup',
+                     '_disable_nodes', '_disable_servers', '_peers_communicate', '_zombie_period']:
             state[attr] = getattr(self, attr)
+        # Objects may have been subclassed from DispycosNodeAllocate, but remote
+        # scheduler is not aware of (user defined) subclasses, so "cast" them to
+        # DispycosNodeAllocate (duck typing)
+        node_allocations = [node if node.__class__ == DispycosNodeAllocate else copy.copy(node)
+                            for node in self._node_allocations]
+        for obj in node_allocations:
+            obj.__class__ = DispycosNodeAllocate
+        state['_node_allocations'] = node_allocations
         return state
 
     def __setstate__(self, state):
@@ -692,7 +744,7 @@ class Scheduler(object):
         self._cpu_nodes = set()
         self._cpus_avail = pycos.Event()
         self._cpus_avail.clear()
-        self._shared = False
+        self._remote = False
 
         self._cur_computation = None
         self.__cur_client_auth = None
@@ -943,14 +995,28 @@ class Scheduler(object):
             else:
                 logger.warning('invalid status message ignored')
 
-    def __node_allocate(self, node):
+    def __node_allocate(self, node, task=None):
+        if not task:
+            task = pycos.Pycos.cur_task()
         for node_allocate in self.__cur_node_allocations:
-            cpus = node_allocate.allocate(node.addr, node.name, node.platform, node.cpus,
-                                          node.avail_info.memory, node.avail_info.disk)
+            if self._remote:
+                req = {'auth': self.__cur_client_auth, 'req': 'allocate', 'reply': task,
+                       'args': (node.addr, node.name, node.platform, node.cpus,
+                                node.avail_info.memory, node.avail_info.disk)}
+                self._cur_computation._pulse_task.send(req)
+                reply = yield task.recv()
+                if (isinstance(reply, dict) and reply.get('auth', None) == self.__cur_client_auth and
+                    reply.get('req', None) == 'allocate' and reply.get('ip_addr', '') == node.addr):
+                    cpus = reply.get('cpus', 0)
+                else:
+                    cpus = 0
+            else:
+                cpus = node_allocate.allocate(node.addr, node.name, node.platform, node.cpus,
+                                              node.avail_info.memory, node.avail_info.disk)
             if cpus < 0:
                 continue
-            return min(cpus, node.cpus)
-        return node.cpus
+            raise StopIteration(min(cpus, node.cpus))
+        raise StopIteration(node.cpus)
 
     def __get_node_info(self, node, task=None):
         if not node.task:
@@ -987,8 +1053,8 @@ class Scheduler(object):
             node.lock.release()
             raise StopIteration(0)
 
-        if node.status == Scheduler.NodeClosed:
-            cpus = self.__node_allocate(node)
+        if node.status == Scheduler.NodeClosed or node.status == Scheduler.NodeDiscovered:
+            cpus = yield self.__node_allocate(node, task=task)
             if not cpus:
                 node.status = Scheduler.NodeIgnore
                 node.lock.release()
@@ -1135,9 +1201,8 @@ class Scheduler(object):
 
     def __computation_scheduler_proc(self, nodes, task=None):
         task.set_daemon()
-        pycos_scheduler = pycos.Pycos.instance()
         for node in nodes:
-            yield pycos_scheduler.peer(node, broadcast=True)
+            yield self.pycos.peer(node, broadcast=True)
         while 1:
             if self._cur_computation:
                 self.__computation_sched_event.clear()
@@ -1146,7 +1211,7 @@ class Scheduler(object):
 
             self._cur_computation, client = yield task.receive()
             self.__pulse_interval = self._cur_computation._pulse_interval
-            if not self._shared:
+            if not self._remote:
                 self.__zombie_period = self._cur_computation._zombie_period
 
             self.__cur_client_auth = self._cur_computation._auth
@@ -1176,10 +1241,10 @@ class Scheduler(object):
                 continue
             for node in self.__cur_node_allocations:
                 if node.ip_rex.find('*') >= 0:
-                    pass
+                    continue
                 loc = pycos.Location(node.ip_rex.replace('\\.', '.'),
                                      node.port if node.port else self._node_port)
-                SysTask(pycos_scheduler.peer, loc)
+                SysTask(self.pycos.peer, loc)
             for node in self._disabled_nodes.itervalues():
                 SysTask(self.__get_node_info, node)
             self.__timer_task.send(None)
@@ -1443,6 +1508,18 @@ class Scheduler(object):
                                             node.avail_info)
                     info = DispycosStatus(node.status, info)
                     self._cur_computation.status_task.send(info)
+
+            elif req == 'node_allocate':
+                node = req.get('node', None)
+                if not isinstance(node, DispycosNodeAllocate):
+                    continue
+                self.__cur_node_allocations = [node] + [na for na in self.__cur_node_allocations
+                                                        if na.ip_rex != node.ip_rex]
+                if node.ip_rex.find('*') >= 0:
+                    continue
+                loc = pycos.Location(node.ip_rex.replace('\\.', '.'),
+                                     node.port if node.port else self._node_port)
+                SysTask(self.pycos.peer, loc)
 
             elif req == 'nodes':
                 if isinstance(client, Task):
@@ -1734,7 +1811,7 @@ if __name__ == '__main__':
 
     daemon = config.pop('daemon', False)
     _dispycos_scheduler = Scheduler(**config)
-    _dispycos_scheduler._shared = True
+    _dispycos_scheduler._remote = True
     del config
 
     def sighandler(signum, frame):
