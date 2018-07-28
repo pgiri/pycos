@@ -41,9 +41,9 @@ def client_proc(computation, njobs, task=None):
 
     # pair EC2 node with this client with:
     yield pycos.Pycos().peer(pycos.Location('54.204.242.185', 9706))
-    # if multiple nodes are used, 'broadcast' option can be used to pair with
+    # if multiple nodes are used, 'relay' option can be used to pair with
     # all nodes with just one statement as:
-    # yield pycos.Pycos().peer(pycos.Location('54.204.242.185', 9706), broadcast=True)
+    # yield pycos.Pycos().peer(pycos.Location('54.204.242.185', 9706), relay=True)
 
     # execute n jobs (tasks) and get their results. Note that number of
     # jobs created can be more than number of server processes available; the
