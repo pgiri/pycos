@@ -1,6 +1,7 @@
 import sys
 import os
 import glob
+import re
 from setuptools import setup
 
 if sys.version_info.major == 3:
@@ -10,9 +11,13 @@ else:
     assert sys.version_info.minor >= 7
     base_dir = 'py2'
 
+for line in open(os.path.join(base_dir, 'pycos', '__init__.py')):
+    if line.startswith('__version__ = "'):
+        module_version = re.match(r'[^\d]+([\d\.]+)', line).group(1)
+
 setup(
     name='pycos',
-    version='4.7.7',
+    version=module_version,
     description='Concurrent, Asynchronous, Distributed, Communicating Tasks with Python',
     long_description=open('README.rst').read(),
     keywords='concurrency, asynchronous, network programming, distributed, tasks, message passing',
