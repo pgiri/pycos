@@ -93,6 +93,10 @@ framework for distributed and parallel computing.
   remote task is finished) while also using httpd module (which chains messages
   from dispycos scheduler to client's 'status_proc').
 
+* dispycos_remote_scheduler.py uses remote (shared) scheduler (instead of
+  starting scheduler itself). It also uses customized (subclassed)
+  DispycosNodeAllocate to allocate CPUs at nodes.
+
 * dispycos_ssh_ec2.py shows how to use ssh port forwarding to work with Amazon
   EC2 cloud computing. In this example client runs locally and dispycosnode runs
   on remote Amazon EC2 cloud infrastructure.
