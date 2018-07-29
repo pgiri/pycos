@@ -124,6 +124,12 @@ class DispycosNodeAllocate(object):
                 return 0
             return cpus
 
+    def __getstate__(self):
+        state = {}
+        for attr in ['ip_rex', 'port', 'platform', 'cpus', 'memory', 'disk']:
+            state[attr] = getattr(self, attr)
+        return state
+
 
 class Computation(object):
     """Packages components to distribute to remote pycos schedulers to create
