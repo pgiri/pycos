@@ -18,7 +18,6 @@ import inspect
 import hashlib
 import collections
 import time
-import socket
 import shutil
 import operator
 import functools
@@ -1169,7 +1168,7 @@ class Scheduler(object):
         async_scheduler = task.scheduler()
         while 1:
             try:
-                msg = yield task.receive(timeout=self.__pulse_interval)
+                yield task.sleep(self.__pulse_interval)
             except GeneratorExit:
                 break
             now = time.time()
@@ -1249,7 +1248,7 @@ class Scheduler(object):
                 SysTask(self.pycos.peer, loc)
             for node in self._disabled_nodes.itervalues():
                 SysTask(self.__get_node_info, node)
-            self.__timer_task.send(None)
+            self.__timer_task.resume()
         self.__computation_scheduler_task = None
 
     def __submit_job(self, msg, task=None):
