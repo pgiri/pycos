@@ -678,14 +678,10 @@ class Scheduler(object, metaclass=pycos.Singleton):
     ComputationScheduled = 23
     ComputationClosed = 25
 
-    _instance = None
-
     """This class is for use by Computation class (see below) only.  Other than
     the status indications above, none of its attributes are to be accessed
     directly.
     """
-
-    __status_task = None
 
     class _Node(object):
 
@@ -708,7 +704,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
 
     class _Server(object):
 
-        def __init__(self, name, location):
+        def __init__(self, name, location, scheduler):
             self.name = name
             self.task = None
             self.status = Scheduler.ServerClosed
@@ -717,7 +713,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
             self.askew_results = {}
             self.cpu_avail = pycos.Event()
             self.cpu_avail.clear()
-            self.scheduler = Scheduler._instance
+            self.scheduler = scheduler
 
         def run(self, job, computation, node):
             def _run(self, task=None):
@@ -733,7 +729,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
                     if self.askew_results:
                         msg = self.askew_results.pop(rtask, None)
                         if msg:
-                            Scheduler.__status_task.send(msg)
+                            self.scheduler.__status_task.send(msg)
                 else:
                     logger.debug('failed to create rtask: %s', rtask)
                     if job.cpu:
@@ -749,7 +745,6 @@ class Scheduler(object, metaclass=pycos.Singleton):
             job.client.send(rtask)
 
     def __init__(self, **kwargs):
-        self.__class__._instance = self
         self._nodes = {}
         self._disabled_nodes = {}
         self._cpu_nodes = set()
@@ -779,7 +774,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
         self.__computation_scheduler_task = SysTask(self.__computation_scheduler_proc, nodes)
         self.__client_task = SysTask(self.__client_proc)
         self.__timer_task = SysTask(self.__timer_proc)
-        Scheduler.__status_task = self.__status_task = SysTask(self.__status_proc)
+        self.__status_task = SysTask(self.__status_proc)
         self.__client_task.register('dispycos_scheduler')
         self.pycos.discover_peers(port=self._node_port)
 
@@ -908,7 +903,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
                     server = node.servers.get(rtask.location, None)
                     if server:
                         continue
-                    server = Scheduler._Server(msg.get('name', None), rtask.location)
+                    server = Scheduler._Server(msg.get('name', None), rtask.location, self)
                     server.task = rtask
                     server.status = Scheduler.ServerDiscovered
                     node.disabled_servers[rtask.location] = server
@@ -936,7 +931,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
                             server.status != Scheduler.ServerSuspended):
                             continue
                     else:
-                        server = Scheduler._Server(msg.get('name', None), rtask.location)
+                        server = Scheduler._Server(msg.get('name', None), rtask.location, self)
                         server.task = rtask
 
                     node.last_pulse = now
