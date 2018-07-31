@@ -977,7 +977,7 @@ class Pycos(pycos.Pycos):
                     name = req.kwargs.get('name', ' ')
                     if name[0] == '~':
                         task = self._tasks.get(int(task))
-                        if task and task._name == name:
+                        if task and task._rid == req.kwargs.get('rid') and task._name == name:
                             reply = task.send(req.kwargs['message'])
                         else:
                             logger.warning('ignoring invalid recipient to "send"')
@@ -985,7 +985,7 @@ class Pycos(pycos.Pycos):
                         Task._pycos._lock.acquire()
                         task = Task._pycos._tasks.get(int(task), None)
                         Task._pycos._lock.release()
-                        if task and task._name == name:
+                        if task and task._rid == req.kwargs.get('rid') and task._name == name:
                             reply = task.send(req.kwargs['message'])
                         else:
                             logger.warning('ignoring invalid recipient to "send"')
@@ -994,7 +994,7 @@ class Pycos(pycos.Pycos):
                     Channel._pycos._lock.acquire()
                     channel = Channel._pycos._channels.get(channel)
                     Channel._pycos._lock.release()
-                    if channel:
+                    if channel and channel._rid == req.kwargs.get('rid'):
                         reply = channel.send(req.kwargs['message'])
                     else:
                         logger.warning('ignoring invalid recipient to "send"')
@@ -1007,7 +1007,8 @@ class Pycos(pycos.Pycos):
                     name = req.kwargs.get('name', ' ')
                     if name[0] == '~':
                         task = self._tasks.get(int(task))
-                        if task and task.send(req.kwargs['message']) == 0:
+                        if (task and task._rid == req.kwargs.get('rid') and task._name == name and
+                            task.send(req.kwargs['message']) == 0):
                             reply = 1
                         else:
                             logger.warning('invalid "deliver" message ignored')
@@ -1015,7 +1016,8 @@ class Pycos(pycos.Pycos):
                         Task._pycos._lock.acquire()
                         task = Task._pycos._tasks.get(int(task))
                         Task._pycos._lock.release()
-                        if task and task.send(req.kwargs['message']) == 0:
+                        if (task and task._rid == req.kwargs.get('rid') and task._name == name and
+                            task.send(req.kwargs['message']) == 0):
                             reply = 1
                 else:
                     channel = req.kwargs.get('channel')
@@ -1032,7 +1034,7 @@ class Pycos(pycos.Pycos):
                         Channel._pycos._lock.acquire()
                         channel = Channel._pycos._channels.get(channel)
                         Channel._pycos._lock.release()
-                        if channel:
+                        if channel and channel._rid == req.kwargs.get('rid'):
                             SysTask(async_reply, req)
                     else:
                         logger.warning('invalid "deliver" message ignored')
@@ -1071,17 +1073,19 @@ class Pycos(pycos.Pycos):
                 yield conn.send_msg(serialize(reply))
 
             elif req.name == 'locate_task':
-                if req.kwargs['name'][0] == '~':
-                    task = self._rtasks.get(req.kwargs['name'], None)
+                name = req.kwargs.get('name', ' ')
+                if name[0] == '~':
+                    task = self._rtasks.get(name, None)
                 else:
                     Task._pycos._lock.acquire()
-                    task = Task._pycos._rtasks.get(req.kwargs['name'], None)
+                    task = Task._pycos._rtasks.get(name, None)
                     Task._pycos._lock.release()
                 yield conn.send_msg(serialize(task))
 
             elif req.name == 'locate_channel':
+                name = req.kwargs.get('name')
                 Channel._pycos._lock.acquire()
-                channel = Channel._pycos._rchannels.get(req.kwargs['name'], None)
+                channel = Channel._pycos._rchannels.get(name, None)
                 Channel._pycos._lock.release()
                 yield conn.send_msg(serialize(channel))
 
@@ -1097,12 +1101,12 @@ class Pycos(pycos.Pycos):
                 if task and name:
                     if name == '~':
                         task = self._tasks.get(int(task), None)
-                        if task and task._name == name:
+                        if task and task._rid == req.kwargs.get('rid') and task._name == name:
                             reply = self._monitor(monitor, task)
                     else:
                         Task._pycos._lock.acquire()
                         task = Task._pycos._tasks.get(int(task), None)
-                        if task and task._name == name:
+                        if task and task._rid == req.kwargs.get('rid') and task._name == name:
                             reply = Task._pycos._monitor(monitor, task)
                         Task._pycos._lock.release()
                 yield conn.send_msg(serialize(reply))
@@ -1118,8 +1122,8 @@ class Pycos(pycos.Pycos):
                         Task._pycos._lock.acquire()
                         task = Task._pycos._tasks.get(int(task), None)
                         Task._pycos._lock.release()
-                if isinstance(task, Task):
-                    reply = task.terminate()
+                    if task and task._rid == req.kwargs.get('rid') and task._name == name:
+                        reply = task.terminate()
                 yield conn.send_msg(serialize(reply))
 
             elif req.name == 'rti_monitor':
@@ -1141,46 +1145,58 @@ class Pycos(pycos.Pycos):
 
             elif req.name == 'subscribe':
                 reply = -1
-                channel = req.kwargs.get('channel', ' ')
+                channel = req.kwargs.get('channel')
                 Channel._pycos._lock.acquire()
                 channel = Channel._pycos._channels.get(channel, None)
                 Channel._pycos._lock.release()
-                if isinstance(channel, Channel) and not channel._location:
+                if channel and not channel._location and channel._rid == req.kwargs.get('rid'):
                     subscriber = req.kwargs.get('subscriber', None)
                     if isinstance(subscriber, Task):
                         if not subscriber._location:
                             Task._pycos._lock.acquire()
-                            subscriber = Task._pycos._tasks.get(int(subscriber._id), None)
+                            task = Task._pycos._tasks.get(int(subscriber._id), None)
                             Task._pycos._lock.release()
-                        reply = yield channel.subscribe(subscriber)
+                            if task and task._rid == subscriber._rid:
+                                reply = yield channel.subscribe(task)
+                        else:
+                            reply = yield channel.subscribe(subscriber)
                     elif isinstance(subsriber, Channel):
                         if not subscriber._location:
                             Channel._pycos._lock.acquire()
-                            subscriber = self._channels.get(subscriber._name, None)
+                            sub_chan = self._channels.get(subscriber._name, None)
                             Channel._pycos._lock.release()
-                        reply = yield channel.subscribe(subscriber)
+                            if sub_chan and sub_chan._rid == subscriber._rid:
+                                reply = yield channel.subscribe(sub_chan)
+                        else:
+                            reply = yield channel.subscribe(subscriber)
                 yield conn.send_msg(serialize(reply))
 
             elif req.name == 'unsubscribe':
                 reply = -1
-                channel = req.kwargs.get('channel', ' ')
+                channel = req.kwargs.get('channel')
                 Channel._pycos._lock.acquire()
                 channel = Channel._pycos._channels.get(channel, None)
                 Channel._pycos._lock.release()
-                if isinstance(channel, Channel) and not channel._location:
+                if channel and not channel._location and channel._rid == req.kwargs.get('rid'):
                     subscriber = req.kwargs.get('subscriber', None)
                     if isinstance(subscriber, Task):
                         if not subscriber._location:
                             Task._pycos._lock.acquire()
-                            subscriber = Task._pycos._tasks.get(int(subscriber._id), None)
+                            task = Task._pycos._tasks.get(int(subscriber._id), None)
                             Task._pycos._lock.release()
-                        reply = yield channel.unsubscribe(subscriber)
+                            if task and task._rid == subscriber._rid:
+                                reply = yield channel.unsubscribe(task)
+                        else:
+                            reply = yield channel.unsubscribe(subscriber)
                     elif isinstance(subsriber, Channel):
                         if not subscriber._location:
                             Channel._pycos._lock.acquire()
-                            subscriber = self._channels.get(subscriber._name, None)
+                            sub_chan = self._channels.get(subscriber._name, None)
                             Channel._pycos._lock.release()
-                        reply = yield channel.unsubscribe(subscriber)
+                            if sub_chan and sub_chan._rid == subscriber._rid:
+                                reply = yield channel.unsubscribe(sub_chan)
+                        else:
+                            reply = yield channel.unsubscribe(subscriber)
                 yield conn.send_msg(serialize(reply))
 
             elif req.name == 'locate_peer':
@@ -1340,7 +1356,7 @@ class RTI(object):
         else:
             self._name = method.__name__
         if not RTI._pycos:
-            RTI._pycos = Pycos.instance()
+            Pycos.instance()
         self._location = None
         self._mid = None
 
@@ -1367,7 +1383,7 @@ class RTI(object):
         otherwise, all known peers are queried for given name.
         """
         if not RTI._pycos:
-            RTI._pycos = Pycos.instance()
+            Pycos.instance()
         req = _NetRequest('locate_rti', kwargs={'name': name}, dst=location, timeout=timeout)
         req.event = Event()
         req_id = id(req)
@@ -1537,14 +1553,14 @@ class SysTask(pycos.Task):
     def __init__(self, *args, **kwargs):
         if not SysTask._pycos:
             Pycos.instance()
-        self.__class__._pycos = self._scheduler = SysTask._pycos
+        self._scheduler = SysTask._pycos
         super(SysTask, self).__init__(*args, **kwargs)
         self._name = '~' + self.name
 
     @staticmethod
     def locate(name, location=None, timeout=None):
         if not SysTask._pycos:
-            SysTask._pycos = Pycos.instance()
+            Pycos.instance()
         yield Task._locate('~' + name, location, timeout)
 
 
