@@ -32,12 +32,13 @@ def _dispycos_server_proc():
     import time
 
     from pycos.dispycos import MinPulseInterval, MaxPulseInterval, \
-        DispycosNodeInfo, DispycosNodeAvailInfo, Scheduler
+        DispycosNodeInfo, DispycosNodeAvailInfo, Scheduler, _DispycosJob_
     import pycos.netpycos as pycos
     from pycos.netpycos import Task, SysTask, Location, MonitorException, logger
 
     for _dispycos_var in ('_dispycos_server_process', '_dispycos_server_proc'):
        globals().pop(_dispycos_var, None)
+    setattr(sys.modules['__main__'], '_DispycosJob_', _DispycosJob_)
     _dispycos_task = pycos.Pycos.cur_task()
     _dispycos_task.register('dispycos_server')
     _dispycos_config = yield _dispycos_task.receive()

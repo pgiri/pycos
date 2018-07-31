@@ -26,7 +26,6 @@ import copy
 
 import pycos.netpycos as pycos
 from pycos import Task, SysTask, logger
-import pycos.dispycos
 
 __author__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __copyright__ = "Copyright (c) 2014-2015 Giridhar Pemmasani"
@@ -1258,9 +1257,8 @@ class Scheduler(object, metaclass=pycos.Singleton):
     def __submit_job(self, msg, task=None):
         job = msg['job']
         auth = msg.get('auth', None)
-        if (not isinstance(job, pycos.dispycos._DispycosJob_) or
-            not isinstance(job.client, Task)):
-            logger.warning('Ignoring invalid client job request')
+        if (not isinstance(job, _DispycosJob_) or not isinstance(job.client, Task)):
+            logger.warning('Ignoring invalid client job request: %s' % type(job))
             raise StopIteration
         cpu = job.cpu
         where = job.where
@@ -1747,6 +1745,9 @@ if __name__ == '__main__':
         import readline
     except ImportError:
         pass
+
+    import pycos.dispycos
+    setattr(sys.modules['pycos.dispycos'], '_DispycosJob_', _DispycosJob_)
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--ip_addr', dest='node', action='append', default=[],
