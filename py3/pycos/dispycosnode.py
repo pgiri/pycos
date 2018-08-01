@@ -38,6 +38,7 @@ def _dispycos_server_proc():
 
     for _dispycos_var in ('_dispycos_server_process', '_dispycos_server_proc'):
        globals().pop(_dispycos_var, None)
+    logger.name = 'dispycosnode'
     setattr(sys.modules['__main__'], '_DispycosJob_', _DispycosJob_)
     _dispycos_task = pycos.Pycos.cur_task()
     _dispycos_task.register('dispycos_server')
@@ -303,6 +304,7 @@ def _dispycos_server_process(_dispycos_config, _dispycos_mp_queue, _dispycos_com
         pycos.logger.setLevel(pycos.logger.INFO)
     del _dispycos_config['loglevel']
 
+    pycos.logger.name = 'dispycosnode'
     server_id = _dispycos_config['id']
     mp_queue, _dispycos_mp_queue = _dispycos_mp_queue, None
     config = {}
@@ -386,6 +388,7 @@ def _dispycos_spawn(_dispycos_config, _dispycos_id_ports, _dispycos_mp_queue,
 
     import pycos
 
+    pycos.logger.name = 'dispycosnode'
     os.chdir(_dispycos_config['dest_path'])
     sys.path.insert(0, _dispycos_config['dest_path'])
     os.environ['PATH'] = _dispycos_config['dest_path'] + os.pathsep + os.environ['PATH']
@@ -506,6 +509,7 @@ if __name__ == '__main__':
     from pycos.dispycos import MinPulseInterval, MaxPulseInterval, Scheduler, Computation
     import pycos.netpycos as pycos
 
+    pycos.logger.name = 'dispycosnode'
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', dest='config', default='',
                         help='use configuration in given file')

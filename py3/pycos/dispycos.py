@@ -45,6 +45,7 @@ DispycosTaskInfo = collections.namedtuple('DispycosTaskInfo', ['task', 'args', '
                                                                'start_time'])
 DispycosNodeInfo = collections.namedtuple('DispycosNodeInfo', ['name', 'addr', 'cpus', 'platform',
                                                                'avail_info'])
+logger.name = 'dispycos'
 
 
 class DispycosNodeAvailInfo(object):
