@@ -994,7 +994,8 @@ class Pycos(pycos.Pycos):
                     Channel._pycos._lock.acquire()
                     channel = Channel._pycos._channels.get(channel)
                     Channel._pycos._lock.release()
-                    if channel and channel._rid == req.kwargs.get('rid'):
+                    if (channel and channel._id == req.kwargs.get('id') and
+                        channel._rid == req.kwargs.get('rid')):
                         reply = channel.send(req.kwargs['message'])
                     else:
                         logger.warning('ignoring invalid recipient to "send"')
@@ -1034,7 +1035,8 @@ class Pycos(pycos.Pycos):
                         Channel._pycos._lock.acquire()
                         channel = Channel._pycos._channels.get(channel)
                         Channel._pycos._lock.release()
-                        if channel and channel._rid == req.kwargs.get('rid'):
+                        if (channel and channel._id == req.kwargs.get('id') and
+                            channel._rid == req.kwargs.get('rid')):
                             SysTask(async_reply, req)
                     else:
                         logger.warning('invalid "deliver" message ignored')
@@ -1149,7 +1151,8 @@ class Pycos(pycos.Pycos):
                 Channel._pycos._lock.acquire()
                 channel = Channel._pycos._channels.get(channel, None)
                 Channel._pycos._lock.release()
-                if channel and not channel._location and channel._rid == req.kwargs.get('rid'):
+                if (channel and (not channel._location) and channel._id == req.kwargs.get('id') and
+                    channel._rid == req.kwargs.get('rid')):
                     subscriber = req.kwargs.get('subscriber', None)
                     if isinstance(subscriber, Task):
                         if not subscriber._location:
@@ -1177,7 +1180,8 @@ class Pycos(pycos.Pycos):
                 Channel._pycos._lock.acquire()
                 channel = Channel._pycos._channels.get(channel, None)
                 Channel._pycos._lock.release()
-                if channel and not channel._location and channel._rid == req.kwargs.get('rid'):
+                if (channel and (not channel._location) and channel._id == req.kwargs.get('id') and
+                    channel._rid == req.kwargs.get('rid')):
                     subscriber = req.kwargs.get('subscriber', None)
                     if isinstance(subscriber, Task):
                         if not subscriber._location:

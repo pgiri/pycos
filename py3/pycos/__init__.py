@@ -2937,7 +2937,7 @@ class Channel(object):
     Channels can be hierarchical, and subscribers can be remote.
     """
 
-    __slots__ = ('_name', '_location', '_transform', '_subscribers', '_subscribe_event',
+    __slots__ = ('_name', '_id', '_location', '_transform', '_subscribers', '_subscribe_event',
                  '_scheduler', '_rid')
 
     _pycos = None
@@ -2956,6 +2956,7 @@ class Channel(object):
             Pycos.instance()
         self._scheduler = Channel._pycos
         self._location = None
+        self._id = id(self)
         if transform is not None:
             try:
                 argspec = inspect.getargspec(transform)
@@ -2975,8 +2976,9 @@ class Channel(object):
         self._subscribe_event = Event()
         self._rid = None
         self._scheduler._lock.acquire()
+        # TODO: use name or id for storing channels?
         if self._name in self._scheduler._channels:
-            logger.warning('duplicate channel "%s"!', self._name)
+            logger.warning('Duplicate channel "%s" ignored!', self._name)
         else:
             self._scheduler._channels[self._name] = self
         self._scheduler._lock.release()
@@ -3069,7 +3071,8 @@ class Channel(object):
             raise StopIteration(-1)
         if self._location:
             # remote channel
-            kwargs = {'channel': self._name, 'rid': self._rid, 'subscriber': subscriber}
+            kwargs = {'channel': self._name, 'id': self._id, 'rid': self._rid,
+                      'subscriber': subscriber}
             request = _NetRequest('subscribe', kwargs=kwargs, dst=self._location, timeout=timeout)
             reply = yield _Peer._sync_reply(request)
         else:
@@ -3107,7 +3110,8 @@ class Channel(object):
             raise StopIteration(-1)
         if self._location:
             # remote channel
-            kwargs = {'channel': self._name, 'rid': self._rid, 'subscriber': subscriber}
+            kwargs = {'channel': self._name, 'id': self._id, 'rid': self._rid,
+                      'subscriber': subscriber}
             request = _NetRequest('unsubscribe', kwargs=kwargs, dst=self._location,
                                   timeout=timeout)
             reply = yield _Peer._sync_reply(request)
@@ -3143,7 +3147,7 @@ class Channel(object):
         """
         if self._location:
             # remote channel
-            kwargs={'message': message, 'channel': self._name, 'rid': self._rid}
+            kwargs = {'channel': self._name, 'id': self._id, 'rid': self._rid, 'message': message}
             request = _NetRequest('send', kwargs=kwargs, dst=self._location, timeout=MsgTimeout)
             # request is queued for asynchronous processing
             if _Peer.send_req(request) != 0:
@@ -3183,7 +3187,8 @@ class Channel(object):
             raise StopIteration(-1)
         if self._location:
             # remote channel
-            kwargs = {'message': message, 'channel': self._name, 'rid': self._rid, 'n': n}
+            kwargs = {'channel': self._name, 'id': self._id, 'rid': self._rid, 'message': message,
+                      'n': n}
             request = _NetRequest('deliver', kwargs=kwargs, dst=self._location, timeout=timeout)
             request.reply = -1
             reply = yield _Peer._async_reply(request, alarm_value=0)
@@ -3266,7 +3271,7 @@ class Channel(object):
     def __getstate__(self):
         if not self._rid:
             self._rid = _time()
-        state = {'name': self._name, 'rid': self._rid}
+        state = {'name': self._name, 'id': self._id, 'rid': self._rid}
         if self._location:
             state['location'] = self._location
         else:
@@ -3275,6 +3280,7 @@ class Channel(object):
 
     def __setstate__(self, state):
         self._name = state['name']
+        self._id = state['id']
         self._rid = state['rid']
         self._transform = None
         self._location = state['location']
