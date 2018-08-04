@@ -2468,18 +2468,7 @@ class Task(object):
             if rtask or location in Task._pycos._locations:
                 raise StopIteration(rtask)
         req = _NetRequest('locate_task', kwargs={'name': name}, dst=location, timeout=timeout)
-        req_id = id(req)
-        req.event = Event()
-        SysTask._pycos._lock.acquire()
-        SysTask._pycos._pending_reqs[req_id] = req
-        SysTask._pycos._lock.release()
-        _Peer.send_req_to(req, location)
-        if (yield req.event.wait(timeout)) is False:
-            req.reply = None
-        SysTask._pycos._lock.acquire()
-        SysTask._pycos._pending_reqs.pop(req_id, None)
-        SysTask._pycos._lock.release()
-        rtask = req.reply
+        rtask = yield _Peer.async_request(req)
         raise StopIteration(rtask)
 
     def register(self, name=None):
@@ -2583,9 +2572,7 @@ class Task(object):
             kwargs = {'message': message, 'name': self._name, 'task': self._id, 'rid': self._rid}
             request = _NetRequest('deliver', kwargs=kwargs, dst=self._location, timeout=timeout)
             request.reply = -1
-            reply = yield _Peer._sync_reply(request, alarm_value=0)
-            if reply is None:
-                reply = -1
+            reply = yield _Peer.sync_reply(request, alarm_value=0)
             # if reply < 0:
             #     logger.warning('remote task at %s may not be valid', self._location)
         else:
@@ -2732,7 +2719,7 @@ class Task(object):
                       'task': observe._id, 'rid': observe._rid}
             request = _NetRequest('monitor', kwargs=kwargs, dst=observe._location,
                                   timeout=MsgTimeout)
-            reply = yield _Peer._sync_reply(request)
+            reply = yield _Peer.sync_reply(request, alarm_value=-1)
         else:
             reply = self._scheduler._monitor(self, observe)
         raise StopIteration(reply)
@@ -2959,18 +2946,7 @@ class Channel(object):
             if rchannel or location in Channel._pycos._locations:
                 raise StopIteration(rchannel)
         req = _NetRequest('locate_channel', kwargs={'name': name}, dst=location, timeout=timeout)
-        req.event = Event()
-        req_id = id(req)
-        SysTask._pycos._lock.acquire()
-        SysTask._pycos._pending_reqs[req_id] = req
-        SysTask._pycos._lock.release()
-        _Peer.send_req_to(req, location)
-        if (yield req.event.wait(timeout)) is False:
-            req.reply = None
-        SysTask._pycos._lock.acquire()
-        SysTask._pycos._pending_reqs.pop(req_id, None)
-        SysTask._pycos._lock.release()
-        rchannel = req.reply
+        rchannel = yield _Peer.async_request(req)
         raise StopIteration(rchannel)
 
     def register(self):
@@ -3017,7 +2993,7 @@ class Channel(object):
             kwargs = {'channel': self._name, 'id': self._id, 'rid': self._rid,
                       'subscriber': subscriber}
             request = _NetRequest('subscribe', kwargs=kwargs, dst=self._location, timeout=timeout)
-            reply = yield _Peer._sync_reply(request)
+            reply = yield _Peer.sync_reply(request, alarm_value=-1)
         else:
             if subscriber._location:
                 if isinstance(subscriber, Task):
@@ -3057,7 +3033,7 @@ class Channel(object):
                       'subscriber': subscriber}
             request = _NetRequest('unsubscribe', kwargs=kwargs, dst=self._location,
                                   timeout=timeout)
-            reply = yield _Peer._sync_reply(request)
+            reply = yield _Peer.sync_reply(request, alarm_value=-1)
         else:
             if subscriber._location:
                 if isinstance(subscriber, Task):
@@ -3133,10 +3109,7 @@ class Channel(object):
             kwargs = {'channel': self._name, 'id': self._id, 'rid': self._rid, 'message': message,
                       'n': n}
             request = _NetRequest('deliver', kwargs=kwargs, dst=self._location, timeout=timeout)
-            request.reply = -1
-            reply = yield _Peer._async_reply(request, alarm_value=0)
-            if reply is None:
-                reply = -1
+            reply = yield _Peer.async_reply(request, alarm_value=0)
             # if reply < 0:
             #     logger.warning('remote channel "%s" at %s may have gone away!',
             #                    self._name, self._location)

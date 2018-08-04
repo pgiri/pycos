@@ -342,18 +342,7 @@ class Pycos(pycos.Pycos):
         _Peer._lock.release()
         if not loc:
             req = _NetRequest('locate_peer', kwargs={'name': name})
-            req.event = Event()
-            req_id = id(req)
-            self._lock.acquire()
-            self._pending_reqs[req_id] = req
-            self._lock.release()
-            _Peer.send_req_to(req, None)
-            if (yield req.event.wait(timeout)) is False:
-                req.reply = None
-            loc = req.reply
-            self._lock.acquire()
-            self._pending_reqs.pop(req_id, None)
-            self._lock.release()
+            loc = yield _Peer.async_request(req)
         raise StopIteration(loc)
 
     def peer(self, loc, udp_port=0, stream_send=False, relay=False, task=None):
@@ -436,7 +425,7 @@ class Pycos(pycos.Pycos):
             if relay and ret == 0:
                 kwargs = {'location': addrinfo.location, 'signature': self._signature,
                           'name': self._name, 'version': __version__}
-                _Peer.send_req_to(_NetRequest('relay_ping', kwargs=kwargs, dst=loc), loc)
+                _Peer.send_req(_NetRequest('relay_ping', kwargs=kwargs, dst=loc))
             raise StopIteration(ret)
         else:
             if not udp_port:
@@ -626,9 +615,7 @@ class Pycos(pycos.Pycos):
                 raise StopIteration(-1)
         kwargs = {'file': os.path.basename(file), 'dir': dir}
         req = _NetRequest('del_file', kwargs=kwargs, dst=location, timeout=timeout)
-        reply = yield _Peer._sync_reply(req)
-        if reply is None:
-            reply = -1
+        reply = yield _Peer.sync_reply(req, alarm_value=-1)
         raise StopIteration(reply)
 
     @staticmethod
@@ -1002,9 +989,9 @@ class Pycos(pycos.Pycos):
                 yield conn.send_msg(serialize(reply))
 
             elif req.name == 'deliver':
-                reply = -1
                 task = req.kwargs.get('task', None)
                 if task:
+                    reply = -1
                     name = req.kwargs.get('name', ' ')
                     if name[0] == '~':
                         task = self._tasks.get(int(task))
@@ -1020,38 +1007,45 @@ class Pycos(pycos.Pycos):
                         if (task and task._rid == req.kwargs.get('rid') and task._name == name and
                             task.send(req.kwargs['message']) == 0):
                             reply = 1
+                    yield conn.send_msg(serialize(reply))
                 else:
+                    reply = -1
                     channel = req.kwargs.get('channel')
                     if channel:
                         def async_reply(req, task=None):
                             reply = yield channel.deliver(
                                 req.kwargs['message'], timeout=req.timeout, n=req.kwargs['n'])
-                            req.event = None
-                            req.name += '-reply'
-                            reply_location = req.kwargs['reply_location']
-                            req.kwargs = {'reply_id': req.kwargs['reply_id'], 'reply': reply}
-                            _Peer.send_req_to(req, reply_location)
+                            req.name += '-async_reply'
+                            req.dst = req.kwargs['reply_location']
+                            req.kwargs = {'reply_id': req.kwargs['reply_id'],
+                                          'reply_rid': req.kwargs['reply_rid'], 'reply': reply}
+                            req.reply = False
+                            _Peer.send_req(req)
 
                         Channel._pycos._lock.acquire()
                         channel = Channel._pycos._channels.get(channel)
                         Channel._pycos._lock.release()
                         if (channel and channel._id == req.kwargs.get('id') and
                             channel._rid == req.kwargs.get('rid')):
+                            reply = None
                             SysTask(async_reply, req)
-                    else:
+                    if reply == -1:
                         logger.warning('invalid "deliver" message ignored')
-                    reply = None
-                yield conn.send_msg(serialize(reply))
+                        req.name += '-async_reply'
+                        req.dst = req.kwargs.get('reply_location')
+                        _Peer.send_req(req)
 
-            elif req.name.endswith('deliver-reply'):
+            elif req.name.endswith('-async_reply'):
                 reply = req
                 self._lock.acquire()
-                req = self._pending_replies.pop(reply.kwargs.get('reply_id', None), None)
+                req = self._pending_replies.pop(reply.kwargs.get('reply_id'))
                 self._lock.release()
-                if req and req.event:
+                if (req and req.event and reply.name == (req.name + '-async_reply') and
+                    req.kwargs['reply_rid'] == reply.kwargs.get('reply_rid')):
                     req.reply = reply.kwargs['reply']
                     req.event.set()
-                yield conn.send_msg(serialize(None))
+                else:
+                    logger.warning('Ignoring invalid reply for %s' % req.name)
 
             elif req.name == 'run_rti':
                 rti = self._rtis.get(req.kwargs['name'], None)
@@ -1389,18 +1383,7 @@ class RTI(object):
         if not RTI._pycos:
             Pycos.instance()
         req = _NetRequest('locate_rti', kwargs={'name': name}, dst=location, timeout=timeout)
-        req.event = Event()
-        req_id = id(req)
-        RTI._pycos._lock.acquire()
-        RTI._pycos._pending_reqs[req_id] = req
-        RTI._pycos._lock.release()
-        _Peer.send_req_to(req, location)
-        if (yield req.event.wait(timeout)) is False:
-            req.reply = None
-        rti = req.reply
-        RTI._pycos._lock.acquire()
-        RTI._pycos._pending_reqs.pop(req_id, None)
-        RTI._pycos._lock.release()
+        rti = yield _Peer.async_request(req)
         raise StopIteration(rti)
 
     def register(self):
@@ -1447,7 +1430,7 @@ class RTI(object):
             mid = RTI._pycos._location
         req = _NetRequest('rti_monitor', kwargs={'name': self._name, 'monitor': task, 'mid': mid},
                           dst=self._location, timeout=timeout)
-        reply = yield _Peer._sync_reply(req)
+        reply = yield _Peer.sync_reply(req, alarm_value=-1)
         if reply == 0:
             self._mid = mid
         raise StopIteration(reply)
@@ -1463,7 +1446,7 @@ class RTI(object):
             raise StopIteration(-1)
         req = _NetRequest('close_rti', kwargs={'name': self._name, 'mid': self._mid},
                           dst=self._location, timeout=timeout)
-        reply = yield _Peer._sync_reply(req)
+        reply = yield _Peer.sync_reply(req, alarm_value=-1)
         self._name = None
         self._mid = None
         raise StopIteration(reply)
@@ -1478,7 +1461,7 @@ class RTI(object):
         req = _NetRequest('run_rti', kwargs={'name': self._name, 'args': args, 'kwargs': kwargs,
                                              'mid': self._mid},
                           dst=self._location, timeout=MsgTimeout)
-        reply = yield _Peer._sync_reply(req)
+        reply = yield _Peer.sync_reply(req, alarm_value=None)
         if isinstance(reply, Task):
             raise StopIteration(reply)
         elif reply is None:
@@ -1580,12 +1563,12 @@ class _NetRequest(object):
         self.dst = dst
         self.auth = auth
         self.event = None
-        self.reply = None
+        self.reply = True
         self.timeout = timeout
 
     def __getstate__(self):
-        state = {'name': self.name, 'kwargs': self.kwargs, 'dst': self.dst,
-                 'auth': self.auth, 'timeout': self.timeout}
+        state = {'name': self.name, 'kwargs': self.kwargs, 'dst': self.dst, 'auth': self.auth,
+                 'timeout': self.timeout}
         return state
 
     def __setstate__(self, state):
@@ -1642,11 +1625,7 @@ class _Peer(object):
                 pending_req.reply = location
                 pending_req.event.set()
 
-            if pending_req.dst:
-                if pending_req.dst == location:
-                    _Peer.send_req(pending_req)
-            else:
-                _Peer.send_req_to(pending_req, location)
+            _Peer.send_req(pending_req)
         _Peer._pycos._lock.release()
 
     @staticmethod
@@ -1672,26 +1651,11 @@ class _Peer(object):
 
     @staticmethod
     def send_req(req):
-        _Peer._lock.acquire()
-        peer = _Peer.peers.get((req.dst.addr, req.dst.port), None)
-        if not peer:
-            logger.debug('Ignoring request to invalid peer %s', req.dst)
-            _Peer._lock.release()
-            return -1
-        peer.reqs.append(req)
-        if peer.waiting:
-            peer.waiting = False
-            peer.req_task.send(1)
-        _Peer._lock.release()
-        return 0
-
-    @staticmethod
-    def send_req_to(req, dst):
-        if dst:
+        if req.dst:
             _Peer._lock.acquire()
-            peer = _Peer.peers.get((dst.addr, dst.port), None)
+            peer = _Peer.peers.get((req.dst.addr, req.dst.port), None)
             if not peer:
-                logger.debug('Ignoring request to invalid peer %s', dst)
+                logger.debug('Ignoring request to invalid peer %s', req.dst)
                 _Peer._lock.release()
                 return -1
             peer.reqs.append(req)
@@ -1710,7 +1674,7 @@ class _Peer(object):
         return 0
 
     @staticmethod
-    def _sync_reply(req, alarm_value=None):
+    def sync_reply(req, alarm_value=None):
         req.event = Event()
         if _Peer.send_req(req) != 0:
             raise StopIteration(-1)
@@ -1719,24 +1683,60 @@ class _Peer(object):
         raise StopIteration(req.reply)
 
     @staticmethod
-    def _async_reply(req, alarm_value=None):
+    def async_request(req, alarm_value=None):
         req.event = Event()
-        req.kwargs['reply_id'] = id(req)
-        req.kwargs['reply_location'] = _Peer._pycos._location
+        req_id = id(req)
         _Peer._pycos._lock.acquire()
-        _Peer._pycos._pending_replies[id(req)] = req
+        _Peer._pycos._pending_reqs[req_id] = req
         _Peer._pycos._lock.release()
         if _Peer.send_req(req) != 0:
             raise StopIteration(-1)
         if (yield req.event.wait(req.timeout)) is False:
+            _Peer._pycos._lock.acquire()
+            _Peer._pycos._pending_reqs.pop(req_id, None)
+            _Peer._pycos._lock.release()
             raise StopIteration(alarm_value)
+        raise StopIteration(req.reply)
+
+    @staticmethod
+    def async_reply(req, alarm_value=None):
+        req.event = Event()
+        req.reply = False
+        req_id = id(req)
+        _Peer._pycos._lock.acquire()
+        req.kwargs['reply_id'] = req_id
+        req.kwargs['reply_rid'] = pycos._time()
+        _Peer._pycos._pending_replies[req_id] = req
+        if req.dst:
+            peer = _Peer.peers.get((req.dst.addr, req.dst.port), None)
+            if not peer:
+                _Peer._pycos._lock.release()
+                raise StopIteration(-1)
+            req.kwargs['reply_location'] = peer.addrinfo.location
+            peer.reqs.append(req)
+            if peer.waiting:
+                peer.waiting = False
+                peer.req_task.send(1)
+        else:
+            for peer in _Peer.peers.itervalues():
+                req.kwargs['reply_location'] = peer.addrinfo.location
+                peer.reqs.append(req)
+                if peer.waiting:
+                    peer.waiting = False
+                    peer.req_task.send(1)
+        _Peer._pycos._lock.release()
+        if (yield req.event.wait(req.timeout)) is False:
+            req.reply = alarm_value
+            _Peer._pycos._lock.acquire()
+            _Peer._pycos._pending_reqs.pop(req_id, None)
+            _Peer._pycos._lock.release()
         raise StopIteration(req.reply)
 
     @staticmethod
     def close_peer(peer, timeout, task=None):
         req = _NetRequest('close_peer', kwargs={'location': peer.addrinfo.location},
                           dst=peer.location, timeout=timeout)
-        yield _Peer._sync_reply(req)
+        yield _Peer.sync_reply(req)
         if peer.req_task:
             yield peer.req_task.terminate()
             while peer.req_task:
@@ -1809,15 +1809,11 @@ class _Peer(object):
             req.auth = self.auth
             try:
                 yield self.conn.send_msg(serialize(req))
-                reply = yield self.conn.recv_msg()
-                reply = deserialize(reply)
-                if req.event:
-                    if reply is not None or (req.dst == self.location and
-                                             'reply_id' not in req.kwargs):
-                        req.reply = reply
+                if req.reply:
+                    req.reply = yield self.conn.recv_msg()
+                    req.reply = deserialize(req.reply)
+                    if req.event:
                         req.event.set()
-                else:
-                    req.reply = reply
             except socket.error as exc:
                 logger.debug('%s: Could not send "%s" to %s', _Peer._pycos._location, req.name,
                              self.location)
