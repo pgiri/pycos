@@ -2785,7 +2785,7 @@ class Task(object):
 
     def __getstate__(self):
         if not self._rid:
-            self._rid = self._scheduler._rid()
+            self._rid = _time()
         state = {'name': self._name, 'id': str(self._id), 'rid': self._rid}
         if self._location:
             state['location'] = self._location
@@ -3208,7 +3208,7 @@ class Channel(object):
 
     def __getstate__(self):
         if not self._rid:
-            self._rid = self._scheduler._rid()
+            self._rid = _time()
         state = {'name': self._name, 'rid': self._rid}
         if self._location:
             state['location'] = self._location
@@ -3370,8 +3370,6 @@ class Pycos(object):
         self._lock = threading.RLock()
         self._complete = threading.Event()
         self._complete.set()
-        self._rid_ = 10
-        self._rid_max_ = sys.maxint
         self._scheduler = threading.Thread(target=self._schedule)
         Pycos._schedulers[id(self._scheduler)] = self
         self._scheduler.daemon = True
@@ -3416,18 +3414,6 @@ class Pycos(object):
             if not scheduler:
                 return None
         return scheduler.__cur_task
-
-    def _rid(self):
-        """Internal use only.
-        """
-        n = id(self._rid_) % 10
-        if n:
-            self._rid_ += n
-        else:
-            self._rid_ += 1
-        if self._rid_ > self._rid_max_:
-            self._rid_ = 10
-        return self._rid_
 
     def _add(self, task):
         """Internal use only. See Task class.
