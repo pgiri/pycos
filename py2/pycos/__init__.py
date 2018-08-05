@@ -2995,22 +2995,6 @@ class Channel(object):
             request = _NetRequest('subscribe', kwargs=kwargs, dst=self._location, timeout=timeout)
             reply = yield _Peer.sync_reply(request, alarm_value=-1)
         else:
-            if subscriber._location:
-                if isinstance(subscriber, Task):
-                    # remote task
-                    subscriber._id = int(subscriber._id)
-                    for s in self._subscribers:
-                        if (isinstance(s, Task) and s._id == subscriber._id and
-                            s._location == subscriber._location):
-                            subscriber = s
-                            break
-                elif isinstance(subscriber, Channel):
-                    # remote channel
-                    for s in self._subscribers:
-                        if (isinstance(s, Channel) and s._name == subscriber._name and
-                            s._location == subscriber._location):
-                            subscriber = s
-                            break
             self._subscribers.add(subscriber)
             self._subscribe_event.set()
             reply = 0
@@ -3035,22 +3019,6 @@ class Channel(object):
                                   timeout=timeout)
             reply = yield _Peer.sync_reply(request, alarm_value=-1)
         else:
-            if subscriber._location:
-                if isinstance(subscriber, Task):
-                    # remote task
-                    subscriber._id = int(subscriber._id)
-                    for s in self._subscribers:
-                        if (isinstance(s, Task) and s._id == subscriber._id and
-                            s._location == subscriber._location):
-                            subscriber = s
-                            break
-                elif isinstance(subscriber, Channel):
-                    # remote channel
-                    for s in self._subscribers:
-                        if (isinstance(s, Channel) and s._name == subscriber._name and
-                            s._location == subscriber._location):
-                            subscriber = s
-                            break
             try:
                 self._subscribers.remove(subscriber)
             except KeyError:
