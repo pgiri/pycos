@@ -1624,8 +1624,8 @@ class _Peer(object):
             if (pending_req.name == 'locate_peer' and pending_req.kwargs['name'] == self.name):
                 pending_req.reply = location
                 pending_req.event.set()
-
-            _Peer.send_req(pending_req)
+            elif (not pending_req.dst) or pending_req.dst == location:
+                _Peer.send_req(pending_req, dst=location)
         _Peer._pycos._lock.release()
 
     @staticmethod
@@ -1650,27 +1650,20 @@ class _Peer(object):
         return peer
 
     @staticmethod
-    def send_req(req):
-        if req.dst:
-            _Peer._lock.acquire()
-            peer = _Peer.peers.get((req.dst.addr, req.dst.port), None)
-            if not peer:
-                logger.debug('Ignoring request to invalid peer %s', req.dst)
-                _Peer._lock.release()
-                return -1
-            peer.reqs.append(req)
-            if peer.waiting:
-                peer.waiting = False
-                peer.req_task.send(1)
+    def send_req(req, dst=None):
+        if not dst:
+            dst = req.dst
+        _Peer._lock.acquire()
+        peer = _Peer.peers.get((dst.addr, dst.port), None)
+        if not peer:
+            logger.debug('Ignoring request to invalid peer %s', dst)
             _Peer._lock.release()
-        else:
-            _Peer._lock.acquire()
-            for peer in _Peer.peers.itervalues():
-                peer.reqs.append(req)
-                if peer.waiting:
-                    peer.waiting = False
-                    peer.req_task.send(1)
-            _Peer._lock.release()
+            return -1
+        peer.reqs.append(req)
+        if peer.waiting:
+            peer.waiting = False
+            peer.req_task.send(1)
+        _Peer._lock.release()
         return 0
 
     @staticmethod
@@ -1689,13 +1682,18 @@ class _Peer(object):
         _Peer._pycos._lock.acquire()
         _Peer._pycos._pending_reqs[req_id] = req
         _Peer._pycos._lock.release()
-        if _Peer.send_req(req) != 0:
-            raise StopIteration(-1)
-        if (yield req.event.wait(req.timeout)) is False:
+        if req.dst:
+            _Peer.send_req(req)
+        else:
             _Peer._pycos._lock.acquire()
-            _Peer._pycos._pending_reqs.pop(req_id, None)
+            for peer in _Peer.peers.values():
+                _Peer.send_req(req, dst=peer.location)
             _Peer._pycos._lock.release()
-            raise StopIteration(alarm_value)
+        if (yield req.event.wait(req.timeout)) is False:
+            req.reply = alarm_value
+        _Peer._pycos._lock.acquire()
+        _Peer._pycos._pending_reqs.pop(req_id, None)
+        _Peer._pycos._lock.release()
         raise StopIteration(req.reply)
 
     @staticmethod
@@ -1707,28 +1705,20 @@ class _Peer(object):
         req.kwargs['reply_id'] = req_id
         req.kwargs['reply_rid'] = pycos._time()
         _Peer._pycos._pending_replies[req_id] = req
-        if req.dst:
-            peer = _Peer.peers.get((req.dst.addr, req.dst.port), None)
-            if not peer:
-                _Peer._pycos._lock.release()
-                raise StopIteration(-1)
-            req.kwargs['reply_location'] = peer.addrinfo.location
-            peer.reqs.append(req)
-            if peer.waiting:
-                peer.waiting = False
-                peer.req_task.send(1)
-        else:
-            for peer in _Peer.peers.itervalues():
-                req.kwargs['reply_location'] = peer.addrinfo.location
-                peer.reqs.append(req)
-                if peer.waiting:
-                    peer.waiting = False
-                    peer.req_task.send(1)
+        peer = _Peer.peers.get((req.dst.addr, req.dst.port), None)
+        if not peer:
+            _Peer._pycos._lock.release()
+            raise StopIteration(-1)
+        req.kwargs['reply_location'] = peer.addrinfo.location
+        peer.reqs.append(req)
+        if peer.waiting:
+            peer.waiting = False
+            peer.req_task.send(1)
         _Peer._pycos._lock.release()
         if (yield req.event.wait(req.timeout)) is False:
             req.reply = alarm_value
             _Peer._pycos._lock.acquire()
-            _Peer._pycos._pending_reqs.pop(req_id, None)
+            _Peer._pycos._pending_replies.pop(req_id, None)
             _Peer._pycos._lock.release()
         raise StopIteration(req.reply)
 
