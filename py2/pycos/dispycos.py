@@ -615,7 +615,7 @@ class Computation(object):
             state[attr] = getattr(self, attr)
         # Objects may have been subclassed from DispycosNodeAllocate, but remote
         # scheduler is not aware of (user defined) subclasses, so "cast" them to
-        # DispycosNodeAllocate (duck typing)
+        # DispycosNodeAllocate
         node_allocations = [node if node.__class__ == DispycosNodeAllocate else copy.copy(node)
                             for node in self._node_allocations]
         for obj in node_allocations:
@@ -1054,7 +1054,7 @@ class Scheduler(object):
             node.lock.release()
             raise StopIteration(0)
 
-        if node.status == Scheduler.NodeClosed or node.status == Scheduler.NodeDiscovered:
+        if node.status == Scheduler.NodeClosed:
             cpus = yield self.__node_allocate(node, task=task)
             if not cpus:
                 node.status = Scheduler.NodeIgnore
@@ -1226,7 +1226,7 @@ class Scheduler(object):
             self._cpus_avail.clear()
             for node in self._disabled_nodes.itervalues():
                 if node.task:
-                    node.status = Scheduler.NodeDiscovered
+                    node.status = Scheduler.NodeClosed
                 else:
                     node.status = None
                 node.disabled_servers.clear()
