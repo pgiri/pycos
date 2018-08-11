@@ -891,11 +891,12 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 continue
             try:
                 ping_info = deserialize(msg[len(b'ping:'):])
+                if ping_info.get('version') != __version__:
+                    logger.warning('Ignoring ping from %s:%s due to version mismatch (%s / %s)',
+                                   addr[0], addr[1], ping_info.get('version'), __version__)
+                    continue
             except Exception:
-                continue
-            if ping_info['version'] != __version__:
-                logger.warning('Peer %s version %s is not %s',
-                               peer_location, ping_info['version'], __version__)
+                logger.warning('Ignoring invalid ping from %s:%s', addr[0], addr[1])
                 continue
             SysTask(self._acquaint_, ping_info, addrinfo)
         sock.close()
