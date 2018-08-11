@@ -346,7 +346,7 @@ class Computation(object):
             msg = {'req': 'close_computation', 'auth': self._auth, 'client': task,
                    'await_async': bool(await_async)}
             yield self.scheduler.deliver(msg, timeout=MsgTimeout)
-            msg = yield task.receive()
+            msg = yield task.receive(timeout=MsgTimeout)
             if msg != 'closed':
                 logger.warning('%s: closing computation failed?', self._auth)
             self._auth = None
