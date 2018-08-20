@@ -1641,11 +1641,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
         if not node:
             raise StopIteration(-1)
         disconnected = server.task.location not in node.servers
-        if disconnected:
-            if computation and computation.status_task:
-                computation.status_task.send(DispycosStatus(Scheduler.ServerDisconnected,
-                                                            server.task.location))
-        else:
+        if not disconnected:
             if not server.cpu_avail.is_set():
                 logger.debug('Waiting for remote tasks at %s to finish', server.task.location)
                 yield server.cpu_avail.wait()
@@ -1657,18 +1653,27 @@ class Scheduler(object, metaclass=pycos.Singleton):
             server.task.send({'req': 'close', 'auth': computation._auth, 'client': task})
             yield task.receive(timeout=MsgTimeout)
         if server.rtasks:  # wait a bit for server to terminate tasks
-            for _ in range(5):
+            for _ in range(10):
                 yield task.sleep(0.1)
                 if not server.rtasks:
                     break
         if server.rtasks:
             logger.warning('%s tasks running at %s', len(server.rtasks), server.task.location)
-            if computation and computation.status_task:
-                for rtask, job in server.rtasks.values():
+            for rtask, job in server.rtasks.values():
+                if job.request.endswith('async'):
+                    if job.done:
+                        job.done.set()
+                else:
+                    job.client.send(None)
+                if computation and computation.status_task:
                     status = pycos.MonitorException(rtask, (Scheduler.ServerClosed, None))
                     computation.status_task.send(status)
-                node.cpus_used -= len(server.rtasks)
-                server.rtasks.clear()
+            node.cpus_used -= len(server.rtasks)
+            server.rtasks.clear()
+
+        if disconnected and computation and computation.status_task:
+            computation.status_task.send(DispycosStatus(Scheduler.ServerDisconnected,
+                                                        server.task.location))
 
         server_task, server.task = server.task, None
         if self.__server_locations:
@@ -1817,6 +1822,7 @@ if __name__ == '__main__':
         config['keyfile'] = None
 
     daemon = config.pop('daemon', False)
+
     _dispycos_scheduler = Scheduler(**config)
     _dispycos_scheduler._remote = True
     del config
