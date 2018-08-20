@@ -801,28 +801,7 @@ def _dispycos_node():
 
         def mp_queue_server():
 
-            def get_server_task(server, msg, task=None):
-                server_location = pycos.deserialize(msg['location'])
-                pid = msg.get('pid', None)
-                yield dispycos_scheduler.peer(server_location)
-                for i in range(5):
-                    server_task = yield pycos.SysTask.locate('dispycos_server',
-                                                             location=server_location)
-                    if server.msg_oid > msg['oid']:
-                        break
-                    if server_task and not server.task:
-                        server.task = server_task
-                        server.msg_oid = msg['oid']
-                        if psutil and pid:
-                            try:
-                                server.psproc = psutil.Process(pid)
-                            except Exception:
-                                pass
-                        break
-                    yield task.sleep(0.2)
-
-            while 1:
-                msg = mp_queue.get(block=True)
+            def server_task(msg, task=None):
                 try:
                     oid = msg['oid']
                     auth = msg['auth']
@@ -830,31 +809,54 @@ def _dispycos_node():
                     location = msg['location']
                 except Exception:
                     pycos.logger.warning('Ignoring invalid queue msg')
-                    continue
+                    raise StopIteration(-1)
 
                 if auth != comp_state.auth and comp_state.auth:
                     pycos.logger.warning('Ignoring invalid queue msg %s: %s != %s',
                                          oid, auth, comp_state.auth)
-                    continue
+                    raise StopIteration(-1)
                 if server_id < 1 or server_id > len(node_servers):
                     pycos.logger.debug('Ignoring server task information for %s', server_id)
-                    continue
+                    raise StopIteration(-1)
                 server = node_servers[server_id]
                 if location:
-                    pycos.Task(get_server_task, server, msg)
+                    location = pycos.deserialize(location)
+                    if (yield dispycos_scheduler.peer(location)):
+                        pycos.logger.warning('Could not communicate with server %s at %s',
+                                             server.id, location)
+                        raise StopIteration(-1)
+                    for i in range(3):
+                        server_task = yield pycos.SysTask.locate('dispycos_server',
+                                                                 location=location, timeout=5)
+                        if isinstance(server_task, pycos.SysTask):
+                            break
+                    else:
+                        raise StopIteration(-1)
+                    if (not server.task and auth == comp_state.auth and server.msg_oid < oid):
+                        server.task = server_task
+                        server.msg_oid = oid
+                        pid = msg.get('pid', None)
+                        if psutil and pid:
+                            try:
+                                server.psproc = psutil.Process(pid)
+                            except Exception:
+                                pass
                 else:
                     if server.msg_oid > oid or not server.task:
-                        continue
+                        raise StopIteration(-1)
                     server.task = None
                     server.msg_oid = 0
                     server.psproc = None
-                    if _dispycos_config['serve']:
-                        if comp_state.scheduler and service_available():
-                            pycos.logger.warning('Server %s terminated', server.name)
-                    elif comp_state.auth and all(not server.task for server in node_servers):
+                    if comp_state.auth and all(not server.task for server in node_servers):
                         node_task.send({'req': 'release', 'auth': comp_state.auth,
                                         'client': comp_state.scheduler})
-                        break
+
+            while 1:
+                msg = mp_queue.get(block=True)
+                if not isinstance(msg, dict):
+                    pycos.logger.warning('Ignoring mp queue message: %s', type(msg))
+                    continue
+                pycos.Task(server_task, msg)
 
         def close_computation():
             if not comp_state.scheduler:
