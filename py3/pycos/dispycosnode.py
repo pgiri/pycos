@@ -32,14 +32,13 @@ def _dispycos_server_proc():
     import time
 
     from pycos.dispycos import MinPulseInterval, MaxPulseInterval, \
-        DispycosNodeInfo, DispycosNodeAvailInfo, Scheduler, _DispycosJob_
-    import pycos.netpycos as pycos
+        DispycosNodeInfo, DispycosNodeAvailInfo, Scheduler
     from pycos.netpycos import Task, SysTask, Location, MonitorException, logger
 
     for _dispycos_var in ('_dispycos_server_process', '_dispycos_server_proc'):
        globals().pop(_dispycos_var, None)
-    logger.name = 'dispycosnode'
-    setattr(sys.modules['__main__'], '_DispycosJob_', _DispycosJob_)
+    global _DispycosJob_
+    from pycos.dispycos import _DispycosJob_
     _dispycos_task = pycos.Pycos.cur_task()
     _dispycos_task.register('dispycos_server')
     _dispycos_config = yield _dispycos_task.receive()
@@ -151,9 +150,10 @@ def _dispycos_server_proc():
 
     while 1:
         _dispycos_msg = yield _dispycos_task.receive()
-        if not isinstance(_dispycos_msg, dict):
+        try:
+            _dispycos_req = _dispycos_msg.get('req', None)
+        except Exception:
             continue
-        _dispycos_req = _dispycos_msg.get('req', None)
 
         if _dispycos_req == 'run':
             _dispycos_client = _dispycos_msg.get('client', None)
@@ -183,7 +183,6 @@ def _dispycos_server_proc():
                     _dispycos_var = (sys.exc_info()[0], _dispycos_job.name, traceback.format_exc())
                 else:
                     _dispycos_job_tasks.add(_dispycos_var)
-                    _dispycos_busy_time.value = int(time.time())
                     logger.debug('task %s created at %s', _dispycos_var, _dispycos_task.location)
                     _dispycos_var.notify(_dispycos_monitor_task)
                     _dispycos_var.notify(_dispycos_scheduler_task)
@@ -283,7 +282,7 @@ def _dispycos_server_process(_dispycos_config, _dispycos_mp_queue, _dispycos_com
         pycos.logger.setLevel(pycos.logger.INFO)
     del _dispycos_config['loglevel']
 
-    pycos.logger.name = 'dispycosnode'
+    pycos.logger.name = 'dispycosserver'
     server_id = _dispycos_config['id']
     mp_queue, _dispycos_mp_queue = _dispycos_mp_queue, None
     config = {}
@@ -390,7 +389,7 @@ def _dispycos_spawn(_dispycos_config, _dispycos_id_ports, _dispycos_mp_queue,
                         break
                     try:
                         os.kill(proc.pid, signum)
-                    except:
+                    except Exception:
                         pass
                     proc.join(0.1)
 
@@ -547,34 +546,47 @@ def _dispycos_node():
 
     _dispycos_config['discover_peers'] = False
 
+    class Struct(object):
+
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+        def __setattr__(self, name, value):
+            if hasattr(self, name):
+                self.__dict__[name] = value
+            else:
+                raise AttributeError('Invalid attribute "%s"' % name)
+
+    service_times = Struct(start=None, stop=None, end=None)
     # time at start of day
     _dispycos_var = time.localtime()
     _dispycos_var = (int(time.time()) - (_dispycos_var.tm_hour * 3600) -
-                     (_dispycos_var.tm_min * 60))
-    service_start = service_stop = service_end = None
+                     (_dispycos_var.tm_min * 60) - _dispycos_var.tm_sec)
     if _dispycos_config['service_start']:
-        service_start = time.strptime(_dispycos_config.pop('service_start'), '%H:%M')
-        service_start = (_dispycos_var + (service_start.tm_hour * 3600) +
-                         (service_start.tm_min * 60))
+        service_times.start = time.strptime(_dispycos_config.pop('service_start'), '%H:%M')
+        service_times.start = (_dispycos_var + (service_times.start.tm_hour * 3600) +
+                               (service_times.start.tm_min * 60))
     if _dispycos_config['service_stop']:
-        service_stop = time.strptime(_dispycos_config.pop('service_stop'), '%H:%M')
-        service_stop = (_dispycos_var + (service_stop.tm_hour * 3600) + (service_stop.tm_min * 60))
+        service_times.stop = time.strptime(_dispycos_config.pop('service_stop'), '%H:%M')
+        service_times.stop = (_dispycos_var + (service_times.stop.tm_hour * 3600) +
+                              (service_times.stop.tm_min * 60))
     if _dispycos_config['service_end']:
-        service_end = time.strptime(_dispycos_config.pop('service_end'), '%H:%M')
-        service_end = (_dispycos_var + (service_end.tm_hour * 3600) + (service_end.tm_min * 60))
+        service_times.end = time.strptime(_dispycos_config.pop('service_end'), '%H:%M')
+        service_times.end = (_dispycos_var + (service_times.end.tm_hour * 3600) +
+                             (service_times.end.tm_min * 60))
 
-    if (service_start or service_stop or service_end):
-        if not service_start:
-            service_start = int(time.time())
-        if service_stop:
-            if service_start >= service_stop:
+    if (service_times.start or service_times.stop or service_times.end):
+        if not service_times.start:
+            service_times.start = int(time.time())
+        if service_times.stop:
+            if service_times.start >= service_times.stop:
                 raise Exception('"service_start" must be before "service_stop"')
-        if service_end:
-            if service_start >= service_end:
+        if service_times.end:
+            if service_times.start >= service_times.end:
                 raise Exception('"service_start" must be before "service_end"')
-            if service_stop and service_stop >= service_end:
+            if service_times.stop and service_times.stop >= service_times.end:
                 raise Exception('"service_stop" must be before "service_end"')
-        if not service_stop and not service_end:
+        if not service_times.stop and not service_times.end:
             raise Exception('"service_stop" or "service_end" must also be given')
 
     if _dispycos_config['max_file_size']:
@@ -598,17 +610,6 @@ def _dispycos_node():
         _dispycos_config['keyfile'] = os.path.abspath(_dispycos_config['keyfile'])
     else:
         _dispycos_config['keyfile'] = None
-
-    class Struct(object):
-
-        def __init__(self, **kwargs):
-            self.__dict__.update(kwargs)
-
-        def __setattr__(self, name, value):
-            if hasattr(self, name):
-                self.__dict__[name] = value
-            else:
-                raise AttributeError('Invalid attribute "%s"' % name)
 
     busy_time = multiprocessing.Value('I', 0)
     mp_queue = multiprocessing.Queue()
@@ -737,7 +738,6 @@ def _dispycos_node():
         from pycos.dispycos import DispycosNodeAvailInfo, DispycosNodeInfo
 
         task.register('dispycos_node')
-        last_pulse = last_ping = time.time()
         ping_interval = _dispycos_config.pop('ping_interval')
         msg_timeout = _dispycos_config['msg_timeout']
         zombie_period = _dispycos_config['zombie_period']
@@ -750,46 +750,44 @@ def _dispycos_node():
             now = time.time()
             if not _dispycos_config['serve']:
                 return False
-            if not service_start:
+            if not service_times.start:
                 return True
-            if service_stop:
-                if (service_start <= now < service_stop):
+            if service_times.stop:
+                if (service_times.start <= now < service_times.stop):
                     return True
             else:
-                if (service_start <= now < service_end):
+                if (service_times.start <= now < service_times.end):
                     return True
             return False
 
         def service_times_proc(task=None):
-            global service_start, service_stop, service_end
             task.set_daemon()
             while 1:
-                if service_stop:
+                now = int(time.time())
+                dispycos_scheduler.ignore_peers(True)
+                yield task.sleep(service_times.start - now)
+                dispycos_scheduler.ignore_peers(False)
+                dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
+                if service_times.stop:
                     now = int(time.time())
-                    yield task.sleep(service_stop - now)
+                    yield task.sleep(service_times.stop - now)
                     for server in node_servers:
                         if server.task:
                             server.task.send({'req': 'quit', 'node_auth': node_auth})
 
-                if service_end:
+                if service_times.end:
                     now = int(time.time())
-                    yield task.sleep(service_end - now)
+                    yield task.sleep(service_times.end - now)
                     for server in node_servers:
                         if server.task:
                             server.task.send({'req': 'terminate', 'node_auth': node_auth})
 
                 # advance times for next day
-                service_start += 24 * 3600
-                if service_stop:
-                    service_stop += 24 * 3600
-                if service_end:
-                    service_end += 24 * 3600
-                # disable service till next start
-                dispycos_scheduler.ignore_peers(True)
-                now = int(time.time())
-                yield task.sleep(service_start - now)
-                dispycos_scheduler.ignore_peers(False)
-                dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
+                service_times.start += 24 * 3600
+                if service_times.stop:
+                    service_times.stop += 24 * 3600
+                if service_times.end:
+                    service_times.end += 24 * 3600
 
         def monitor_peers(task=None):
             task.set_daemon()
@@ -911,12 +909,14 @@ def _dispycos_node():
             comp_state.cpus_reserved = 0
             comp_state.auth = None
             comp_state.interval = _dispycos_config['max_pulse_interval']
-            dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
+            timer_task.resume()
+            if service_available():
+                dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
             return
 
         def timer_proc(task=None):
             task.set_daemon()
-            last_pulse = time.time()
+            last_pulse = last_ping = time.time()
             while 1:
                 yield task.sleep(comp_state.interval)
                 now = time.time()
@@ -946,16 +946,18 @@ def _dispycos_node():
 
                 if ping_interval and (now - last_ping) > ping_interval and service_available():
                     dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
+                    last_ping = now
 
         timer_task = pycos.Task(timer_proc)
-        if service_start:
-            pycos.Task(service_times_proc)
-
         qserver = threading.Thread(target=mp_queue_server)
         qserver.daemon = True
         qserver.start()
         dispycos_scheduler.peer_status(pycos.Task(monitor_peers))
-        dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
+        if service_times.start:
+            pycos.Task(service_times_proc)
+        else:
+            dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
+
         for peer in _dispycos_config['peers']:
             pycos.Task(dispycos_scheduler.peer, pycos.deserialize(peer))
 
@@ -963,9 +965,7 @@ def _dispycos_node():
         parent_pipe, child_pipe = multiprocessing.Pipe(duplex=True)
 
         while 1:
-            msg = yield task.receive(timeout=comp_state.interval)
-            if not msg:
-                continue
+            msg = yield task.receive()
             try:
                 req = msg['req']
             except Exception:
@@ -974,10 +974,16 @@ def _dispycos_node():
             if req == 'server_task':
                 try:
                     server = node_servers[msg['server_id']]
-                    if (isinstance(msg.get('task', None), pycos.Task) and
-                        msg['auth'] == comp_state.auth):
-                        if server.msg_oid > msg['oid']:
-                            assert server.task == msg['task']
+                except Exception:
+                    pass
+                else:
+                    if (isinstance(msg.get('task', None), pycos.SysTask) and
+                        msg.get('auth', None) == comp_state.auth):
+                        if server.msg_oid > msg.get('oid', 0):
+                            if server.task != msg['task']:
+                                pycos.logger.warning('Server task for %s: %s != %s',
+                                                     server.id, server.task, msg['task'])
+                            server.task = msg['task']
                         else:
                             server.task = msg['task']
                             server.msg_oid = msg['oid']
@@ -986,8 +992,6 @@ def _dispycos_node():
                                     server.psproc = psutil.Process(msg['pid'])
                                 except Exception:
                                     pass
-                except Exception:
-                    pass
 
             elif req == 'server_done':
                 try:
@@ -1017,8 +1021,7 @@ def _dispycos_node():
                     else:
                         info = DispycosNodeAvailInfo(task.location, None, None, None, None)
                     info = DispycosNodeInfo(node_name, task.location.addr,
-                                            len(node_servers) - 1, platform.platform(),
-                                            info)
+                                            len(node_servers) - 1, platform.platform(), info)
                     client.send(info)
 
             elif req == 'reserve':
@@ -1100,7 +1103,6 @@ def _dispycos_node():
                 auth = msg.get('auth', None)
                 if comp_state.auth and auth == comp_state.auth:
                     close_computation()
-                    timer_task.resume()
                     released = 'released'
                 else:
                     released = 'invalid'
