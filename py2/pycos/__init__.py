@@ -3517,7 +3517,7 @@ class Pycos(object):
             task._callers = []
             if self._polling and len(self._scheduled) == 1:
                 self._notifier.interrupt()
-        task._exceptions.append((GeneratorExit, GeneratorExit('close')))
+        task._exceptions.append((GeneratorExit, GeneratorExit('terminated')))
         self._lock.release()
         return 0
 
@@ -3603,8 +3603,8 @@ class Pycos(object):
                     if task._exceptions:
                         exc = task._exceptions.pop(0)
                         if exc[0] == GeneratorExit:
-                            task._generator.close()
-                            retval = task._value
+                            # task._generator.close()
+                            raise Exception(exc[1])
                         else:
                             retval = task._generator.throw(*exc)
                     else:
@@ -3642,7 +3642,15 @@ class Pycos(object):
                         self._lock.release()
                         continue
                     else:
-                        task._exceptions.append(exc)
+                        if type(exc[1].args[0]) == GeneratorExit:
+                            try:
+                                task._generator.close()
+                            except Exception:
+                                logger.debug('closing %s raised exception: %s',
+                                             task.name, traceback.format_exc())
+                            task._exceptions = [(GeneratorExit, exc[1].args[0], None)]
+                        else:
+                            task._exceptions.append(exc)
 
                     if task._callers:
                         # return to caller
@@ -3661,9 +3669,9 @@ class Pycos(object):
                         elif task._state == Pycos._Running:
                             task._state = Pycos._Scheduled
                     else:
-                        if task._exceptions:
+                        if task._exceptions and task._exceptions[-1][0] != GeneratorExit:
                             exc = task._exceptions[0]
-                            assert isinstance(exc, tuple)
+                            # assert isinstance(exc, tuple)
                             if len(exc) == 2:
                                 exc = ''.join(traceback.format_exception_only(*exc))
                             else:
@@ -3674,9 +3682,10 @@ class Pycos(object):
                             except Exception:
                                 logger.warning('closing %s raised exception: %s',
                                                task._name, traceback.format_exc())
+
                         # delete this task
-                        if task._state not in (Pycos._Scheduled, Pycos._Running):
-                            logger.warning('task "%s" is in state: %s', task._name, task._state)
+                        # if task._state not in (Pycos._Scheduled, Pycos._Running):
+                        #     logger.warning('task "%s" is in state: %s', task._name, task._state)
                         monitors = list(task._monitors)
                         for monitor in monitors:
                             if monitor._location:
@@ -3689,7 +3698,6 @@ class Pycos(object):
                                         # send only the type
                                         exc = (exc[0], type(exc[1].args[0]))
                                     exc = MonitorException(task, exc)
-                                    task._exceptions = []
                                 else:
                                     exc = task._value
                                     try:
@@ -3707,7 +3715,9 @@ class Pycos(object):
                                     logger.warning('monitor for %s/%s is not valid!',
                                                    task._name, task._id)
                                     task._monitors.discard(monitor)
-                        if not task._monitors or not task._exceptions:
+
+                        if (not task._exceptions or not task._monitors or
+                            (task._exceptions and task._exceptions[-1][0] == GeneratorExit)):
                             task._msgs.clear()
                             task._monitors.clear()
                             task._exceptions = []
