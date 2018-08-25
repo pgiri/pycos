@@ -253,6 +253,8 @@ def _dispycos_server_proc():
     if _dispycos_scheduler_task:
         _dispycos_scheduler_task.send({'status': Scheduler.ServerDisconnected,
                                        'location': _dispycos_task.location})
+    if os.name == 'nt':
+        os.chdir(os.path.join(_dispycos_dest_path, '..'))
     yield _dispycos_node_task.deliver({'req': 'server_done', 'oid': 3,
                                        'server_id': _dispycos_config['id'], 'task': _dispycos_task,
                                        'auth': _dispycos_computation_auth}, timeout=5)
