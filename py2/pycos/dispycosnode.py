@@ -214,7 +214,7 @@ def _dispycos_server_proc():
             if (_dispycos_auth != _dispycos_config['node_auth']):
                 continue
             if _dispycos_scheduler_task:
-                _dispycos_scheduler_task.send({'status': Scheduler.ServerDisconnected,
+                _dispycos_scheduler_task.send({'status': Scheduler.ServerClosed,
                                               'location': _dispycos_task.location})
             break
 
@@ -250,6 +250,9 @@ def _dispycos_server_proc():
                      'before closing computation', _dispycos_name, len(_dispycos_job_tasks))
         if (yield _dispycos_jobs_done.wait(timeout=5)):
             break
+    if _dispycos_scheduler_task:
+        _dispycos_scheduler_task.send({'status': Scheduler.ServerDisconnected,
+                                       'location': _dispycos_task.location})
     yield _dispycos_node_task.deliver({'req': 'server_done', 'oid': 3,
                                        'server_id': _dispycos_config['id'], 'task': _dispycos_task,
                                        'auth': _dispycos_computation_auth}, timeout=5)
@@ -761,8 +764,10 @@ def _dispycos_node():
         def service_times_proc(task=None):
             task.set_daemon()
             while 1:
-                now = int(time.time())
                 dispycos_scheduler.ignore_peers(True)
+                for peer in dispycos_scheduler.peers():
+                    pycos.Task(dispycos_scheduler.close_peer, peer)
+                now = int(time.time())
                 yield task.sleep(service_times.start - now)
                 dispycos_scheduler.ignore_peers(False)
                 dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
@@ -786,6 +791,7 @@ def _dispycos_node():
                     service_times.stop += 24 * 3600
                 if service_times.end:
                     service_times.end += 24 * 3600
+                yield task.sleep(2)
 
         def monitor_peers(task=None):
             task.set_daemon()
@@ -1201,6 +1207,8 @@ def _dispycos_node():
         node_task.value()
     except (Exception, KeyboardInterrupt):
         pass
+    for peer in dispycos_scheduler.peers():
+        pycos.Task(dispycos_scheduler.close_peer, peer)
     exit(0)
 
 
