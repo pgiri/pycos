@@ -1748,7 +1748,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
             close_tasks = [SysTask(self.__close_node, node, await_async=await_async)
                            for node in self._nodes.values()]
             close_tasks.extend([SysTask(self.__close_node, node)
-                                for node in self._disabled_nodes.values()]
+                                for node in self._disabled_nodes.values()])
             for close_task in close_tasks:
                 yield close_task.finish()
         if self.__cur_client_auth:
