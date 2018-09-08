@@ -33,18 +33,18 @@ def _dispycos_server_proc():
 
     from pycos.dispycos import MinPulseInterval, MaxPulseInterval, \
         DispycosNodeInfo, DispycosNodeAvailInfo, Scheduler
-    from pycos.netpycos import Task, SysTask, Location, MonitorException, logger
+    from pycos.netpycos import Task, SysTask, Location, MonitorException, deserialize, logger
+    global _DispycosJob_
+    from pycos.dispycos import _DispycosJob_
 
     for _dispycos_var in ('_dispycos_server_process', '_dispycos_server_proc'):
        globals().pop(_dispycos_var, None)
-    global _DispycosJob_
-    from pycos.dispycos import _DispycosJob_
     _dispycos_task = pycos.Pycos.cur_task()
     _dispycos_task.register('dispycos_server')
     _dispycos_config = yield _dispycos_task.receive()
-    _dispycos_scheduler_task = pycos.deserialize(_dispycos_config['scheduler_task'])
+    _dispycos_scheduler_task = deserialize(_dispycos_config['scheduler_task'])
     _dispycos_computation_auth = _dispycos_config.pop('computation_auth', None)
-    _dispycos_var = pycos.deserialize(_dispycos_config['node_location'])
+    _dispycos_var = deserialize(_dispycos_config['node_location'])
     yield pycos.Pycos.instance().peer(_dispycos_var)
     _dispycos_node_task = yield Task.locate('dispycos_node', location=_dispycos_var)
     yield _dispycos_node_task.deliver({'req': 'server_task', 'oid': 1, 'pid': os.getpid(),
@@ -68,7 +68,7 @@ def _dispycos_server_proc():
     sys.path.insert(0, _dispycos_dest_path)
 
     for _dispycos_var in _dispycos_config.pop('peers', []):
-        Task(pycos.Pycos.instance().peer, pycos.deserialize(_dispycos_var))
+        Task(pycos.Pycos.instance().peer, deserialize(_dispycos_var))
 
     for _dispycos_var in ['min_pulse_interval', 'max_pulse_interval']:
         del _dispycos_config[_dispycos_var]
@@ -110,7 +110,7 @@ def _dispycos_server_proc():
                 logger.warning('invalid message to monitor ignored: %s', type(msg))
 
     pycos.Pycos.instance().peer_status(SysTask(_dispycos_peer_status))
-    _dispycos_var = pycos.deserialize(_dispycos_config['computation_location'])
+    _dispycos_var = deserialize(_dispycos_config['computation_location'])
     if ((yield pycos.Pycos.instance().peer(_dispycos_var)) or
         (yield pycos.Pycos.instance().peer(_dispycos_scheduler_task.location))):
         raise StopIteration(-1)
@@ -168,8 +168,8 @@ def _dispycos_server_proc():
             try:
                 if _dispycos_job.code:
                     exec(_dispycos_job.code) in globals()
-                _dispycos_job.args = pycos.deserialize(_dispycos_job.args)
-                _dispycos_job.kwargs = pycos.deserialize(_dispycos_job.kwargs)
+                _dispycos_job.args = deserialize(_dispycos_job.args)
+                _dispycos_job.kwargs = deserialize(_dispycos_job.kwargs)
             except Exception:
                 logger.debug('invalid computation to run')
                 _dispycos_var = (sys.exc_info()[0], _dispycos_job.name, traceback.format_exc())
@@ -439,9 +439,13 @@ def _dispycos_spawn(_dispycos_config, _dispycos_id_ports, _dispycos_mp_queue,
         proc = multiprocessing.Process(target=server_process, name=server_config['name'],
                                        args=(server_config, _dispycos_mp_queue,
                                              _dispycos_computation))
-        proc.start()
-        pycos.logger.debug('dispycos server %s started with PID %s', (id_port[0], proc.pid))
-        procs.append(proc)
+        if isinstance(proc, multiprocessing.Process):
+            proc.start()
+            pycos.logger.debug('dispycos server %s started with PID %s', (id_port[0], proc.pid))
+            procs.append(proc)
+        else:
+            pycos.logger.warning('Could not start dispycos server for %s at %s',
+                                 id_port[0], id_port[1])
 
     _dispycos_pipe.send({'msg': 'started', 'auth': _dispycos_config['computation_auth'],
                          'cpus': len(procs)})
@@ -722,6 +726,9 @@ def _dispycos_node():
     else:
         pycos.logger.setLevel(pycos.Logger.INFO)
     dispycos_scheduler = pycos.Pycos(**server_config)
+    dispycos_scheduler.ignore_peers(True)
+    for _dispycos_var in dispycos_scheduler.peers():
+        pycos.Task(dispycos_scheduler.close_peer, _dispycos_var)
     dispycos_scheduler.dest_path = os.path.join(dispycos_scheduler.dest_path, 'dispycos')
     if dispycos_dest_path != dispycos_scheduler.dest_path:
         print('\n    Destination paths inconsistent: "%s" != "%s"\n' %
@@ -766,13 +773,11 @@ def _dispycos_node():
         def service_times_proc(task=None):
             task.set_daemon()
             while 1:
-                dispycos_scheduler.ignore_peers(True)
-                for peer in dispycos_scheduler.peers():
-                    pycos.Task(dispycos_scheduler.close_peer, peer)
                 now = int(time.time())
                 yield task.sleep(service_times.start - now)
                 dispycos_scheduler.ignore_peers(False)
                 dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
+
                 if service_times.stop:
                     now = int(time.time())
                     yield task.sleep(service_times.stop - now)
@@ -780,12 +785,15 @@ def _dispycos_node():
                         if server.task:
                             server.task.send({'req': 'quit', 'node_auth': node_auth})
 
+                dispycos_scheduler.ignore_peers(True)
                 if service_times.end:
                     now = int(time.time())
                     yield task.sleep(service_times.end - now)
                     for server in node_servers:
                         if server.task:
                             server.task.send({'req': 'terminate', 'node_auth': node_auth})
+                    for peer in dispycos_scheduler.peers():
+                        pycos.Task(dispycos_scheduler.close_peer, peer)
 
                 # advance times for next day
                 service_times.start += 24 * 3600
@@ -793,7 +801,6 @@ def _dispycos_node():
                     service_times.stop += 24 * 3600
                 if service_times.end:
                     service_times.end += 24 * 3600
-                yield task.sleep(2)
 
         def monitor_peers(task=None):
             task.set_daemon()
@@ -962,6 +969,7 @@ def _dispycos_node():
         if service_times.start:
             pycos.Task(service_times_proc)
         else:
+            dispycos_scheduler.ignore_peers(False)
             dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
 
         for peer in _dispycos_config['peers']:
