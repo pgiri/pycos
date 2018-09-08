@@ -845,7 +845,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             logger.debug(traceback.format_exc())
             reply = -1
         sock.close()
-        raise StopIteration(0)
+        raise StopIteration(reply)
 
     def _relay_ping_(self, ping_msg, addrinfo, task=None):
         """
