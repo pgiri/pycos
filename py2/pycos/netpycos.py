@@ -8,7 +8,6 @@ import socket
 import inspect
 import traceback
 import os
-import sys
 import stat
 import hashlib
 import collections
@@ -16,23 +15,24 @@ import copy
 import tempfile
 import threading
 import errno
-import atexit
 import ssl
 import struct
 import re
+import platform
 try:
     import netifaces
 except ImportError:
     netifaces = None
+
+import pycos
+from pycos import *
+
 if os.name == 'nt':
     from errno import WSAEACCES as EADDRINUSE
     from errno import WSAEADDRNOTAVAIL as EADDRNOTAVAIL
 else:
     from errno import EADDRINUSE
     from errno import EADDRNOTAVAIL
-
-import pycos
-from pycos import *
 
 __author__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __copyright__ = "Copyright (c) 2012-2014 Giridhar Pemmasani"
@@ -155,6 +155,7 @@ class Pycos(pycos.Pycos):
 
         if not name:
             name = socket.gethostname()
+        self.ipv4_udp_multicast = bool(ipv4_udp_multicast)
         location = None
         for i in range(len(nodes)):
             node = nodes[i]
@@ -164,7 +165,8 @@ class Pycos(pycos.Pycos):
                     logger.warning('invalid ext_ip_addr "%s" ignored', ext_ip_addrs[i])
             else:
                 ext_ip_addr = None
-            addrinfo = Pycos.host_addrinfo(host=node, socket_family=socket_family)
+            addrinfo = Pycos.host_addrinfo(host=node, socket_family=socket_family,
+                                           ipv4_multicast=self.ipv4_udp_multicast)
             if not addrinfo:
                 logger.warning('Invalid node "%s" ignored', node)
                 continue
@@ -220,28 +222,19 @@ class Pycos(pycos.Pycos):
             logger.warning('Could not initialize networking')
             raise Exception('Invalid "node"?')
 
-        self.ipv4_udp_multicast = bool(ipv4_udp_multicast)
         if udp_port is None:
             udp_port = 9705
         udp_addrinfos = {}
         for addrinfo in self._addrinfos:
-            if addrinfo.family == socket.AF_INET and self.ipv4_udp_multicast:
-                addrinfo.broadcast = IPV4_MULTICAST_GROUP
-            if os.name == 'nt':
-                bind_addr = addrinfo.ip
-            elif sys.platform == 'darwin':
-                if addrinfo.family == socket.AF_INET and (not self.ipv4_udp_multicast):
-                    bind_addr = ''
-                else:
-                    bind_addr = addrinfo.broadcast
-            else:
-                bind_addr = addrinfo.broadcast
-            udp_addrinfos[bind_addr] = addrinfo
+            udp_addrinfos[addrinfo.bind_addr] = addrinfo
         for bind_addr, addrinfo in udp_addrinfos.items():
             udp_sock = socket.socket(addrinfo.family, socket.SOCK_DGRAM)
             udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             if hasattr(socket, 'SO_REUSEPORT'):
-                udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                try:
+                    udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                except Exception:
+                    pass
 
             udp_sock.bind((bind_addr, udp_port))
             if addrinfo.family == socket.AF_INET:
@@ -634,7 +627,7 @@ class Pycos(pycos.Pycos):
         return ip_addr
 
     @staticmethod
-    def host_addrinfo(host=None, socket_family=None):
+    def host_addrinfo(host=None, socket_family=None, ipv4_multicast=False):
         """If 'host' is given (as either host name or IP address), resolve it and
         fill AddrInfo structure. If 'host' is not given, netifaces module is used to
         find appropriate IP address. If 'socket_family' is given, IP address with that
@@ -647,13 +640,24 @@ class Pycos(pycos.Pycos):
                 self.family = family
                 self.ip = ip
                 self.ifn = ifn
-                self.broadcast = broadcast
+                if family == socket.AF_INET and ipv4_multicast:
+                    self.broadcast = IPV4_MULTICAST_GROUP
+                else:
+                    self.broadcast = broadcast
                 self.netmask = netmask
                 self.ext_ip_addr = None
+                if os.name == 'nt':
+                    self.bind_addr = ip
+                elif platform.system() in ('Darwin', 'DragonFlyBSD', 'FreeBSD', 'OpenBSD', 'NetBSD'):
+                    if family == socket.AF_INET and (not ipv4_multicast):
+                        self.bind_addr = ''
+                    else:
+                        self.bind_addr = self.broadcast
+                else:
+                    self.bind_addr = self.broadcast
 
-        if socket_family:
-            if socket_family not in (socket.AF_INET, socket.AF_INET6):
-                return None
+        if socket_family not in (None, socket.AF_INET, socket.AF_INET6):
+            return None
         hosts = []
         if host:
             best = None
