@@ -6,7 +6,8 @@
 # relayed by httpd's status_task) to show when remote task is created and
 # finished.
 
-import pycos.netpycos as pycos
+import pycos
+import pycos.netpycos
 from pycos.dispycos import *
 
 

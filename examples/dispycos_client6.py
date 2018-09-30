@@ -7,7 +7,8 @@
 # dispycos_client6_channel.py that uses channels for communication and 'deque'
 # for circular buffers (instead of numpy).
 
-import pycos.netpycos as pycos
+import pycos
+import pycos.netpycos
 from pycos.dispycos import *
 
 

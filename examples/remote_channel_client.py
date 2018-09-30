@@ -4,8 +4,9 @@
 # use with its server 'remote_channel_server.py'
 
 import sys, logging, random
+import pycos
 # import netpycos to use networked version of Pycos
-import pycos.netpycos as pycos
+import pycos.netpycos
 
 def sender_proc(rchannel, task=None):
     # send messages to channel; 'deliver' is used with n=2, so messages will not

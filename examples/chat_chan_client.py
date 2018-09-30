@@ -5,7 +5,8 @@
 # client is broadcast over a channel to all clients
 
 import sys, logging
-import pycos.netpycos as pycos
+import pycos
+import pycos.netpycos
 
 # this task receives messages from server
 def recv_proc(client_id, task=None):

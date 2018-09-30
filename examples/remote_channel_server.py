@@ -7,8 +7,9 @@
 # local network.
 
 import sys, logging
+import pycos
 # import netpycos to use networked version of Pycos
-import pycos.netpycos as pycos
+import pycos.netpycos
 
 def receiver_proc(task=None):
     task.set_daemon()

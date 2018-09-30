@@ -14,7 +14,8 @@
 # of their data (thus there is no duplicate data in servers at a node in this
 # case).
 
-import pycos.netpycos as pycos
+import pycos
+import pycos.netpycos
 from pycos.dispycos import *
 
 def server_available(location, data_file, task=None):

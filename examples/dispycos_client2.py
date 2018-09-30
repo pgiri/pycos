@@ -7,7 +7,8 @@
 # (although in this example they are not). Status of remote tasks can be
 # monitored in a web browser at http://127.0.0.1:8181
 
-import pycos.netpycos as pycos
+import pycos
+import pycos.netpycos
 from pycos.dispycos import *
 import pycos.httpd
 

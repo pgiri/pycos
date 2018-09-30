@@ -19,7 +19,8 @@
 # 'dispycos_client9_node.py') and streaming (see 'dispycos_client6.py') for
 # efficient processing of data and communication.
 
-import pycos.netpycos as pycos
+import pycos
+import pycos.netpycos
 from pycos.dispycos import *
 
 

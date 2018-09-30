@@ -7,7 +7,8 @@
 # message passing is used to send data from client to the program and to send
 # output from the program back to the client.
 
-import pycos.netpycos as pycos
+import pycos
+import pycos.netpycos
 from pycos.dispycos import *
 
 # rtask_proc is sent to remote server to execute dispycos_client5_proc.py
@@ -114,7 +115,7 @@ def client_proc(computation, program_path, n, task=None):
 
 if __name__ == '__main__':
     import random, sys, os
-    # pycos.logger.setLevel(pycos.Logger.DEBUG)
+    pycos.logger.setLevel(pycos.Logger.DEBUG)
 
     # dispycos saves depedency files in node's directory. If the file at client
     # is at or below current directory (in directory hierarchy), then the file

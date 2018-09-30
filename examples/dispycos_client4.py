@@ -15,7 +15,8 @@
 # Note that the objective is to illustrate features, so implementation is not
 # ideal. Error checking is skipped at a few places for brevity.
 
-import pycos.netpycos as pycos
+import pycos
+import pycos.netpycos
 from pycos.dispycos import *
 
 # objects of C are sent by a client to remote task

@@ -7,7 +7,8 @@
 # as the computation is supposed to be CPU heavy (although in this example they
 # are not).
 
-import pycos.netpycos as pycos
+import pycos
+import pycos.netpycos
 from pycos.dispycos import *
 
 # this generator function is sent to remote dispycos servers to run tasks there

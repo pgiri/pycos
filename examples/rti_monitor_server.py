@@ -8,8 +8,9 @@
 # appropriately.
 
 import sys
+import pycos
 # import netpycos to use distributed version of Pycos
-import pycos.netpycos as pycos
+import pycos.netpycos
 
 def rti_1(a, b=1, task=None):
     pycos.logger.debug('running %s/%s with %s, %s', task.name, id(task), a, b)

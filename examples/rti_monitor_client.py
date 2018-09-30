@@ -4,8 +4,9 @@
 # client requests execution of tasks on (remote) server.
 
 import sys, random
+import pycos
 # import netpycos to use distributed version of Pycos
-import pycos.netpycos as pycos
+import pycos.netpycos
 
 def monitor_proc(n, task=None):
     # this task gets exceptions (notifications of exit status) for (remote)

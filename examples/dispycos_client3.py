@@ -7,7 +7,8 @@
 # done in 'dispycos_client1.py', remote task sends the result back to client
 # with message passing.
 
-import pycos.netpycos as pycos
+import pycos
+import pycos.netpycos
 from pycos.dispycos import *
 
 

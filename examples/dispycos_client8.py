@@ -4,7 +4,8 @@
 # This example uses status messages and message passing to run 'setup' task at
 # remote process to prepare it for processing jobs.
 
-import pycos.netpycos as pycos
+import pycos
+import pycos.netpycos
 from pycos.dispycos import *
 
 # Unlike in earlier versions of pycos, computations can now take time - even if

@@ -3,8 +3,9 @@
 # https://pycos.sourceforge.io for details.
 
 import sys, random
+import pycos
 # use netycos to start message passing with remote peers
-import pycos.netpycos as pycos
+import pycos.netpycos
 
 def client_proc(n, task=None):
     global msg_id

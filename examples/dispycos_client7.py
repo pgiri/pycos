@@ -6,7 +6,8 @@
 # dispycos scheduler to run jobs at specific remote dispycos servers. This
 # template can be used to implement cusomized scheduler to run remote tasks.
 
-import pycos.netpycos as pycos
+import pycos
+import pycos.netpycos
 from pycos.dispycos import *
 
 # this generator function is sent to remote server to run tasks there

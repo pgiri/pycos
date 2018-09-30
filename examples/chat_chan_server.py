@@ -3,8 +3,9 @@
 # chat server; must be used with 'chat_chan_client.py'
 
 import sys, logging
+import pycos
 # import netpycos to use distributed version of Pycos
-import pycos.netpycos as pycos
+import pycos.netpycos
 
 # pycos will disconnect if MaxConnectionErrors number of networking errors
 # (e.g., conection / send timeout) occur; default is 10

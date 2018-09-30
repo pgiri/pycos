@@ -5,7 +5,8 @@
 # over Channel to send messages to remote tasks to process, and uses
 # 'deque' module to implement circular buffer.
 
-import pycos.netpycos as pycos
+import pycos
+import pycos.netpycos
 from pycos.dispycos import *
 
 

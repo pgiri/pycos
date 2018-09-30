@@ -7,7 +7,8 @@
 # 'dispycos_client9_server.py' which initializes each server to read data in to
 # memory for processing in computations.
 
-import pycos.netpycos as pycos
+import pycos
+import pycos.netpycos
 from pycos.dispycos import *
 
 def node_available(avail_info, data_file, task=None):
