@@ -13,7 +13,7 @@ import ssl
 import re
 import traceback
 
-import pycos.netpycos as pycos
+import pycos
 from pycos.dispycos import DispycosStatus, DispycosNodeAvailInfo
 import pycos.dispycos as dispycos
 
@@ -372,7 +372,7 @@ class HTTPServer(object):
         self._httpd_thread.daemon = True
         self._httpd_thread.start()
         self.computation = computation
-        self.status_task = pycos.Task(self.status_proc)
+        self.status_task = pycos.SysTask(self.status_proc)
         if computation.status_task:
             client_task = computation.status_task
 
@@ -382,7 +382,7 @@ class HTTPServer(object):
                     msg = yield task.receive()
                     self.status_task.send(msg)
                     client_task.send(msg)
-            computation.status_task = pycos.Task(chain_msgs)
+            computation.status_task = pycos.SysTask(chain_msgs)
         else:
             computation.status_task = self.status_task
         pycos.logger.info('Started HTTP%s server at %s',
@@ -479,7 +479,7 @@ class HTTPServer(object):
                     yield task.sleep(self._poll_sec + 0.5)
                     self._server.shutdown()
                     self._server.server_close()
-                pycos.Task(_shutdown)
+                pycos.SysTask(_shutdown)
             else:
                 time.sleep(self._poll_sec + 0.5)
                 self._server.shutdown()
