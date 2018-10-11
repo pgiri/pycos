@@ -23,6 +23,7 @@ import operator
 import functools
 import re
 import copy
+import stat
 
 import pycos
 import pycos.netpycos
@@ -765,10 +766,11 @@ class Scheduler(object, metaclass=pycos.Singleton):
         clean = kwargs.pop('clean', False)
         nodes = kwargs.pop('nodes', [])
         self.pycos = pycos.Pycos.instance(**kwargs)
-        self.__dest_path = os.path.join(self.pycos.dest_path, 'dispycos', 'dispycosscheduler')
+        self.__dest_path = os.path.join(self.pycos.dest_path, 'dispycos', 'scheduler')
         if clean:
             shutil.rmtree(self.__dest_path)
         self.pycos.dest_path = self.__dest_path
+        os.chmod(self.__dest_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
 
         self.__computation_sched_event = pycos.Event()
         self.__computation_scheduler_task = SysTask(self.__computation_scheduler_proc, nodes)
@@ -849,7 +851,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
 
             elif isinstance(msg, pycos.PeerStatus):
                 if msg.status == pycos.PeerStatus.Online:
-                    if msg.name.endswith('_proc-0'):
+                    if msg.name.endswith('_server-0'):
                         SysTask(self.__discover_node, msg)
                 else:
                     # msg.status == pycos.PeerStatus.Offline

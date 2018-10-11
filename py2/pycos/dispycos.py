@@ -845,7 +845,7 @@ class Scheduler(object):
 
             elif isinstance(msg, pycos.PeerStatus):
                 if msg.status == pycos.PeerStatus.Online:
-                    if msg.name.endswith('_proc-0'):
+                    if msg.name.endswith('_server-0'):
                         SysTask(self.__discover_node, msg)
                 else:
                     # msg.status == pycos.PeerStatus.Offline
