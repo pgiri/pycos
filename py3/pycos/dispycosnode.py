@@ -521,21 +521,26 @@ def _dispycos_spawn(_dispycos_config, _dispycos_id_ports, _dispycos_mp_queue,
 
 
 def _dispycos_node():
-    if (hasattr(stat, 'S_ISUID') and (hasattr(os, 'setresuid') or hasattr(os, 'setreuid'))):
-        sbuf = os.stat(sys.executable)
-        if sbuf.st_mode & stat.S_ISUID:
-            _dispycos_config['suid'] = sbuf.st_uid
-        if sbuf.st_mode & stat.S_ISGID:
-            _dispycos_config['sgid'] = sbuf.st_gid
+    if ((hasattr(os, 'setresuid') or hasattr(os, 'setreuid')) and os.getuid() != os.geteuid()):
+        _dispycos_config['suid'] = os.geteuid()
+        _dispycos_config['sgid'] = os.getegid()
+        if _dispycos_config['suid'] == 0:
+            print('\n    WARNING: Python interpreter %s likely has suid set to 0 '
+                  '\n    (administrator privilege), which is dangerous.\n\n' %
+                  sys.executable)
+        if _dispycos_config['sgid'] == 0:
+            print('\n    WARNING: Python interpreter %s likely has sgid set to 0 '
+                  '\n    (administrator privilege), which is dangerous.\n\n' %
+                  sys.executable)
 
-        if (_dispycos_config.get('suid', None) == os.geteuid() and
-            _dispycos_config.get('sgid', None) == os.getegid()):
-            os.setegid(os.getgid())
-            os.seteuid(os.getuid())
-            os.umask(0x007)
-        else:
-            _dispycos_config.pop('suid', None)
-            _dispycos_config.pop('sgid', None)
+        os.setegid(os.getgid())
+        os.seteuid(os.getuid())
+        os.umask(0x007)
+        pycos.logger.info('Computations will run with uid %s and gid %s' %
+                          (_dispycos_config['suid'], _dispycos_config['sgid']))
+    else:
+        _dispycos_config.pop('suid', None)
+        _dispycos_config.pop('sgid', None)
 
     if not _dispycos_config['min_pulse_interval']:
         _dispycos_config['min_pulse_interval'] = MinPulseInterval
