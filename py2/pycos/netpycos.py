@@ -286,11 +286,12 @@ class Pycos(pycos.Pycos):
         if not path.startswith(self.__dest_path_prefix):
             path = os.path.join(self.__dest_path_prefix,
                                 os.path.splitdrive(path)[1].lstrip(os.sep))
-        try:
-            os.makedirs(path)
-        except OSError as exc:
-            if exc.errno != errno.EEXIST:
-                raise
+        if not os.path.isdir(path):
+            try:
+                os.makedirs(path)
+            except OSError as exc:
+                if exc.errno != errno.EEXIST:
+                    raise
         self.__dest_path = path
 
     def _exit(self, await_non_daemons):
