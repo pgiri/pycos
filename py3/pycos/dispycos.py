@@ -1114,10 +1114,11 @@ class Scheduler(object, metaclass=pycos.Singleton):
                             'computation_location': computation._pulse_task.location})
             cpus = yield task.receive(timeout=MsgTimeout)
             if not isinstance(cpus, int) or cpus <= 0:
-                logger.warning('Reserving %s failed', node.task)
-                node.status = Scheduler.NodeClosed
+                logger.debug('Reserving %s failed', node.addr)
+                self._disabled_nodes.pop(node.addr, None)
+                # node.status = Scheduler.NodeDiscoverd
                 node.lock.release()
-                # yield pycos.Pycos.instance().close_peer(node_task.location)
+                yield pycos.Pycos.instance().close_peer(node.task.location)
                 raise StopIteration(-1)
             if computation != self._cur_computation:
                 node.status = Scheduler.NodeClosed

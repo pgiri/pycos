@@ -940,6 +940,9 @@ def _dispycos_node():
                 if msg.status == pycos.PeerStatus.Offline:
                     if (comp_state.scheduler and comp_state.scheduler.location == msg.location):
                         node_task.send({'req': 'release', 'auth': comp_state.auth})
+                else:  # msg.status == pycos.PeerStatus.Online
+                    if comp_state.scheduler and comp_state.scheduler.location == msg.location:
+                        node_task.send({'req': 'release', 'auth': comp_state.auth})
 
         def server_task_msg(msg, task=None):
             try:
@@ -1188,7 +1191,7 @@ def _dispycos_node():
                 continue
 
             if req == 'server_task':
-                yield server_task_msg(msg)
+                pycos.Task(server_task_msg, msg)
 
             elif req == 'dispycos_node_info':
                 client = msg.get('client', None)
@@ -1212,29 +1215,30 @@ def _dispycos_node():
                 avail_cpus = len([server for server in node_servers
                                   if server.id and not server.task])
                 if (isinstance(client, pycos.Task) and isinstance(cpus, int) and
-                    cpus >= 0 and not comp_state.auth and not comp_state.scheduler and
-                    service_available() and (avail_cpus >= cpus) and auth and
-                    isinstance(msg.get('status_task', None), pycos.Task) and
+                    isinstance(msg.get('status_task', None), pycos.Task) and auth and
                     isinstance(msg.get('computation_location', None), pycos.Location)):
+                    pass
+                else:
+                    continue
+
+                if (not comp_state.auth and service_available() and (0 < cpus <= avail_cpus)):
                     dispycos_scheduler.ignore_peers(True)
                     if (yield dispycos_scheduler.peer(msg['computation_location'])):
                         cpus = 0
                     else:
                         if not cpus:
                             cpus = avail_cpus
-                    if ((yield client.deliver(cpus, timeout=msg_timeout)) == 1 and cpus):
-                        comp_state.cpus_reserved = cpus
-                        comp_state.auth = auth
-                        busy_time.value = int(time.time())
-                        comp_state.scheduler = msg['status_task']
-                        timer_task.resume()
-                    else:
-                        dispycos_scheduler.ignore_peers(False)
-                        dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
                 else:
-                    comp_state.cpus_reserved = 0
-                    if isinstance(client, pycos.Task):
-                        client.send(0)
+                    cpus = 0
+                if ((yield client.deliver(cpus, timeout=msg_timeout)) == 1 and cpus):
+                    comp_state.cpus_reserved = cpus
+                    comp_state.auth = auth
+                    busy_time.value = int(time.time())
+                    comp_state.scheduler = msg['status_task']
+                    timer_task.resume()
+                else:
+                    dispycos_scheduler.ignore_peers(False)
+                    dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
 
             elif req == 'computation':
                 client = msg.get('client', None)

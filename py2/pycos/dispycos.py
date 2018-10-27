@@ -761,10 +761,11 @@ class Scheduler(object):
         clean = kwargs.pop('clean', False)
         nodes = kwargs.pop('nodes', [])
         self.pycos = pycos.Pycos.instance(**kwargs)
-        self.__dest_path = os.path.join(self.pycos.dest_path, 'dispycos', 'dispycosscheduler')
+        self.__dest_path = os.path.join(self.pycos.dest_path, 'dispycos', 'scheduler')
         if clean:
             shutil.rmtree(self.__dest_path)
         self.pycos.dest_path = self.__dest_path
+        os.chmod(self.__dest_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
 
         self.__computation_sched_event = pycos.Event()
         self.__computation_scheduler_task = SysTask(self.__computation_scheduler_proc, nodes)
@@ -1108,10 +1109,11 @@ class Scheduler(object):
                             'computation_location': computation._pulse_task.location})
             cpus = yield task.receive(timeout=MsgTimeout)
             if not isinstance(cpus, int) or cpus <= 0:
-                logger.warning('Reserving %s failed', node.task)
-                node.status = Scheduler.NodeClosed
+                logger.debug('Reserving %s failed', node.addr)
+                self._disabled_nodes.pop(node.addr, None)
+                # node.status = Scheduler.NodeDiscoverd
                 node.lock.release()
-                # yield pycos.Pycos.instance().close_peer(node_task.location)
+                yield pycos.Pycos.instance().close_peer(node.task.location)
                 raise StopIteration(-1)
             if computation != self._cur_computation:
                 node.status = Scheduler.NodeClosed
