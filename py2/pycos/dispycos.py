@@ -23,6 +23,7 @@ import operator
 import functools
 import re
 import copy
+import stat
 
 import pycos
 import pycos.netpycos
