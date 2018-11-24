@@ -43,11 +43,13 @@ def _dispycos_server_proc():
     _dispycos_task = pycos.Pycos.cur_task()
     _dispycos_task.register('dispycos_server')
     _dispycos_config = yield _dispycos_task.receive()
-    _dispycos_scheduler_task = deserialize(_dispycos_config['scheduler_task'])
     _dispycos_computation_auth = _dispycos_config.pop('computation_auth', None)
     _dispycos_var = deserialize(_dispycos_config['node_location'])
     yield _dispycos_scheduler.peer(_dispycos_var)
     _dispycos_node_task = yield Task.locate('dispycos_node', location=_dispycos_var)
+    if not isinstance(_dispycos_node_task, Task):
+        pycos.logger.warning('%s could not locate node', _dispycos_task.location)
+        raise StopIteration(-1)
     yield _dispycos_node_task.deliver({'req': 'server_task', 'oid': 1, 'pid': os.getpid(),
                                        'server_id': _dispycos_config['id'],
                                        'location': _dispycos_task.location,
@@ -65,8 +67,8 @@ def _dispycos_server_proc():
     _dispycos_scheduler.dest_path = _dispycos_config['dest_path']
     sys.path.insert(0, _dispycos_config['dest_path'])
 
-    for _dispycos_var in _dispycos_config.pop('peers', []):
-        Task(_dispycos_scheduler.peer, deserialize(_dispycos_var))
+    _dispycos_peers = set()
+    _dispycos_peers.add(_dispycos_node_task.location)
 
     for _dispycos_var in ['min_pulse_interval', 'max_pulse_interval']:
         del _dispycos_config[_dispycos_var]
@@ -90,6 +92,14 @@ def _dispycos_server_proc():
                     _dispycos_scheduler_task.location == status.location):
                     if _dispycos_computation_auth:
                         _dispycos_task.send({'req': 'close', 'auth': _dispycos_computation_auth})
+            else:  # status.status == pycos.PeerStatus.Online
+                if (status.location not in _dispycos_peers):
+                    peer = yield SysTask.locate('dispycos_server', location=status.location,
+                                                timeout=5)
+                    if isinstance(peer, SysTask):
+                        _dispycos_peers.add(status.location)
+                    else:
+                        yield _dispycos_scheduler.close_peer(status.location)
 
     def _dispycos_monitor_proc(pulse_interval, task=None):
         task.set_daemon()
@@ -107,13 +117,24 @@ def _dispycos_server_proc():
             else:
                 logger.warning('invalid message to monitor ignored: %s', type(msg))
 
-    _dispycos_scheduler.peer_status(SysTask(_dispycos_peer_status))
-    _dispycos_var = deserialize(_dispycos_config['computation_location'])
-    if ((yield _dispycos_scheduler.peer(_dispycos_var)) or
-        (yield _dispycos_scheduler.peer(_dispycos_scheduler_task.location))):
+    _dispycos_var = deserialize(_dispycos_config['scheduler_location'])
+    if (yield _dispycos_scheduler.peer(_dispycos_var)):
         raise StopIteration(-1)
+    _dispycos_peers.add(_dispycos_var)
+    _dispycos_scheduler_task = yield SysTask.locate('dispycos_status', location=_dispycos_var,
+                                                    timeout=5)
+    if not isinstance(_dispycos_scheduler_task, SysTask):
+        raise StopIteration(-1)
+    _dispycos_var = deserialize(_dispycos_config['computation_location'])
+    if (yield _dispycos_scheduler.peer(_dispycos_var)):
+        raise StopIteration(-1)
+    _dispycos_peers.add(_dispycos_var)
+
+    _dispycos_scheduler.peer_status(SysTask(_dispycos_peer_status))
     _dispycos_scheduler_task.send({'status': Scheduler.ServerDiscovered, 'task': _dispycos_task,
                                    'name': _dispycos_name, 'auth': _dispycos_computation_auth})
+    for _dispycos_var in _dispycos_config.pop('peers', []):
+        Task(_dispycos_scheduler.peer, deserialize(_dispycos_var))
 
     if _dispycos_config['_server_setup']:
         if _dispycos_config['_disable_servers']:
@@ -667,10 +688,10 @@ def _dispycos_node():
             len(_dispycos_var.group(0)) != len(_dispycos_config['max_file_size'])):
             raise Exception('Invalid max_file_size option')
         _dispycos_config['max_file_size'] = int(_dispycos_var.group(1))
-        if _dispycos_var.group(2):
-            _dispycos_var = _dispycos_var.group(2).lower()
+        _dispycos_var = _dispycos_var.group(2)
+        if _dispycos_var:
             _dispycos_config['max_file_size'] *= 1024**({'k': 1, 'm': 2, 'g': 3,
-                                                         't': 4}[_dispycos_var])
+                                                         't': 4}[_dispycos_var.lower()])
     else:
         _dispycos_config['max_file_size'] = 0
 
@@ -715,8 +736,7 @@ def _dispycos_node():
             try:
                 with open(server.pid_file, 'rb') as fd:
                     pid_info = pickle.load(fd)
-                    if not ppid:
-                        ppid = pid_info['ppid']
+                    ppid = pid_info['ppid']
             except Exception:
                 pid_info = {}
 
@@ -968,7 +988,7 @@ def _dispycos_node():
                     if (yield dispycos_scheduler.peer(location)):
                         pycos.logger.warning('Could not communicate with server %s at %s',
                                              server.id, location)
-                        yield task.sleep(0.2)
+                        yield task.sleep(0.5)
                     else:
                         break
                 else:
@@ -1247,7 +1267,8 @@ def _dispycos_node():
                     isinstance(client, pycos.Task) and isinstance(computation, Computation) and
                     comp_state.cpus_reserved > 0):
                     busy_time.value = int(time.time())
-                    _dispycos_config['scheduler_task'] = pycos.serialize(comp_state.scheduler)
+                    _dispycos_config['scheduler_location'] = pycos.serialize(
+                        comp_state.scheduler.location)
                     _dispycos_config['computation_location'] = pycos.serialize(
                         computation._pulse_task.location)
                     _dispycos_config['computation_auth'] = computation._auth
