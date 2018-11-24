@@ -11,9 +11,13 @@ else:
     assert sys.version_info.minor >= 7
     base_dir = 'py2'
 
-for line in open(os.path.join(base_dir, 'pycos', '__init__.py')):
-    if line.startswith('__version__ = "'):
-        module_version = re.match(r'[^\d]+([\d\.]+)', line).group(1)
+with open(os.path.join(base_dir, 'pycos', '__init__.py')) as fd:
+    regex = re.compile(r'^__version__ = "([\d\.]+)"$')
+    for line in fd:
+        match = regex.match(line)
+        if match:
+            module_version = match.group(1)
+            break
 
 setup(
     name='pycos',
