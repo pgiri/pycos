@@ -5,11 +5,7 @@ This file is part of pycos project. See https://pycos.sourceforge.io for details
 
 This program can be used to start dispycos server processes so dispycos
 scheduler (see 'dispycos.py') can send computations to these server processes
-for executing distributed communicating proceses (tasks). All tasks in a server
-execute in the same thread, so multiple CPUs are not used by one server. If CPU
-intensive computations are to be run on systems with multiple processors, then
-this program should be run with multiple instances (see below for '-c' option to
-this program).
+for executing distributed communicating proceses (tasks).
 
 See 'dispycos_*.py' files for example use cases.
 """
@@ -48,7 +44,7 @@ def _dispycos_server_proc():
     yield _dispycos_scheduler.peer(_dispycos_var)
     _dispycos_node_task = yield Task.locate('dispycos_node', location=_dispycos_var)
     if not isinstance(_dispycos_node_task, Task):
-        pycos.logger.warning('%s could not locate node', _dispycos_task.location)
+        logger.warning('%s could not locate node', _dispycos_task.location)
         raise StopIteration(-1)
     yield _dispycos_node_task.deliver({'req': 'server_task', 'oid': 1, 'pid': os.getpid(),
                                        'server_id': _dispycos_config['id'],
@@ -119,14 +115,17 @@ def _dispycos_server_proc():
 
     _dispycos_var = deserialize(_dispycos_config['scheduler_location'])
     if (yield _dispycos_scheduler.peer(_dispycos_var)):
+        logger.warning('%s could not communicate with scheduler', _dispycos_task.location)
         raise StopIteration(-1)
     _dispycos_peers.add(_dispycos_var)
     _dispycos_scheduler_task = yield SysTask.locate('dispycos_status', location=_dispycos_var,
                                                     timeout=5)
     if not isinstance(_dispycos_scheduler_task, SysTask):
+        logger.warning('%s could not locate scheduler', _dispycos_task.location)
         raise StopIteration(-1)
     _dispycos_var = deserialize(_dispycos_config['computation_location'])
     if (yield _dispycos_scheduler.peer(_dispycos_var)):
+        logger.warning('%s could not communicate with commputation', _dispycos_task.location)
         raise StopIteration(-1)
     _dispycos_peers.add(_dispycos_var)
 
