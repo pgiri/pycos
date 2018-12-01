@@ -765,6 +765,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
         kwargs['name'] = 'dispycos_scheduler'
         clean = kwargs.pop('clean', False)
         nodes = kwargs.pop('nodes', [])
+        relay_nodes = kwargs.pop('relay_nodes', False)
         self.pycos = pycos.Pycos.instance(**kwargs)
         self.__dest_path = os.path.join(self.pycos.dest_path, 'dispycos', 'scheduler')
         if clean:
@@ -773,12 +774,13 @@ class Scheduler(object, metaclass=pycos.Singleton):
         os.chmod(self.__dest_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
 
         self.__computation_sched_event = pycos.Event()
-        self.__computation_scheduler_task = SysTask(self.__computation_scheduler_proc, nodes)
-        self.__client_task = SysTask(self.__client_proc)
-        self.__timer_task = SysTask(self.__timer_proc)
+        self.__computation_scheduler_task = SysTask(self.__computation_scheduler_proc)
         self.__status_task = SysTask(self.__status_proc)
+        self.__timer_task = SysTask(self.__timer_proc)
+        self.__client_task = SysTask(self.__client_proc)
         self.__client_task.register('dispycos_scheduler')
-        self.pycos.discover_peers(port=self._node_port)
+        for node in nodes:
+            Task(self.pycos.peer, pycos.Location(node, self._node_port), relay=relay_nodes)
 
     def status(self):
         pending = sum(node.cpus_used for node in self._nodes.values())
@@ -799,7 +801,8 @@ class Scheduler(object, metaclass=pycos.Singleton):
     def __status_proc(self, task=None):
         task.set_daemon()
         task.register('dispycos_status')
-        self.pycos.peer_status(task)
+        self.pycos.peer_status(self.__status_task)
+        self.pycos.discover_peers(port=self._node_port)
         while 1:
             msg = yield task.receive()
             now = time.time()
@@ -1241,10 +1244,8 @@ class Scheduler(object, metaclass=pycos.Singleton):
                 last_ping = now
                 async_scheduler.discover_peers(port=self._node_port)
 
-    def __computation_scheduler_proc(self, nodes, task=None):
+    def __computation_scheduler_proc(self, task=None):
         task.set_daemon()
-        for node in nodes:
-            yield self.pycos.peer(node, broadcast=True)
         while 1:
             if self._cur_computation:
                 self.__computation_sched_event.clear()
@@ -1831,6 +1832,8 @@ if __name__ == '__main__':
                         help='file containing SSL key')
     parser.add_argument('--node', action='append', dest='nodes', default=[],
                         help='additional remote nodes (names or IP address) to use')
+    parser.add_argument('--relay_nodes', action='store_true', dest='relay_nodes', default=False,
+                        help='request each node to relay scheduler info on its network')
     parser.add_argument('--pulse_interval', dest='pulse_interval', type=float,
                         default=MaxPulseInterval,
                         help='interval in seconds to send "pulse" messages to check nodes '
