@@ -1285,6 +1285,7 @@ class Scheduler(object):
         self.__computation_scheduler_task = None
 
     def __submit_job(self, msg, task=None):
+        task.set_daemon()
         job = msg['job']
         auth = msg.get('auth', None)
         if (not isinstance(job, _DispycosJob_) or not isinstance(job.client, Task)):
