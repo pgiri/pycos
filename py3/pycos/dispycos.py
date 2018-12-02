@@ -862,23 +862,22 @@ class Scheduler(object, metaclass=pycos.Singleton):
                     node = self._nodes.get(msg.location.addr, None)
                     if not node:
                         node = self._disabled_nodes.get(msg.location.addr, None)
-                        if not node:
-                            continue
-                    server = node.servers.pop(msg.location, None)
-                    if server:
-                        if node.servers:
-                            node.disabled_servers[msg.location] = server
-                    else:
-                        server = node.disabled_servers.get(msg.location, None)
-                    if server:
-                        SysTask(self.__close_server, server, node)
-                    elif node.task and node.task.location == msg.location:
-                        # TODO: inform scheduler / client
-                        if not self._nodes.pop(node.addr, None):
-                            self._disabled_nodes.pop(node.addr, None)
-                        SysTask(self.__close_node, node)
-                    else:
-                        node = None
+                    if node:
+                        server = node.servers.pop(msg.location, None)
+                        if server:
+                            if node.servers:
+                                node.disabled_servers[msg.location] = server
+                        else:
+                            server = node.disabled_servers.get(msg.location, None)
+
+                        if server:
+                            SysTask(self.__close_server, server, node)
+                        elif node.task and node.task.location == msg.location:
+                            # TODO: inform scheduler / client
+                            if not self._nodes.pop(node.addr, None):
+                                self._disabled_nodes.pop(node.addr, None)
+                            SysTask(self.__close_node, node)
+
                     if ((not server and not node) and self._remote and self._cur_computation and
                         self._cur_computation._pulse_task.location == msg.location):
                         logger.warning('Client %s terminated; closing computation %s',
