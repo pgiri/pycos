@@ -783,11 +783,14 @@ class Scheduler(object, metaclass=pycos.Singleton):
             Task(self.pycos.peer, pycos.Location(node, self._node_port), relay=relay_nodes)
 
     def status(self):
-        pending = sum(node.cpus_used for node in self._nodes.values())
+        pending_cpu = sum(node.cpus_used for node in self._nodes.values())
+        pending = sum(len(server.rtasks) for node in self._nodes.values()
+                      for server in node.servers.values())
         servers = functools.reduce(operator.add, [list(node.servers.keys())
                                                   for node in self._nodes.values()], [])
         return {'Client': self._cur_computation._pulse_task.location if self._cur_computation else '',
-                'Pending': pending, 'Nodes': list(self._nodes.keys()), 'Servers': servers
+                'Pending': pending, 'PendingCPU': pending_cpu,
+                'Nodes': list(self._nodes.keys()), 'Servers': servers
                 }
 
     def print_status(self):
@@ -795,6 +798,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
         print('')
         print('  Client: %s' % status['Client'])
         print('  Pending: %s' % status['Pending'])
+        print('  Pending CPU: %s' % status['PendingCPU'])
         print('  nodes: %s' % len(status['Nodes']))
         print('  servers: %s' % len(status['Servers']))
 
