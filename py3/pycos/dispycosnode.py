@@ -1253,7 +1253,6 @@ def _dispycos_node():
                     continue
 
                 if (not comp_state.auth and service_available() and (0 < cpus <= avail_cpus)):
-                    dispycos_scheduler.ignore_peers(True)
                     if (yield dispycos_scheduler.peer(msg['computation_location'])):
                         cpus = 0
                     else:
@@ -1262,6 +1261,7 @@ def _dispycos_node():
                 else:
                     cpus = 0
                 if ((yield client.deliver(cpus, timeout=msg_timeout)) == 1 and cpus):
+                    dispycos_scheduler.ignore_peers(True)
                     comp_state.cpus_reserved = cpus
                     comp_state.auth = auth
                     busy_time.value = int(time.time())
