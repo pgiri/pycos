@@ -776,7 +776,9 @@ class Scheduler(object):
         self.__client_task = SysTask(self.__client_proc)
         self.__client_task.register('dispycos_scheduler')
         for node in nodes:
-            Task(self.pycos.peer, pycos.Location(node, self._node_port), relay=relay_nodes)
+            if not isinstance(node, pycos.Location):
+                node = pycos.Location(node, self._node_port)
+            Task(self.pycos.peer, node, relay=relay_nodes)
 
     def status(self):
         pending_cpu = sum(node.cpus_used for node in self._nodes.itervalues())
