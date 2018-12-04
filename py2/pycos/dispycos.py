@@ -1661,10 +1661,19 @@ class Scheduler(object):
         node.status = Scheduler.NodeClosed
         yield node.cpu_avail.clear()
         computation = self._cur_computation
+        disconnected = node.addr not in self._nodes
+        if disconnected:
+            servers = node.servers.values()
+            disabled_servers = node.disabled_servers.values()
+            node.servers.clear()
+            node.disabled_servers.clear()
+        else:
+            servers = node.servers.itervalues()
+            disabled_servers = node.disabled_servers.itervalues()
         close_tasks = [SysTask(self.__close_server, server, node, await_async=await_async)
-                       for server in node.servers.itervalues()]
+                       for server in servers]
         close_tasks.extend([SysTask(self.__close_server, server, node)
-                            for server in node.disabled_servers.itervalues() if server.task])
+                            for server in disabled_servers if server.task])
         for close_task in close_tasks:
             yield close_task.finish()
         node.servers.clear()
@@ -1688,6 +1697,8 @@ class Scheduler(object):
                 status_task = computation.status_task
             else:
                 status_task = None
+            if server.rtasks:
+                logger.warning('%s tasks abandoned at %s', len(server.rtasks), server.task.location)
             if status_task:
                 for rtask, job in server.rtasks.values():
                     status = pycos.MonitorException(rtask, (Scheduler.TaskAbandoned, None))
