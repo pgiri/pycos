@@ -1668,6 +1668,12 @@ class Scheduler(object, metaclass=pycos.Singleton):
         computation = self._cur_computation
         disconnected = node.addr not in self._nodes
         if disconnected:
+            if (node.addr in self._disabled_nodes and computation
+                    and computation.status_task):
+                node.status = Scheduler.NodeAbandoned
+                info = DispycosNodeInfo(node.name, node.addr, node.cpus,
+                                        node.platform, node.avail_info)
+                computation.status_task.send(DispycosStatus(node.status, info))
             servers = list(node.servers.values())
             disabled_servers = list(node.disabled_servers.values())
             node.servers.clear()

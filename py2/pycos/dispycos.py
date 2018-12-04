@@ -1663,6 +1663,12 @@ class Scheduler(object):
         computation = self._cur_computation
         disconnected = node.addr not in self._nodes
         if disconnected:
+            if (node.addr in self._disabled_nodes and computation
+                    and computation.status_task):
+                node.status = Scheduler.NodeAbandoned
+                info = DispycosNodeInfo(node.name, node.addr, node.cpus,
+                                        node.platform, node.avail_info)
+                computation.status_task.send(DispycosStatus(node.status, info))
             servers = node.servers.values()
             disabled_servers = node.disabled_servers.values()
             node.servers.clear()
