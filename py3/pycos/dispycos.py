@@ -733,11 +733,10 @@ class Scheduler(object, metaclass=pycos.Singleton):
                             self.scheduler.__status_task.send(msg)
                 else:
                     logger.debug('failed to create rtask: %s', rtask)
-                    if job.cpu:
+                    if job.cpu and self.task.location in node.servers:
                         self.cpu_avail.set()
                         node.cpus_used -= 1
-                        node.load = ((float(node.cpus_used) / len(node.servers))
-                                     if node.servers else 0.0)
+                        node.load = float(node.cpus_used) / len(node.servers)
                         self.scheduler._cpu_nodes.add(node)
                         self.scheduler._cpus_avail.set()
                         node.cpu_avail.set()
@@ -825,11 +824,14 @@ class Scheduler(object, metaclass=pycos.Singleton):
                         logger.warning('node %s is invalid', rtask.location.addr)
                         continue
                 server = node.servers.get(rtask.location, None)
-                if not server:
+                if server:
+                    server_used = True
+                else:
                     server = node.disabled_servers.get(rtask.location, None)
                     if not server:
                         logger.warning('server "%s" is invalid', rtask.location)
                         continue
+                    server_used = False
                 node.last_pulse = now
                 info = server.rtasks.pop(rtask, None)
                 if not info:
@@ -842,10 +844,9 @@ class Scheduler(object, metaclass=pycos.Singleton):
                     continue
                 # assert isinstance(info[1], _DispycosJob_)
                 job = info[1]
-                if job.cpu:
+                if job.cpu and server_used:
                     node.cpus_used -= 1
-                    node.load = ((float(node.cpus_used) / len(node.servers))
-                                 if node.servers else 0.0)
+                    node.load = float(node.cpus_used) / len(node.servers)
                     self._cpu_nodes.add(node)
                     self._cpus_avail.set()
                     node.cpu_avail.set()
@@ -988,8 +989,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
                         self._cpu_nodes.add(node)
                         self._cpus_avail.set()
                         node.cpu_avail.set()
-                        node.load = ((float(node.cpus_used) / len(node.servers))
-                                     if node.servers else 0.0)
+                        node.load = float(node.cpus_used) / len(node.servers)
                         if self._cur_computation and self._cur_computation.status_task:
                             self._cur_computation.status_task.send(
                                 DispycosStatus(server.status, server.task.location))
@@ -1349,8 +1349,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
             if cpu:
                 server.cpu_avail.clear()
                 node.cpus_used += 1
-                node.load = ((float(node.cpus_used) / len(node.servers))
-                             if node.servers else 0.0)
+                node.load = float(node.cpus_used) / len(node.servers)
                 if node.cpus_used == len(node.servers):
                     node.cpu_avail.clear()
                     self._cpu_nodes.discard(node)
@@ -1386,8 +1385,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
             if cpu:
                 server.cpu_avail.clear()
                 node.cpus_used += 1
-                node.load = ((float(node.cpus_used) / len(node.servers))
-                             if node.servers else 0.0)
+                node.load = float(node.cpus_used) / len(node.servers)
                 if node.cpus_used >= len(node.servers):
                     node.cpu_avail.clear()
                     self._cpu_nodes.discard(node)
@@ -1411,8 +1409,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
                         raise StopIteration
                 server.cpu_avail.clear()
                 node.cpus_used += 1
-                node.load = ((float(node.cpus_used) / len(node.servers))
-                             if node.servers else 0.0)
+                node.load = float(node.cpus_used) / len(node.servers)
                 if node.cpus_used >= len(node.servers):
                     node.cpu_avail.clear()
                     self._cpu_nodes.discard(node)
@@ -1676,8 +1673,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
         computation = self._cur_computation
         disconnected = node.addr not in self._nodes
         if disconnected:
-            if (node.addr in self._disabled_nodes and computation
-                    and computation.status_task):
+            if (computation and computation.status_task):
                 node.status = Scheduler.NodeAbandoned
                 info = DispycosNodeInfo(node.name, node.addr, node.cpus,
                                         node.platform, node.avail_info)
