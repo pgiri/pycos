@@ -617,11 +617,17 @@ def _dispycos_node():
     del tcp_port
 
     peer = None
-    for peer in _dispycos_config['peers']:
-        peer = peer.split(':')
+    for _dispycos_id in range(len(_dispycos_config['peers'])):
+        peer = _dispycos_config['peers'][_dispycos_id].rsplit(':', 1)
         if len(peer) != 2:
-            raise Exception('peer "%s" is not valid' % ':'.join(peer))
-        _dispycos_config['peers'].append(pycos.serialize(pycos.Location(peer[0], peer[1])))
+            print('peer "%s" is not valid' % _dispycos_config['peers'][_dispycos_id])
+            exit(1)
+        try:
+            peer = pycos.Location(peer[0], peer[1])
+        except Exception:
+            print('peer "%s" is not valid' % _dispycos_config['peers'][_dispycos_id])
+            exit(1)
+        _dispycos_config['peers'][_dispycos_id] = pycos.serialize(peer)
     del peer
 
     node_name = _dispycos_config['name']
