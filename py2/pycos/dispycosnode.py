@@ -991,8 +991,8 @@ def _dispycos_node():
                     if server.task and server.msg_oid >= oid:
                         raise StopIteration(0)
                     if (yield dispycos_scheduler.peer(location)):
-                        pycos.logger.warning('Could not communicate with server %s at %s',
-                                             server.id, location)
+                        pycos.logger.debug('Could not communicate with server %s at %s',
+                                           server.id, location)
                         yield task.sleep(0.5)
                     else:
                         break
@@ -1040,8 +1040,9 @@ def _dispycos_node():
                 pycos.Task(server_task_msg, msg)
 
         def close_computation(req='close', task=None):
-            if not comp_state.scheduler:
+            if not comp_state.auth:
                 raise StopIteration
+            cur_auth = comp_state.auth
             for server in node_servers:
                 if server.task:
                     server.task.send({'req': req, 'node_auth': node_auth})
@@ -1052,12 +1053,16 @@ def _dispycos_node():
                 parent_pipe.send({'msg': 'quit', 'auth': comp_state.auth})
                 for i in range(5):
                     if parent_pipe.poll(1):
+                        if comp_state.auth != cur_auth:
+                            raise StopIteration
                         msg = parent_pipe.recv()
                         if (isinstance(msg, dict) and msg.get('msg', None) == 'closed' and
                             msg.get('auth', None) == comp_state.auth):
                             comp_state.spawn_mpproc = None
                             break
                 else:
+                    if comp_state.auth != cur_auth:
+                        raise StopIteration
                     if comp_state.spawn_mpproc and comp_state.spawn_mpproc.is_alive():
                         try:
                             comp_state.spawn_mpproc.terminate()
@@ -1073,6 +1078,8 @@ def _dispycos_node():
                             if not comp_state.spawn_mpproc or not comp_state.spawn_mpproc.is_alive():
                                 break
                             comp_state.spawn_mpproc.join(1)
+                            if comp_state.auth != cur_auth:
+                                raise StopIteration
                             if i == 9:
                                 try:
                                     os.kill(spawn_pid, proc_signals[2])
@@ -1087,6 +1094,8 @@ def _dispycos_node():
                     msg = child_pipe.recv()
             else:
                 spawn_pid = None
+            if comp_state.auth != cur_auth:
+                raise StopIteration
 
             for server in node_servers:
                 if not server.id:
@@ -1095,6 +1104,8 @@ def _dispycos_node():
                     if server.task:
                         yield task.sleep(0.1)
                     else:
+                        if comp_state.auth != cur_auth:
+                            raise StopIteration
                         path = os.path.join(dispycos_dest_path, 'dispycos_server_%s' % server.id)
                         if os.path.isdir(path):
                             try:
@@ -1104,6 +1115,8 @@ def _dispycos_node():
                         break
                 else:
                     close_server(server, ppid=spawn_pid)
+            if comp_state.auth != cur_auth:
+                raise StopIteration
             if os.path.isdir(dispycos_dest_path):
                 for name in os.listdir(dispycos_dest_path):
                     name = os.path.join(dispycos_dest_path, name)
@@ -1119,8 +1132,6 @@ def _dispycos_node():
             if loc:
                 loc = pycos.deserialize(loc)
                 pycos.Task(dispycos_scheduler.close_peer, loc)
-            comp_state.scheduler.send({'status': pycos.dispycos.Scheduler.NodeClosed,
-                                       'location': node_task.location, 'auth': comp_state.auth})
             if not os.path.isdir(dispycos_dest_path):
                 pycos.logger.warning('Apparently dispycosnode directory "%s" vanished after '
                                      'computation from %s', dispycos_dest_path, comp_state.scheduler)
@@ -1134,6 +1145,8 @@ def _dispycos_node():
                                          dispycos_dest_path)
                     _dispycos_config['serve'] = 0
 
+            comp_state.scheduler.send({'status': pycos.dispycos.Scheduler.NodeClosed,
+                                       'location': node_task.location, 'auth': comp_state.auth})
             comp_state.cpus_reserved = 0
             comp_state.auth = None
             comp_state.interval = _dispycos_config['max_pulse_interval']
@@ -1319,7 +1332,7 @@ def _dispycos_node():
             elif req == 'release':
                 auth = msg.get('auth', None)
                 if comp_state.auth and auth == comp_state.auth:
-                    yield close_computation(task=task, req='close')
+                    yield close_computation(req='close', task=task)
 
             elif req == 'close' or req == 'quit' or req == 'terminate':
                 auth = msg.get('auth', None)
