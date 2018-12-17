@@ -85,6 +85,9 @@ framework for distributed and parallel computing.
   may run as many servers as there are processors on that node), which is then
   read in memory on that server for in-memory processing at server level.
 
+* dispycos_cloud_computing.py shows configuration for cloud computing using EC2
+  nodes as servers and client on local computer.
+
 * dispycos_httpd1.py shows how to use httpd module to provide HTTP interface to
   monitor dispycos cluster.
 
