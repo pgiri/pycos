@@ -260,8 +260,9 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         self._signature = self._signature.hexdigest()
         self._auth_code = hashlib.sha1((self._signature + secret).encode()).hexdigest()
         pycos.Task._sign = pycos.Channel._sign = SysTask._sign = RTI._sign = self._signature
-        if discover_peers:
-            self.discover_peers()
+
+        self._discover_peers = discover_peers
+        self.discover_peers()
 
     @classmethod
     def instance(cls, *args, **kwargs):
@@ -430,11 +431,17 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             ping_sock.close()
         raise StopIteration(0)
 
-    def discover_peers(self, port=None):
+    def discover_peers(self, port=None, force=False):
         """This method can be invoked (periodically?) to broadcast message to
         discover peers, if there is a chance initial broadcast message may be
         lost (as these messages are sent over UDP).
+
+        This method does nothing if 'discover_peers' passed to the constructor
+        is 'False'; unless 'force=True'.
         """
+        if not self._discover_peers and not force:
+            return
+
         ping_msg = {'signature': self._signature, 'name': self._name, 'version': __version__}
 
         def _discover(addrinfo, port, task=None):
