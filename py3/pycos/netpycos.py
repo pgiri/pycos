@@ -435,6 +435,10 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         discover peers, if there is a chance initial broadcast message may be
         lost (as these messages are sent over UDP).
         """
+
+        if self._ignore_peers:
+            return
+
         ping_msg = {'signature': self._signature, 'name': self._name, 'version': __version__}
 
         def _discover(addrinfo, port, task=None):
