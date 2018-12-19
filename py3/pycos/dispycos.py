@@ -339,7 +339,7 @@ class Computation(object):
 
         yield Task(_servers, self).finish()
 
-    def close(self, await_async=False, timeout=MsgTimeout):
+    def close(self, await_async=False, timeout=None):
         """Close computation. Must be used with 'yield' as 'yield
         compute.close()'.
         """
@@ -733,14 +733,15 @@ class Scheduler(object, metaclass=pycos.Singleton):
                             self.scheduler.__status_task.send(msg)
                 else:
                     logger.debug('failed to create rtask: %s', rtask)
-                    if job.cpu and (self.status == Scheduler.ServerInitialized or
-                                    self.status == Scheduler.ServerSuspended):
-                        server.cpu_avail.set()
-                        node.cpu_avail.set()
-                        self.scheduler._cpu_nodes.add(node)
-                        self.scheduler._cpus_avail.set()
-                        node.cpus_used -= 1
-                        node.load = float(node.cpus_used) / len(node.servers)
+                    if job.cpu:
+                        self.cpu_avail.set()
+                        if (self.status == Scheduler.ServerInitialized or
+                            self.status == Scheduler.ServerSuspended):
+                            node.cpu_avail.set()
+                            self.scheduler._cpu_nodes.add(node)
+                            self.scheduler._cpus_avail.set()
+                            node.cpus_used -= 1
+                            node.load = float(node.cpus_used) / len(node.servers)
                 raise StopIteration(rtask)
 
             rtask = yield SysTask(_run, self).finish()
@@ -842,14 +843,15 @@ class Scheduler(object, metaclass=pycos.Singleton):
                     continue
                 # assert isinstance(info[1], _DispycosJob_)
                 job = info[1]
-                if job.cpu and (server.status == Scheduler.ServerInitialized or
-                                server.status == Scheduler.ServerSuspended):
+                if job.cpu:
                     server.cpu_avail.set()
-                    node.cpu_avail.set()
-                    self._cpu_nodes.add(node)
-                    self._cpus_avail.set()
-                    node.cpus_used -= 1
-                    node.load = float(node.cpus_used) / len(node.servers)
+                    if (server.status == Scheduler.ServerInitialized or
+                        server.status == Scheduler.ServerSuspended):
+                        node.cpu_avail.set()
+                        self._cpu_nodes.add(node)
+                        self._cpus_avail.set()
+                        node.cpus_used -= 1
+                        node.load = float(node.cpus_used) / len(node.servers)
                 if job.request.endswith('async'):
                     if job.done:
                         job.done.set()
@@ -1739,16 +1741,18 @@ class Scheduler(object, metaclass=pycos.Singleton):
                     else:
                         job.client.send(None)
         else:
-            server.status = Scheduler.ServerClosed
-            if not server.cpu_avail.is_set():
-                logger.debug('Waiting for remote tasks at %s to finish', server.task.location)
-                yield server.cpu_avail.wait()
-            if await_async:
-                while server.rtasks:
-                    rtask, job = server.rtasks[next(iter(server.rtasks))]
-                    logger.debug('Remote task %s has not finished yet', rtask)
-                    if job.done:
-                        yield job.done.wait()
+            if (server.status == Scheduler.ServerInitialized or
+                server.status == Scheduler.ServerSuspended):
+                server.status = Scheduler.ServerClosed
+                if not server.cpu_avail.is_set():
+                    logger.debug('Waiting for remote tasks at %s to finish', server.task.location)
+                    yield server.cpu_avail.wait()
+                if await_async:
+                    while server.rtasks:
+                        rtask, job = server.rtasks[next(iter(server.rtasks))]
+                        logger.debug('Remote task %s has not finished yet', rtask)
+                        if job.done:
+                            yield job.done.wait()
             if server.task:
                 server.task.send({'req': 'close', 'auth': computation._auth, 'client': task})
                 yield task.receive(timeout=MsgTimeout)
