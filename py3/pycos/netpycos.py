@@ -137,7 +137,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         self._secret = secret
         self._certfile = certfile
         self._keyfile = keyfile
-        self._ignore_peers = False
+        self._ignore_peers = not discover_peers
 
         if isinstance(node, list):
             if node:
@@ -260,7 +260,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         self._signature = self._signature.hexdigest()
         self._auth_code = hashlib.sha1((self._signature + secret).encode()).hexdigest()
         pycos.Task._sign = pycos.Channel._sign = SysTask._sign = RTI._sign = self._signature
-        if discover_peers:
+        if not self._ignore_peers:
             self.discover_peers()
 
     @classmethod
