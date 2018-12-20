@@ -6,6 +6,8 @@ from setuptools import setup
 
 if sys.version_info.major == 3:
     base_dir = 'py3'
+    if sys.version_info.minor >= 7:
+        base_dir = 'py3.7'
 else:
     assert sys.version_info.major == 2
     assert sys.version_info.minor >= 7
