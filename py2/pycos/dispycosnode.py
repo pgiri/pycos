@@ -370,7 +370,7 @@ def _dispycos_server_process(_dispycos_config, _dispycos_mp_queue, _dispycos_com
     del sighandler
 
     _dispycos_task.value()
-    _dispycos_scheduler.ignore_peers(ignore=True)
+    _dispycos_scheduler.ignore_peers = True
     for location in _dispycos_scheduler.peers():
         pycos.Task(_dispycos_scheduler.close_peer, location)
     _dispycos_scheduler.finish()
@@ -882,7 +882,7 @@ def _dispycos_node():
     else:
         pycos.logger.setLevel(pycos.Logger.INFO)
     dispycos_scheduler = pycos.Pycos(**server_config)
-    dispycos_scheduler.ignore_peers(True)
+    dispycos_scheduler.ignore_peers = True
     for _dispycos_var in dispycos_scheduler.peers():
         pycos.Task(dispycos_scheduler.close_peer, _dispycos_var)
     if dispycos_dest_path != dispycos_scheduler.dest_path:
@@ -929,7 +929,7 @@ def _dispycos_node():
             while 1:
                 now = int(time.time())
                 yield task.sleep(service_times.start - now)
-                dispycos_scheduler.ignore_peers(False)
+                dispycos_scheduler.ignore_peers = False
                 dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
 
                 if service_times.stop:
@@ -939,7 +939,7 @@ def _dispycos_node():
                         if server.task:
                             server.task.send({'req': 'quit', 'node_auth': node_auth})
 
-                dispycos_scheduler.ignore_peers(True)
+                dispycos_scheduler.ignore_peers = True
                 if service_times.end:
                     now = int(time.time())
                     yield task.sleep(service_times.end - now)
@@ -1159,7 +1159,7 @@ def _dispycos_node():
 
             if _dispycos_config['serve']:
                 if service_available():
-                    dispycos_scheduler.ignore_peers(False)
+                    dispycos_scheduler.ignore_peers = False
                     dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
             else:
                 if all(not server.task for server in node_servers):
@@ -1212,7 +1212,7 @@ def _dispycos_node():
         if service_times.start:
             pycos.Task(service_times_proc)
         else:
-            dispycos_scheduler.ignore_peers(False)
+            dispycos_scheduler.ignore_peers = False
             dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
 
         for peer in _dispycos_config['peers']:
@@ -1268,14 +1268,14 @@ def _dispycos_node():
                 else:
                     cpus = 0
                 if ((yield client.deliver(cpus, timeout=msg_timeout)) == 1 and cpus):
-                    dispycos_scheduler.ignore_peers(True)
+                    dispycos_scheduler.ignore_peers = True
                     comp_state.cpus_reserved = cpus
                     comp_state.auth = auth
                     busy_time.value = int(time.time())
                     comp_state.scheduler = msg['status_task']
                     timer_task.resume()
                 else:
-                    dispycos_scheduler.ignore_peers(False)
+                    dispycos_scheduler.ignore_peers = False
                     dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
 
             elif req == 'computation':

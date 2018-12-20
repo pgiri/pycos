@@ -137,7 +137,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         self._secret = secret
         self._certfile = certfile
         self._keyfile = keyfile
-        self._ignore_peers = not discover_peers
+        self._ignore_peers = False
 
         if isinstance(node, list):
             if node:
@@ -260,7 +260,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         self._signature = self._signature.hexdigest()
         self._auth_code = hashlib.sha1((self._signature + secret).encode()).hexdigest()
         pycos.Task._sign = pycos.Channel._sign = SysTask._sign = RTI._sign = self._signature
-        if not self._ignore_peers:
+        if discover_peers:
             self.discover_peers()
 
     @classmethod
@@ -471,14 +471,16 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         for addrinfo in self._addrinfos:
             SysTask(_discover, addrinfo, port)
 
+    @property
+    def ignore_peers(self):
+        return self._ignore_peers
+
+    @ignore_peers.setter
     def ignore_peers(self, ignore):
         """Don't respond to 'ping' from peers if 'ignore=True'. This can be used
         during shutdown, or to limit peers to communicate.
         """
-        if ignore:
-            self._ignore_peers = True
-        else:
-            self._ignore_peers = False
+        self._ignore_peers = bool(ignore)
 
     def peer_status(self, task):
         """This method can be used to be notified of status of peers (other

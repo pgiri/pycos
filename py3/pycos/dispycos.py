@@ -735,8 +735,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
                     logger.debug('failed to create rtask: %s', rtask)
                     if job.cpu:
                         self.cpu_avail.set()
-                        if (self.status == Scheduler.ServerInitialized or
-                            self.status == Scheduler.ServerSuspended):
+                        if self.status == Scheduler.ServerInitialized:
                             node.cpu_avail.set()
                             self.scheduler._cpu_nodes.add(node)
                             self.scheduler._cpus_avail.set()
@@ -810,7 +809,6 @@ class Scheduler(object, metaclass=pycos.Singleton):
         task.set_daemon()
         task.register('dispycos_status')
         self.pycos.peer_status(self.__status_task)
-        self.pycos.discover_peers(port=self._node_port)
         while 1:
             msg = yield task.receive()
             now = time.time()
@@ -845,8 +843,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
                 job = info[1]
                 if job.cpu:
                     server.cpu_avail.set()
-                    if (server.status == Scheduler.ServerInitialized or
-                        server.status == Scheduler.ServerSuspended):
+                    if server.status == Scheduler.ServerInitialized:
                         node.cpu_avail.set()
                         self._cpu_nodes.add(node)
                         self._cpus_avail.set()
@@ -1221,7 +1218,6 @@ class Scheduler(object, metaclass=pycos.Singleton):
     def __timer_proc(self, task=None):
         task.set_daemon()
         node_check = client_pulse = last_ping = time.time()
-        async_scheduler = task.scheduler()
         while 1:
             try:
                 yield task.sleep(self.__pulse_interval)
@@ -1258,7 +1254,8 @@ class Scheduler(object, metaclass=pycos.Singleton):
 
             if self.__ping_interval and ((now - last_ping) > self.__ping_interval):
                 last_ping = now
-                async_scheduler.discover_peers(port=self._node_port)
+                if not self.pycos.ignore_peers:
+                    self.pycos.discover_peers(port=self._node_port)
 
     def __computation_scheduler_proc(self, task=None):
         task.set_daemon()
@@ -1303,6 +1300,8 @@ class Scheduler(object, metaclass=pycos.Singleton):
                 SysTask(self.pycos.peer, loc)
             for node in self._disabled_nodes.values():
                 SysTask(self.__get_node_info, node)
+            if not self.pycos.ignore_peers:
+                self.pycos.discover_peers(port=self._node_port)
             self.__timer_task.resume()
         self.__computation_scheduler_task = None
 
