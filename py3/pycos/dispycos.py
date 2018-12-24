@@ -621,13 +621,14 @@ class Computation(object):
                      '_pulse_interval', '_pulse_task', '_node_setup', '_server_setup',
                      '_disable_nodes', '_disable_servers', '_peers_communicate', '_zombie_period']:
             state[attr] = getattr(self, attr)
+        node_allocations = [node if node.__class__ == DispycosNodeAllocate else copy.copy(node)
+                            for node in self._node_allocations]
         # Objects may have been subclassed from DispycosNodeAllocate, but remote
         # scheduler is not aware of (user defined) subclasses, so "cast" them to
         # DispycosNodeAllocate
-        node_allocations = [node if node.__class__ == DispycosNodeAllocate else copy.copy(node)
-                            for node in self._node_allocations]
-        for obj in node_allocations:
-            obj.__class__ = DispycosNodeAllocate
+        if self._pulse_task.location != self.scheduler.location:
+            for obj in node_allocations:
+                obj.__class__ = DispycosNodeAllocate
         state['_node_allocations'] = node_allocations
         return state
 
