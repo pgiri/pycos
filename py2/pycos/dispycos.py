@@ -295,7 +295,7 @@ class Computation(object):
                         raise StopIteration(-1)
             msg = {'req': 'await', 'auth': self._auth, 'client': task}
             self.scheduler.send(msg)
-            resp = yield task.receive()
+            resp = yield task.receive(timeout=timeout)
             if (isinstance(resp, dict) and resp.get('auth') == self._auth and
                resp.get('resp') == 'scheduled'):
                 raise StopIteration(0)
