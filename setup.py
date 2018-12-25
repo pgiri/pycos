@@ -1,17 +1,35 @@
 import sys
 import os
-import glob
 import re
+import shutil
+import subprocess
 from setuptools import setup
 
-if sys.version_info.major == 3:
-    base_dir = 'py3'
-    if sys.version_info.minor >= 7:
-        base_dir = 'py3.7'
-else:
-    assert sys.version_info.major == 2
+if sys.version_info.major == 2:
     assert sys.version_info.minor >= 7
     base_dir = 'py2'
+else:
+    assert sys.version_info.major >= 3
+    if sys.version_info.major == 3 and sys.version_info.minor < 7:
+        base_dir = 'py3'
+    else:
+        base_dir = 'py3.7'
+
+if len(sys.argv) > 1 and sys.argv[1] == 'sdist':
+    assert os.path.isdir('py3')
+    shutil.rmtree('py3.7', ignore_errors=True)
+    shutil.copytree('py3', 'py3.7')
+    for path in [os.path.join('py3.7', 'pycos'), os.path.join('py3.7', 'pycos', 'examples')]:
+        for filename in os.listdir(path):
+            if filename.endswith('.py'):
+                filename = os.path.join(path, filename)
+                sbuf = os.stat(filename)
+                with open(filename, 'r') as fd:
+                    data = ''.join([line.replace('raise StopIteration', 'return')
+                                    for line in fd])
+                with open(filename, 'w') as fd:
+                    fd.write(data)
+                os.chmod(filename, sbuf.st_mode)
 
 with open(os.path.join(base_dir, 'pycos', '__init__.py')) as fd:
     regex = re.compile(r'^__version__ = "([\d\.]+)"$')
