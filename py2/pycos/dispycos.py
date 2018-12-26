@@ -65,8 +65,8 @@ class DispycosNodeAvailInfo(object):
 
 
 class DispycosNodeAllocate(object):
-    """Allocation of nodes can be customized by specifying 'node_allocations' of
-    Computation with DispycosNodeAllocate instances.
+    """Allocation of nodes can be customized by specifying 'nodes' of Computation
+    with DispycosNodeAllocate instances.
 
     'node' must be hostname or IP address (with possibly '*' to match rest of IP
     address), 'port must be TCP port used by node (only if 'node' doesn't have
@@ -97,12 +97,11 @@ class DispycosNodeAllocate(object):
         self.disk = disk
 
     def allocate(self, ip_addr, name, platform, cpus, memory, disk):
-        """When a node is found, scheduler calls this method with IP address,
-        name, CPUs, memory and disk available on that node. This method should
-        return a number indicating number of CPUs to use. If return value is 0,
-        the node is not used; if the return value is < 0, this allocation is
-        ignored (next allocation in the 'node_allocations' list, if any, is
-        applied).
+        """When a node is found, scheduler calls this method with IP address, name,
+        CPUs, memory and disk available on that node. This method should return
+        a number indicating number of CPUs to use. If return value is 0, the
+        node is not used; if the return value is < 0, this allocation is ignored
+        (next allocation in the 'nodes' list, if any, is applied).
         """
         if not re.match(self.ip_rex, ip_addr):
             return -1
@@ -138,7 +137,7 @@ class Computation(object):
     """
 
     def __init__(self, components, pulse_interval=(5*MinPulseInterval), node_allocations=[],
-                 status_task=None, node_setup=None, server_setup=None,
+                 nodes=[], status_task=None, node_setup=None, server_setup=None,
                  disable_nodes=False, disable_servers=False, peers_communicate=False,
                  zombie_period=None):
         """'components' should be a list, each element of which is either a
@@ -153,9 +152,15 @@ class Computation(object):
         if pulse_interval < MinPulseInterval or pulse_interval > MaxPulseInterval:
             raise Exception('"pulse_interval" must be at least %s and at most %s' %
                             (MinPulseInterval, MaxPulseInterval))
-        if ((not isinstance(node_allocations, list)) or
-            any(not isinstance(_, (DispycosNodeAllocate, str)) for _ in node_allocations)):
-            raise Exception('"node_allocations" must be list of DispycosNodeAllocate instances')
+        if not isinstance(nodes, list):
+            raise Exception('"nodes" must be list of strings or DispycosNodeAllocate instances')
+        if node_allocations:
+            logger.warning('  WARNING: "node_allocations" is deprecated; use "nodes" instead')
+            if not isinstance(node_allocations, list):
+                raise Exception('"node_allocations" must be list of DispycosNodeAllocate instances')
+            nodes.extend(node_allocations)
+        if any(not isinstance(_, (DispycosNodeAllocate, str)) for _ in nodes):
+            raise Exception('"nodes" must be list of strings or DispycosNodeAllocate instances')
         if status_task and not isinstance(status_task, Task):
             raise Exception('status_task must be Task instance')
         if node_setup and not inspect.isgeneratorfunction(node_setup):
@@ -184,8 +189,12 @@ class Computation(object):
         else:
             self._pulse_interval = pulse_interval
         self._zombie_period = zombie_period
-        self._node_allocations = [node if isinstance(node, DispycosNodeAllocate)
-                                  else DispycosNodeAllocate(node) for node in node_allocations]
+        if nodes:
+            self._node_allocations = [node if isinstance(node, DispycosNodeAllocate)
+                                      else DispycosNodeAllocate(node) for node in nodes]
+            self._node_allocations.append(DispycosNodeAllocate('*', cpus=0))
+        else:
+            self._node_allocations = [DispycosNodeAllocate('*')]
         self.status_task = status_task
         if node_setup:
             components.append(node_setup)
