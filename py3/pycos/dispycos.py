@@ -597,14 +597,14 @@ class Computation(object):
                         logger.warning('Ignoring allocate request: %s', type(reply))
                         continue
                     ip_addr = args[0]
-                    for node_allocation in self._node_allocations:
-                        try:
-                            cpus = node_allocation.allocate(*args)
-                        except Exception:
-                            cpus = 0
-                        reply.send({'auth': self._auth, 'req': 'allocate',
-                                    'ip_addr': ip_addr, 'cpus': cpus})
-                        break
+                    try:
+                        node_allocation = self._node_allocations[int(msg['alloc_id'])]
+                        assert re.match(node_allocation.ip_rex, ip_addr)
+                        cpus = node_allocation.allocate(*args)
+                    except Exception:
+                        cpus = 0
+                    reply.send({'auth': self._auth, 'req': 'allocate',
+                                'ip_addr': ip_addr, 'cpus': cpus})
 
             elif msg == 'quit':
                 break
@@ -626,9 +626,6 @@ class Computation(object):
                      '_pulse_interval', '_pulse_task', '_node_setup', '_server_setup',
                      '_disable_nodes', '_disable_servers', '_peers_communicate', '_zombie_period']:
             state[attr] = getattr(self, attr)
-        # Objects may have been subclassed from DispycosNodeAllocate, but remote
-        # scheduler is not aware of (user defined) subclasses, so "cast" them to
-        # DispycosNodeAllocate
         if self._pulse_task.location == self.scheduler.location:
             node_allocations = self._node_allocations
         else:
@@ -639,7 +636,7 @@ class Computation(object):
                     ip_rex = obj.ip_rex
                     obj = DispycosNodeAllocate('*', port=obj.port)
                     obj.ip_rex = ip_rex
-                    obj.cpus = 'remote'
+                    obj.cpus = str(i)
                 node_allocations.append(obj)
         state['_node_allocations'] = node_allocations
         return state
@@ -1082,7 +1079,8 @@ class Scheduler(object, metaclass=pycos.Singleton):
             if not re.match(node_allocate.ip_rex, node.addr):
                 continue
             if self._remote and isinstance(node_allocate.cpus, str):
-                req = {'auth': self.__cur_client_auth, 'req': 'allocate', 'reply': task,
+                req = {'req': 'allocate', 'auth': self.__cur_client_auth,
+                       'alloc_id': node_allocate.cpus, 'reply': task,
                        'args': (node.addr, node.name, node.platform, node.cpus,
                                 node.avail_info.memory, node.avail_info.disk)}
                 self._cur_computation._pulse_task.send(req)
