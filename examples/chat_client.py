@@ -4,18 +4,23 @@
 # another computer, give network IP address as argument (and port as additional
 # argument if necessary)
 
-import pycos, socket, sys
+import pycos, socket, sys, traceback
 
-def client_recv(sock, sender, task=None):
+def client_recv(sock, task=None):
     while True:
-        line = yield sock.recv_msg()
-        if not line:
-            sender.terminate()
+        try:
+            msg = yield sock.recv_msg()
+        except:
             break
-        print(line.decode())
+        if not msg:
+            break
+        print('  %s' % msg.decode())
+    sender.terminate()
 
 def client_send(sock, task=None):
-    # since readline is synchronous (blocking) call, use async thread
+    # since readline is synchronous (blocking) call, use async thread;
+    # alternately, input can be read in 'main' and sent to this task (with
+    # message passing)
     thread_pool = pycos.AsyncThreadPool(1)
     if sys.version_info.major > 2:
         read_input = input
@@ -27,9 +32,9 @@ def client_send(sock, task=None):
             line = line.strip()
             if line in ('quit', 'exit'):
                 break
+            yield sock.send_msg(line.encode())
         except:
             break
-        yield sock.send_msg(line.encode())
 
 if __name__ == '__main__':
     # optional arg 1 is host IP address and arg 2 is port to use
@@ -46,6 +51,6 @@ if __name__ == '__main__':
     sock.connect((host, port))
     sock = pycos.AsyncSocket(sock)
     sender = pycos.Task(client_send, sock)
-    recvr = pycos.Task(client_recv, sock, sender)
+    recvr = pycos.Task(client_recv, sock)
     sender.value()
     recvr.terminate()
