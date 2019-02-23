@@ -11,8 +11,8 @@ import pycos
 import pycos.netpycos
 from pycos.dispycos import *
 
+
 def node_available(avail_info, data_file, task=None):
-    import os
     # 'node_available' is executed locally (at client) when a node is
     # available. 'location' is Location instance of node. When this task is
     # executed, 'depends' of computation would've been transferred.
@@ -32,6 +32,7 @@ def node_available(avail_info, data_file, task=None):
     # be passed to node_setup as argument(s).
     yield computation.enable_node(avail_info.location.addr, data_file)
 
+
 def node_setup(data_file):
     # 'node_setup' is executed on a node with the arguments returned by
     # 'node_available'. This task should return 0 to indicate successful
@@ -50,6 +51,7 @@ def node_setup(data_file):
     file_name = data_file
     yield 0  # task must have at least one 'yield' and 0 indicates success
 
+
 # 'compute' is executed at remote server process repeatedly to compute checksum
 # of data in memory, initialized by 'node_setup'
 def compute(alg, n, task=None):
@@ -58,6 +60,7 @@ def compute(alg, n, task=None):
     checksum = getattr(hashlib, alg)()
     checksum.update(data)
     raise StopIteration((file_name, alg, checksum.hexdigest()))
+
 
 # local task to process status messages from scheduler
 def status_proc(task=None):
@@ -70,6 +73,7 @@ def status_proc(task=None):
         if msg.status == Scheduler.NodeDiscovered:
             pycos.Task(node_available, msg.info.avail_info, data_files[i])
             i += 1
+
 
 def client_proc(computation, task=None):
     if (yield computation.schedule()):
@@ -93,8 +97,14 @@ def client_proc(computation, task=None):
 
 
 if __name__ == '__main__':
-    import logging, random, functools, sys, os, glob
+    import sys, os, random, glob
     # pycos.logger.setLevel(pycos.Logger.DEBUG)
+    # PyPI / pip packaging adjusts assertion below for Python 3.7+
+    if sys.version_info.major == 3:
+        assert sys.version_info.minor < 7, \
+            ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
+             (__file__, sys.version_info.major, sys.version_info.minor))
+
     if os.path.dirname(sys.argv[0]):
         os.chdir(os.path.dirname(sys.argv[0]))
     # if scheduler is not already running (on a node as a program),

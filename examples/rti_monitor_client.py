@@ -3,10 +3,11 @@
 # to be used with 'rti_monitor_server.py'
 # client requests execution of tasks on (remote) server.
 
-import sys, random
+import random
 import pycos
 # import netpycos to use distributed version of Pycos
 import pycos.netpycos
+
 
 def monitor_proc(n, task=None):
     # this task gets exceptions (notifications of exit status) for (remote)
@@ -24,6 +25,7 @@ def monitor_proc(n, task=None):
             done += 1
         else:
             pycos.logger.warning('ignoring invalid message')
+
 
 def rti_test(task=None):
     # if server is on remote network, automatic discovery won't work,
@@ -45,6 +47,7 @@ def rti_test(task=None):
         # If necessary, each rtask can also be set (different) 'monitor'
         rtask.send('msg:%s' % i)
         yield task.sleep(random.uniform(0, 1))
+
 
 pycos.logger.setLevel(pycos.Logger.DEBUG)
 # use 'test' secret so peers that use same secret are recognized

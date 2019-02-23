@@ -48,6 +48,10 @@ DispycosTaskInfo = collections.namedtuple('DispycosTaskInfo', ['task', 'args', '
 DispycosNodeInfo = collections.namedtuple('DispycosNodeInfo', ['name', 'addr', 'cpus', 'platform',
                                                                'avail_info'])
 logger.name = 'dispycos'
+# PyPI / pip packaging adjusts assertion below for Python 3.7+
+assert sys.version_info.major == 3 and sys.version_info.minor < 7, \
+    ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
+     (__file__, sys.version_info.major, sys.version_info.minor))
 
 
 class DispycosNodeAvailInfo(object):
@@ -1721,8 +1725,6 @@ class Scheduler(object, metaclass=pycos.Singleton):
 
     def __close_server(self, server, node, await_async=False, task=None):
         if not server.task:
-            logger.debug('Closing server %s ignored: %s',
-                         server.task.location if server.task else '', server.status)
             raise StopIteration(-1)
         computation = self._cur_computation
         if computation:

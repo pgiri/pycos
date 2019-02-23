@@ -6,10 +6,11 @@
 # run this program and then client either on same node or different node on
 # local network.
 
-import sys, logging
+import sys
 import pycos
 # import netpycos to use networked version of Pycos
 import pycos.netpycos
+
 
 def receiver_proc(task=None):
     task.set_daemon()
@@ -21,12 +22,12 @@ def receiver_proc(task=None):
     while True:
         msg = yield task.receive()
         if msg:
-            print('Received "%s" from %s at %s' % \
+            print('Received "%s" from %s at %s' %
                   (msg['msg'], msg['sender'].name, msg['sender'].location))
 
 
 if __name__ == '__main__':
-    # pycos.logger.setLevel(logging.DEBUG)
+    # pycos.logger.setLevel(pycos.logger.DEBUG)
     channel = pycos.Channel('2clients')
     # register channel so client can get a reference to it
     channel.register()

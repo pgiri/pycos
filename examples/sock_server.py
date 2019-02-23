@@ -10,6 +10,7 @@
 import sys, socket
 import pycos
 
+
 # deal with a specific client
 def process(conn, task=None):
     global recvd
@@ -23,6 +24,7 @@ def process(conn, task=None):
     conn.close()
     print('recieved: %s' % data)
     recvd += 1
+
 
 # server accepts connections and creates tasks to deal with them
 def server(host, port, task=None):
@@ -38,6 +40,7 @@ def server(host, port, task=None):
         conn, addr = yield sock.accept()
         # create a task to process connection
         pycos.Task(process, conn)
+
 
 # pycos.logger.setLevel(pycos.Logger.DEBUG)
 recvd = 0

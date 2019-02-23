@@ -1,8 +1,9 @@
 # program for broadcasting messages over channel; see
 # http://pycos.sourceforge.io/tutorial.html for details.
 
-import sys, random
+import random
 import pycos
+
 
 def seqsum(task=None):
     # compute sum of numbers received (from channel)
@@ -14,6 +15,7 @@ def seqsum(task=None):
         result += msg
     print('sum: %f' % result)
 
+
 def seqprod(task=None):
     # compute product of numbers received (from channel)
     result = 1
@@ -23,6 +25,7 @@ def seqprod(task=None):
             break
         result *= msg
     print('prod: %f' % result)
+
 
 def client_proc(task=None):
     # create channel
@@ -42,6 +45,7 @@ def client_proc(task=None):
     channel.send(None)
     yield channel.unsubscribe(sum_task)
     yield channel.unsubscribe(prod_task)
+
 
 if __name__ == '__main__':
     # create pycos Task

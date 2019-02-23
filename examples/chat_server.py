@@ -8,6 +8,7 @@
 
 import pycos, socket, sys
 
+
 def client_conn_proc(conn, task=None):
     task.set_daemon()
     clients.add(conn)
@@ -29,6 +30,7 @@ def client_conn_proc(conn, task=None):
                 yield client.send_msg(msg)
     clients.discard(conn)
 
+
 def server_proc(host, port, task=None):
     task.set_daemon()
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -47,6 +49,7 @@ def server_proc(host, port, task=None):
         for client in clients:
             client.close()
         raise
+
 
 if __name__ == '__main__':
     # optional arg 1 is host IP address and arg 2 is port to use

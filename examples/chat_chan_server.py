@@ -2,7 +2,7 @@
 
 # chat server; must be used with 'chat_chan_client.py'
 
-import sys, logging
+import sys
 import pycos
 # import netpycos to use distributed version of Pycos
 import pycos.netpycos
@@ -10,6 +10,7 @@ import pycos.netpycos
 # pycos will disconnect if MaxConnectionErrors number of networking errors
 # (e.g., conection / send timeout) occur; default is 10
 pycos.MaxConnectionErrors = 3
+
 
 def server_proc(task=None):
     # to illustrate 'transform' function of channel, messages are modified
@@ -48,8 +49,9 @@ def server_proc(task=None):
     channel.unregister()
     task.unregister()
 
+
 if __name__ == '__main__':
-    # pycos.logger.setLevel(logging.DEBUG)
+    # pycos.logger.setLevel(pycos.logger.DEBUG)
     server = pycos.Task(server_proc)
     if sys.version_info.major > 2:
         read_input = input
@@ -63,4 +65,4 @@ if __name__ == '__main__':
         except:
             break
     server.send(('terminate', None))
-    server.value() # wait for server to finish
+    server.value()  # wait for server to finish

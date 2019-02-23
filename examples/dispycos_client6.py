@@ -117,8 +117,14 @@ def client_proc(computation, task=None):
 
 
 if __name__ == '__main__':
-    import random
+    import sys, random
     # pycos.logger.setLevel(pycos.Logger.DEBUG)
+    # PyPI / pip packaging adjusts assertion below for Python 3.7+
+    if sys.version_info.major == 3:
+        assert sys.version_info.minor < 7, \
+            ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
+             (__file__, sys.version_info.major, sys.version_info.minor))
+
     # if scheduler is shared (i.e., running as program), nothing needs to be
     # done (its location can optionally be given to 'schedule'); othrwise, start
     # private scheduler:

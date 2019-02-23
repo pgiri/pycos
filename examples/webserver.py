@@ -9,12 +9,14 @@
 import sys, socket
 import pycos
 
+
 def process(conn, task=None):
     msg = "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nPong!\r\n"
     if sys.version_info.major >= 3:
         msg = bytes(msg, 'ascii')
     yield conn.sendall(msg)
     conn.close()
+
 
 def server(host, port, task=None):
     task.set_daemon()
@@ -26,6 +28,7 @@ def server(host, port, task=None):
     while True:
         conn, addr = yield sock.accept()
         pycos.Task(process, conn)
+
 
 if __name__ == '__main__':
     pycos.Task(server, '127.0.0.1', 8010)

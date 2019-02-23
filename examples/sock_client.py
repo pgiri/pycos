@@ -7,16 +7,18 @@
 import sys, socket, random
 import pycos
 
+
 def client(host, port, n, task=None):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock = pycos.AsyncSocket(sock)
     yield sock.connect((host, port))
     print('%s connected' % n)
     # send arbitrary length of data
-    msg = '%d: ' % n + '-' * random.randint(100,300) + '/'
+    msg = '%d: ' % n + '-' * random.randint(100, 300) + '/'
     msg = msg.encode()
     yield sock.sendall(msg)
     sock.close()
+
 
 # pycos.logger.setLevel(pycos.Logger.DEBUG)
 # run 10 client tasks

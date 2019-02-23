@@ -17,6 +17,7 @@ import pycos.httpd
 def compute(n, task=None):
     yield task.sleep(n)
 
+
 def client_proc(computation, njobs, task=None):
     # schedule computation with the scheduler; scheduler accepts one computation
     # at a time, so if scheduler is shared, the computation is queued until it

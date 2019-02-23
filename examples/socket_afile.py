@@ -13,6 +13,7 @@ import socket, hashlib, sys, os
 import pycos
 import pycos.asyncfile
 
+
 def client_proc(host, port, input, task=None):
     # client reads input file and sends data in chunks
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -33,6 +34,7 @@ def client_proc(host, port, input, task=None):
     afd.close()
     print('client sha1 csum: %s' % csum.hexdigest())
 
+
 def server_proc(conn, task=None):
     # conn is a synchronous socket (as it is obtained from synchronous
     # 'accept'); it's file-descriptor is converted to asynchronous
@@ -50,6 +52,7 @@ def server_proc(conn, task=None):
     afd.close()
     print('server sha1 csum: %s' % (csum.hexdigest()))
     print('lines: %s' % (nlines))
+
 
 pycos.logger.setLevel(pycos.Logger.DEBUG)
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

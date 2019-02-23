@@ -2,10 +2,11 @@
 # message passing (asynchronous concurrent programming); see
 # https://pycos.sourceforge.io for details.
 
-import sys, random
+import random
 import pycos
 # use netycos to start message passing with remote peers
 import pycos.netpycos
+
 
 def client_proc(n, task=None):
     global msg_id
@@ -18,6 +19,7 @@ def client_proc(n, task=None):
         # till 'yield'
         msg_id += 1
         server.send('msg_id %d: client %d, msg %d' % (msg_id, n, x))
+
 
 # pycos.logger.setLevel(pycos.Logger.DEBUG)
 msg_id = 0

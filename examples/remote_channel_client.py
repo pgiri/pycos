@@ -3,10 +3,11 @@
 # example where client and server communicate through a channel.
 # use with its server 'remote_channel_server.py'
 
-import sys, logging, random
+import sys, random
 import pycos
 # import netpycos to use networked version of Pycos
 import pycos.netpycos
+
 
 def sender_proc(rchannel, task=None):
     # send messages to channel; 'deliver' is used with n=2, so messages will not
@@ -17,6 +18,7 @@ def sender_proc(rchannel, task=None):
         print('  Delivered to: %s' % n)
         yield task.sleep(random.uniform(0, 0.5))
     rchannel.send({'msg': None, 'sender': task})
+
 
 def receiver_proc2(task=None):
     # if server is in remote network, add it explicitly
@@ -42,5 +44,10 @@ def receiver_proc2(task=None):
 
 
 if __name__ == '__main__':
-    # pycos.logger.setLevel(logging.DEBUG)
+    # pycos.logger.setLevel(pycos.logger.DEBUG)
+    # PyPI / pip packaging adjusts assertion below for Python 3.7+
+    if sys.version_info.major == 3:
+        assert sys.version_info.minor < 7, \
+            ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
+             (__file__, sys.version_info.major, sys.version_info.minor))
     pycos.Task(receiver_proc2)

@@ -80,7 +80,7 @@ def client_proc(computation, task=None):
 
 
 if __name__ == '__main__':
-    import os, pycos.dispycos, pycos.httpd, sys, random
+    import pycos.dispycos, pycos.httpd, sys, random
     pycos.logger.setLevel(pycos.Logger.DEBUG)
     # if scheduler is not already running (on a node as a program),
     # start it (private scheduler):

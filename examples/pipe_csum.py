@@ -5,10 +5,17 @@
 
 # argv[1] must be a text file
 
-import sys, os, traceback, subprocess, platform
+import sys, os, subprocess, platform
 import pycos
 import pycos.asyncfile
-    
+
+# PyPI / pip packaging adjusts assertion below for Python 3.7+
+if sys.version_info.major == 3:
+    assert sys.version_info.minor < 7, \
+        ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
+         (__file__, sys.version_info.major, sys.version_info.minor))
+
+
 def communicate(input, task=None):
     if platform.system() == 'Windows':
         # asyncfile.Popen must be used instead of subprocess.Popen
@@ -23,6 +30,7 @@ def communicate(input, task=None):
     input = open(input)
     stdout, stderr = yield async_pipe.communicate(input)
     print('communicate sha1sum: %s' % stdout)
+
 
 def custom_feeder(input, task=None):
     def write_proc(fin, pipe, task=None):
@@ -54,11 +62,11 @@ def custom_feeder(input, task=None):
     stdout = yield reader.finish()
     print('     feeder sha1sum: %s' % stdout)
 
-# pycos.logger.setLevel(pycos.Logger.DEBUG)
 
+# pycos.logger.setLevel(pycos.Logger.DEBUG)
 # simpler version using 'communicate'
 task = pycos.Task(communicate, sys.argv[1] if len(sys.argv) > 1 else sys.argv[0])
-task.value() # wait for it to finish
+task.value()  # wait for it to finish
 
 # alternate version with custom read and write processes
 pycos.Task(custom_feeder, sys.argv[1] if len(sys.argv) > 1 else sys.argv[0])

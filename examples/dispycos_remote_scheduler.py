@@ -11,6 +11,7 @@ import pycos
 import pycos.netpycos
 from pycos.dispycos import *
 
+
 # this generator function is sent to remote dispycos servers to run tasks there
 def compute(i, n, reply, task=None):
     import time
@@ -19,6 +20,7 @@ def compute(i, n, reply, task=None):
     # send job result to 'reply' task at client
     reply.send((i, task.location, time.asctime()))
     raise StopIteration(0)
+
 
 # client (local) task submits computations
 def client_proc(computation, task=None):
@@ -53,8 +55,14 @@ def client_proc(computation, task=None):
 
 
 if __name__ == '__main__':
-    import random, sys, pycos.httpd
+    import sys, random, pycos.httpd
     pycos.logger.setLevel(pycos.Logger.DEBUG)
+    # PyPI / pip packaging adjusts assertion below for Python 3.7+
+    if sys.version_info.major == 3:
+        assert sys.version_info.minor < 7, \
+            ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
+             (__file__, sys.version_info.major, sys.version_info.minor))
+
     # in this example, dispycos scheduler is assumed to be running elsewhere on
     # the network, so unlike in other examples, scheduler is not started here
 

@@ -2,9 +2,11 @@
 # program on local computer.
 
 #  Make sure EC2 instance allows inbound TCP port 9706 and any additional ports,
-# depending on how many CPUs are used by dispycosnode. Assume '54.204.242.185'
-# is external IP address of EC2 instance. Start dispycosnode on EC2 node with
-# its external IP address as:
+# depending on how many CPUs are used by servers (e.g., if maximum CPUs in a
+# server is 8, allow ports 9706 to 9714). For better protection, allow
+# connection on these ports only from client IP address, or even use SSL. Start
+# dispycosnode on EC2 node with its external IP address; e.g., on an EC2 node
+# with external IP address '54.204.242.185', start dispycosnode as:
 
 # dispycosnode.py -d --ext_ip_addr 54.204.242.185
 
@@ -52,12 +54,17 @@ if __name__ == '__main__':
     import sys, random
     # enable debug initially
     pycos.logger.setLevel(pycos.Logger.DEBUG)
+    # PyPI / pip packaging adjusts assertion below for Python 3.7+
+    if sys.version_info.major == 3:
+        assert sys.version_info.minor < 7, \
+            ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
+             (__file__, sys.version_info.major, sys.version_info.minor))
 
-    config = {} # add any additional parameters
+    config = {}  # add any additional parameters
 
     # if client is behind a router, configure router's firewall to forward port
     # 9705 to client's IP address and use router's external IP address (i.e.,
-    # addressable from outside world) 
+    # addressable from outside world)
     config['ext_ip_addr'] = 'router.ext.ip'
     pycos.Pycos(**config)
 

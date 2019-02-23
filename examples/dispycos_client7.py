@@ -10,6 +10,7 @@ import pycos
 import pycos.netpycos
 from pycos.dispycos import *
 
+
 # this generator function is sent to remote server to run tasks there
 def rtask_proc(n, task=None):
     yield task.sleep(n)
@@ -40,7 +41,7 @@ def status_proc(computation, njobs, task=None):
         msg = yield task.receive()
         if isinstance(msg, DispycosStatus):
             # print('Status: %s / %s' % (msg.info, msg.status))
-            if msg.status == Scheduler.ServerInitialized and njobs > 0: # run a job
+            if msg.status == Scheduler.ServerInitialized and njobs > 0:  # run a job
                 n = random.uniform(5, 10)
                 rtask = yield computation.run_at(msg.info, rtask_proc, n)
                 if isinstance(rtask, pycos.Task):
@@ -49,7 +50,7 @@ def status_proc(computation, njobs, task=None):
         elif isinstance(msg, pycos.MonitorException):
             # previously submitted remote task finished
             rtask = msg.args[0]
-            if msg.args[1][0] == StopIteration: # exit status type
+            if msg.args[1][0] == StopIteration:  # exit status type
                 print('      rtask_proc at %s finished with %s' % (rtask.location, msg.args[1][1]))
             else:
                 print('      rtask_proc at %s failed: %s / %s' %
@@ -58,7 +59,7 @@ def status_proc(computation, njobs, task=None):
             npending -= 1
             if npending == 0:
                 break
-            if njobs > 0: # run another job
+            if njobs > 0:  # run another job
                 n = random.uniform(5, 10)
                 rtask = yield computation.run_at(rtask.location, rtask_proc, n)
                 if isinstance(rtask, pycos.Task):
@@ -69,8 +70,14 @@ def status_proc(computation, njobs, task=None):
 
 
 if __name__ == '__main__':
-    import random, sys
+    import sys, random
     # pycos.logger.setLevel(pycos.Logger.DEBUG)
+    # PyPI / pip packaging adjusts assertion below for Python 3.7+
+    if sys.version_info.major == 3:
+        assert sys.version_info.minor < 7, \
+            ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
+             (__file__, sys.version_info.major, sys.version_info.minor))
+
     # if scheduler is not already running (on a node as a program), start it
     # (private scheduler):
     Scheduler()

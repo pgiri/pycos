@@ -18,8 +18,8 @@ import pycos
 import pycos.netpycos
 from pycos.dispycos import *
 
+
 def server_available(location, data_file, task=None):
-    import os
     # 'server_available' is executed locally (at client) when a server process
     # is available. 'location' is Location instance of server. When this task is
     # executed, 'depends' of computation would've been transferred.  data_file
@@ -37,6 +37,7 @@ def server_available(location, data_file, task=None):
     yield computation.enable_server(location, data_file)
     raise StopIteration(0)
 
+
 # 'setup_server' is executed at remote server process to read the data in given
 # file (transferred by client) in to memory (global variable). 'compute' then
 # uses the data in memory instead of reading from file every time.
@@ -53,7 +54,8 @@ def setup_server(data_file, task=None):  # executed on remote server
         data = fd.read()
     os.remove(data_file)  # data_file is not needed anymore
     # generator functions must have at least one 'yield'
-    yield 0 # indicate successful initialization with exit value 0
+    yield 0  # indicate successful initialization with exit value 0
+
 
 # 'compute' is executed at remote server process repeatedly to compute checksum
 # of data in memory, initialized by 'setup_server'
@@ -77,6 +79,7 @@ def status_proc(task=None):
             pycos.Task(server_available, msg.info, data_files[i])
             i += 1
 
+
 def client_proc(computation, task=None):
     if (yield computation.schedule()):
         raise Exception('Could not schedule computation')
@@ -98,8 +101,14 @@ def client_proc(computation, task=None):
 
 
 if __name__ == '__main__':
-    import random, functools, sys, os, glob
+    import sys, os, random, glob
     pycos.logger.setLevel(pycos.Logger.DEBUG)
+    # PyPI / pip packaging adjusts assertion below for Python 3.7+
+    if sys.version_info.major == 3:
+        assert sys.version_info.minor < 7, \
+            ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
+             (__file__, sys.version_info.major, sys.version_info.minor))
+
     if os.path.dirname(sys.argv[0]):
         os.chdir(os.path.dirname(sys.argv[0]))
     # if scheduler is not already running (on a node as a program), start

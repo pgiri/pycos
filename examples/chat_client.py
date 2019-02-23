@@ -4,7 +4,8 @@
 # another computer, give network IP address as argument (and port as additional
 # argument if necessary)
 
-import pycos, socket, sys, traceback
+import pycos, socket, sys
+
 
 def client_recv(sock, task=None):
     while True:
@@ -16,6 +17,7 @@ def client_recv(sock, task=None):
             break
         print('  %s' % msg.decode())
     sender.terminate()
+
 
 def client_send(sock, task=None):
     # since readline is synchronous (blocking) call, use async thread;
@@ -35,6 +37,7 @@ def client_send(sock, task=None):
             yield sock.send_msg(line.encode())
         except:
             break
+
 
 if __name__ == '__main__':
     # optional arg 1 is host IP address and arg 2 is port to use

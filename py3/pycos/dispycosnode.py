@@ -34,7 +34,7 @@ def _dispycos_server_proc():
     from pycos.dispycos import _DispycosJob_
 
     for _dispycos_var in ('_dispycos_server_process', '_dispycos_server_proc'):
-       globals().pop(_dispycos_var, None)
+        globals().pop(_dispycos_var, None)
     _dispycos_scheduler = pycos.Pycos.instance()
     _dispycos_task = pycos.Pycos.cur_task()
     _dispycos_task.register('dispycos_server')
@@ -1499,6 +1499,11 @@ if __name__ == '__main__':
     from pycos.dispycos import MinPulseInterval, MaxPulseInterval, Computation
 
     pycos.logger.name = 'dispycosnode'
+    # PyPI / pip packaging adjusts assertion below for Python 3.7+
+    assert sys.version_info.major == 3 and sys.version_info.minor < 7, \
+        ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
+         (__file__, sys.version_info.major, sys.version_info.minor))
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', dest='config', default='',
                         help='use configuration in given file')

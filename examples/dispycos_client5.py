@@ -11,6 +11,7 @@ import pycos
 import pycos.netpycos
 from pycos.dispycos import *
 
+
 # rtask_proc is sent to remote server to execute dispycos_client5_proc.py
 # program. It uses message passing to get data from client that is sent to the
 # program's stdin using pipe and read output from program that is sent back to
@@ -60,6 +61,7 @@ def rtask_proc(client, program, task=None):
     yield reader.finish()
     raise StopIteration(pipe.poll())
 
+
 # client (local) task runs computations
 def client_proc(computation, program_path, n, task=None):
     # schedule computation with the scheduler; scheduler accepts one computation
@@ -82,7 +84,7 @@ def client_proc(computation, program_path, n, task=None):
     def get_output(i, task=None):
         while True:
             line = yield task.receive()
-            if not line: # end of output
+            if not line:  # end of output
                 break
             print('      job %s output: %s' % (i, line.strip().decode()))
 
@@ -114,8 +116,13 @@ def client_proc(computation, program_path, n, task=None):
 
 
 if __name__ == '__main__':
-    import random, sys, os
+    import sys, random, os
     pycos.logger.setLevel(pycos.Logger.DEBUG)
+    # PyPI / pip packaging adjusts assertion below for Python 3.7+
+    if sys.version_info.major == 3:
+        assert sys.version_info.minor < 7, \
+            ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
+             (__file__, sys.version_info.major, sys.version_info.minor))
 
     # dispycos saves depedency files in node's directory. If the file at client
     # is at or below current directory (in directory hierarchy), then the file
@@ -128,7 +135,7 @@ if __name__ == '__main__':
     if os.path.dirname(sys.argv[0]):
         os.chdir(os.path.dirname(sys.argv[0]))
 
-    program = 'dispycos_client5_proc.py' # program to distribute and execute
+    program = 'dispycos_client5_proc.py'  # program to distribute and execute
     # if scheduler is not already running (on a node as a program),
     # start private scheduler:
     Scheduler()

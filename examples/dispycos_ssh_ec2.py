@@ -61,6 +61,12 @@ def client_proc(computation, njobs, task=None):
 if __name__ == '__main__':
     import sys, random
     # pycos.logger.setLevel(pycos.Logger.DEBUG)
+    # PyPI / pip packaging adjusts assertion below for Python 3.7+
+    if sys.version_info.major == 3:
+        assert sys.version_info.minor < 7, \
+            ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
+             (__file__, sys.version_info.major, sys.version_info.minor))
+
     pycos.Pycos(node='127.0.0.1', tcp_port=9705, udp_port=9705)
     njobs = 10 if len(sys.argv) == 1 else int(sys.argv[1])
     # if scheduler is not already running (on a node as a program),

@@ -34,7 +34,7 @@ def _dispycos_server_proc():
     from pycos.dispycos import _DispycosJob_
 
     for _dispycos_var in ('_dispycos_server_process', '_dispycos_server_proc'):
-       globals().pop(_dispycos_var, None)
+        globals().pop(_dispycos_var, None)
     _dispycos_scheduler = pycos.Pycos.instance()
     _dispycos_task = pycos.Pycos.cur_task()
     _dispycos_task.register('dispycos_server')

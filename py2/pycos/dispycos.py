@@ -1717,8 +1717,6 @@ class Scheduler(object):
 
     def __close_server(self, server, node, await_async=False, task=None):
         if not server.task:
-            logger.debug('Closing server %s ignored: %s',
-                         server.task.location if server.task else '', server.status)
             raise StopIteration(-1)
         computation = self._cur_computation
         if computation:

@@ -3,7 +3,14 @@
 import sys, subprocess, traceback, platform
 import pycos
 import pycos.asyncfile
-    
+
+# PyPI / pip packaging adjusts assertion below for Python 3.7+
+if sys.version_info.major == 3:
+    assert sys.version_info.minor < 7, \
+        ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
+         (__file__, sys.version_info.major, sys.version_info.minor))
+
+
 def writer(apipe, inp, task=None):
     fd = open(inp)
     while True:
@@ -12,6 +19,7 @@ def writer(apipe, inp, task=None):
             break
         yield apipe.stdin.write(line.encode())
     apipe.stdin.close()
+
 
 def line_reader(apipe, task=None):
     nlines = 0
@@ -27,6 +35,7 @@ def line_reader(apipe, task=None):
             break
         print(line.decode())
     raise StopIteration(nlines)
+
 
 # pycos.logger.setLevel(pycos.Logger.DEBUG)
 if platform.system() == 'Windows':

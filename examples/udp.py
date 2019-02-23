@@ -7,11 +7,13 @@
 import sys, socket
 import pycos
 
+
 def server_proc(n, sock, task=None):
     for i in range(n):
         msg, addr = yield sock.recvfrom(1024)
         print('Received "%s" from %s:%s' % (msg, addr[0], addr[1]))
     sock.close()
+
 
 def client_proc(host, port, task=None):
     sock = pycos.AsyncSocket(socket.socket(socket.AF_INET, socket.SOCK_DGRAM))
@@ -20,6 +22,7 @@ def client_proc(host, port, task=None):
         msg = bytes(msg, 'ascii')
     yield sock.sendto(msg, (host, port))
     sock.close()
+
 
 if __name__ == '__main__':
     sock = pycos.AsyncSocket(socket.socket(socket.AF_INET, socket.SOCK_DGRAM))

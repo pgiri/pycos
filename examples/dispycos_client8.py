@@ -8,16 +8,16 @@ import pycos
 import pycos.netpycos
 from pycos.dispycos import *
 
+
 # Unlike in earlier versions of pycos, computations can now take time - even if
 # computations don't "yield" to scheduler, pycos can still send/receive
 # messages, respond to timer events in scheduler etc. In this case, computation
 # is simulated with 'time.sleep' which blocks user pycos thread, but another
 # (reactive) asytask thread processes network traffic, run scheduler tasks.
-
 def compute_task(task=None):
     import time
 
-    client = yield task.receive() # first message is client task
+    client = yield task.receive()  # first message is client task
 
     result = 0
     while True:
@@ -31,6 +31,7 @@ def compute_task(task=None):
         # task can send messages to client
         time.sleep(n)
         result += n
+
 
 # client (local) task runs computations
 def client_proc(computation, njobs, task=None):
@@ -55,7 +56,7 @@ def client_proc(computation, njobs, task=None):
             yield task.sleep(random.uniform(2, 5))
         # end of input is indicated with None
         rtask.send(None)
-        result = yield task.receive() # get result
+        result = yield task.receive()  # get result
         print('    %s computed result: %.4f' % (rtask.location, result))
 
     for i in range(njobs):

@@ -7,6 +7,7 @@
 import sys, socket
 import pycos
 
+
 # task to deal with specific client
 def client_proc(conn, addr, server, task=None):
     # given conn is synchronous, convert it to asynchronous
@@ -22,6 +23,7 @@ def client_proc(conn, addr, server, task=None):
             server.send(('left'.encode(), (conn, addr)))
             break
         server.send(('broadcast'.encode(), (conn, line)))
+
 
 # server task to deal with messages from clients
 def server_proc(task=None):
@@ -51,6 +53,7 @@ def server_proc(task=None):
                 yield client.send_msg(msg)
         elif cmd == 'terminate':
             break
+
 
 if __name__ == '__main__':
     # pycos.logger.setLevel(pycos.logger.DEBUG)

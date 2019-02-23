@@ -12,6 +12,13 @@ import pycos
 # import netpycos to use distributed version of Pycos
 import pycos.netpycos
 
+# PyPI / pip packaging adjusts assertion below for Python 3.7+
+if sys.version_info.major == 3:
+    assert sys.version_info.minor < 7, \
+        ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
+         (__file__, sys.version_info.major, sys.version_info.minor))
+
+
 def rti_1(a, b=1, task=None):
     pycos.logger.debug('running %s/%s with %s, %s', task.name, id(task), a, b)
     msg = yield task.receive()
@@ -24,6 +31,7 @@ def rti_1(a, b=1, task=None):
     else:
         # (remote) monitor (if any) gets this exception, too
         raise Exception('invalid invocation: %s' % b)
+
 
 pycos.logger.setLevel(pycos.Logger.DEBUG)
 # 'secret' is set so only peers that use same secret can communicate

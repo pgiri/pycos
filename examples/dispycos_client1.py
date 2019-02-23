@@ -11,11 +11,13 @@ import pycos
 import pycos.netpycos
 from pycos.dispycos import *
 
+
 # this generator function is sent to remote dispycos servers to run tasks there
 def compute(i, n, task=None):
     import time
     yield task.sleep(n)
-    raise StopIteration((i, task.location, time.asctime())) # result of 'compute' is current time
+    raise StopIteration((i, task.location, time.asctime()))  # result of 'compute' is current time
+
 
 # client (local) task submits computations
 def client_proc(computation, njobs, task=None):
@@ -39,8 +41,14 @@ def client_proc(computation, njobs, task=None):
 
 
 if __name__ == '__main__':
-    import random, sys
+    import sys, random
     pycos.logger.setLevel(pycos.Logger.DEBUG)
+    # PyPI / pip packaging adjusts assertion below for Python 3.7+
+    if sys.version_info.major == 3:
+        assert sys.version_info.minor < 7, \
+            ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
+             (__file__, sys.version_info.major, sys.version_info.minor))
+
     # if scheduler is not already running (on a node as a program), start
     # private scheduler:
     Scheduler()

@@ -19,6 +19,7 @@ import pycos
 import pycos.netpycos
 from pycos.dispycos import *
 
+
 # objects of C are sent by a client to remote task
 class C(object):
     def __init__(self, i, data_file, n, client):
@@ -49,7 +50,7 @@ def rtask_proc(task=None):
     yield task.sleep(cobj.n)
     # transfer the result file to client
     status = yield pycos.Pycos().send_file(cobj.client.location, cobj.result_file,
-                                                 overwrite=True, timeout=30)
+                                           overwrite=True, timeout=30)
     if status:
         print('Could not send %s to %s' % (cobj.result_file, cobj.client.location))
         cobj.result_file = None
@@ -108,8 +109,13 @@ def run_jobs_proc(computation, data_files, task=None):
 
 
 if __name__ == '__main__':
-    import random, os, sys, glob
+    import sys, random, os, glob
     # pycos.logger.setLevel(pycos.Logger.DEBUG)
+    # PyPI / pip packaging adjusts assertion below for Python 3.7+
+    if sys.version_info.major == 3:
+        assert sys.version_info.minor < 7, \
+            ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
+             (__file__, sys.version_info.major, sys.version_info.minor))
     if os.path.dirname(sys.argv[0]):
         os.chdir(os.path.dirname(sys.argv[0]))
     data_files = glob.glob('dispycos_client*.py')

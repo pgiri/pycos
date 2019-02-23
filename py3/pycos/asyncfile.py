@@ -29,6 +29,11 @@ __license__ = "Apache 2.0"
 __url__ = "https://pycos.sourceforge.io"
 
 __all__ = ['AsyncFile', 'AsyncPipe']
+# PyPI / pip packaging adjusts assertion below for Python 3.7+
+assert sys.version_info.major == 3 and sys.version_info.minor < 7, \
+    ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
+     (__file__, sys.version_info.major, sys.version_info.minor))
+
 
 if platform.system() == 'Windows':
     __all__ += ['pipe', 'Popen']

@@ -6,8 +6,9 @@
 # give network IP address as argument (and port as additional argument if
 # necessary)
 
-import sys, socket, time
+import sys, socket
 import pycos
+
 
 def client_recv(conn, task=None):
     task.set_daemon()
@@ -17,11 +18,13 @@ def client_recv(conn, task=None):
             break
         print(line.decode())
 
+
 def client_send(conn, task=None):
     task.set_daemon()
     while True:
         msg = yield task.recv()
         yield conn.send_msg(msg)
+
 
 if __name__ == '__main__':
     # pycos.logger.setLevel(pycos.logger.DEBUG)

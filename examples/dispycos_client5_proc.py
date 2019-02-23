@@ -6,6 +6,7 @@ import sys
 import time
 import os
 
+
 lineno = 0
 errors = 0
 while True:
@@ -21,5 +22,5 @@ while True:
     time.sleep(n)
     print('Line %s - current time is %s' % (lineno, time.asctime()))
     if os.name != 'nt':
-        sys.stdout.flush() # flush so output is sent to client immediately
+        sys.stdout.flush()  # flush so output is sent to client immediately
 exit(errors)
