@@ -24,7 +24,7 @@ def recv_proc(client_id, task=None):
 def send_proc(task=None):
     # if server is in a remote network, use 'peer' as (optionally enabling
     # streaming for efficiency):
-    # yield pycos.Pycos.instance().peer('server node/ip')
+    # yield pycos.Pycos.instance().peer(pycos.Location('server node/ip', port))
     server = yield pycos.Task.locate('chat_server', timeout=5)
     if not server:
         print('Could not locate server')

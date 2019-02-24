@@ -27,7 +27,7 @@ def client_proc(computation, task=None):
     # schedule computation with the scheduler; if remote scheduler is not
     # automatically discovered (e.g., if it is on remote network, or UDP is
     # lossy), use 'peer' method to discover, e.g., with
-    # yield pycos.Pycos.instance().peer('hostname_or_ip_of_scheduler')
+    # yield pycos.Pycos.instance().peer(pycos.Location('hostname_or_ip_of_scheduler', 9706))
     if (yield computation.schedule()):
         raise Exception('Could not schedule computation')
 

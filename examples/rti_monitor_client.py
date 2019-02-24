@@ -30,7 +30,7 @@ def monitor_proc(n, task=None):
 def rti_test(task=None):
     # if server is on remote network, automatic discovery won't work,
     # so add it explicitly
-    # yield scheduler.peer('192.168.21.5')
+    # yield scheduler.peer(pycos.Location('192.168.21.5', 9705))
 
     # get reference to RTI at server
     rti1 = yield pycos.RTI.locate('rti_1')

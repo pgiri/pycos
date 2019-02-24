@@ -23,7 +23,6 @@ def sender_proc(rchannel, task=None):
 def receiver_proc2(task=None):
     # if server is in remote network, add it explicitly
     # scheduler = pycos.Pycos.instance()
-    # yield scheduler.peer('remote.ip')
     # yield scheduler.peer(pycos.Location('remote.ip', tcp_port))
     rchannel = yield pycos.Channel.locate('2clients', timeout=5)
     if not rchannel:
