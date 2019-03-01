@@ -328,7 +328,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             loc = None
         _Peer._lock.release()
         if not loc:
-            req = _NetRequest('locate_peer', kwargs={'name': name})
+            req = _NetRequest('locate_peer', kwargs={'name': name}, timeout=timeout)
             loc = yield _Peer.async_request(req)
         raise StopIteration(loc)
 
