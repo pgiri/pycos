@@ -266,6 +266,12 @@ def _dispycos_server_proc():
                 for _dispycos_var in _dispycos_msg.get('peers', []):
                     pycos.Task(_dispycos_scheduler.peer, _dispycos_var)
 
+        elif _dispycos_req == 'num_jobs':
+            if (_dispycos_msg.get('auth', None) == _dispycos_computation_auth):
+                _dispycos_var = _dispycos_msg.get('client', None)
+                if isinstance(_dispycos_var, pycos.Task):
+                    _dispycos_var.send(len(_dispycos_job_tasks))
+
         else:
             logger.warning('invalid command "%s" ignored', _dispycos_req)
             _dispycos_client = _dispycos_msg.get('client', None)
@@ -1267,7 +1273,9 @@ def _dispycos_node():
                             cpus = avail_cpus
                 else:
                     cpus = 0
-                if ((yield client.deliver(cpus, timeout=msg_timeout)) == 1 and cpus):
+
+                reply = {'cpus': cpus, 'auth': node_auth}
+                if ((yield client.deliver(reply, timeout=msg_timeout)) == 1 and cpus):
                     dispycos_scheduler.ignore_peers = True
                     comp_state.cpus_reserved = cpus
                     comp_state.auth = auth
@@ -1331,7 +1339,8 @@ def _dispycos_node():
 
             elif req == 'release':
                 auth = msg.get('auth', None)
-                if comp_state.auth and auth == comp_state.auth:
+                if ((comp_state.auth and auth == comp_state.auth) or
+                    (msg.get('node_auth') == node_auth)):
                     yield close_computation(req='close', task=task)
 
             elif req == 'close' or req == 'quit' or req == 'terminate':
@@ -1350,6 +1359,17 @@ def _dispycos_node():
                 auth = msg.get('auth', None)
                 if auth == node_auth:
                     break
+
+            elif req == 'status':
+                if msg.get('status_task') == comp_state.scheduler and msg.get('auth') == node_auth:
+                    reply = {'computation_auth': comp_state.auth,
+                           'servers': [server.task for server in node_servers
+                                       if server.id and server.task]}
+                else:
+                    reply = None
+                client = msg.get('client', None)
+                if isinstance(client, pycos.Task):
+                    client.send(reply)
 
             else:
                 pycos.logger.warning('Invalid message %s ignored',
