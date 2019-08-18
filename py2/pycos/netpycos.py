@@ -26,6 +26,7 @@ except ImportError:
 
 import pycos
 from pycos import *
+import pycos.config
 
 if os.name == 'nt':
     from errno import WSAEACCES as EADDRINUSE
@@ -42,12 +43,7 @@ __url__ = "https://pycos.sourceforge.io"
 __version__ = pycos.__version__
 __all__ = pycos.__all__ + ['PeerStatus', 'RTI']
 
-# if connections to a peer are not successful consecutively MaxConnectionErrors
-# times, peer is assumed dead and removed
-MaxConnectionErrors = 10
-MsgTimeout = pycos.MsgTimeout
-IPV4_MULTICAST_GROUP = '239.255.97.5'
-IPV6_MULTICAST_GROUP = 'ff05::674f:48ba:b409:3171:9705'
+MsgTimeout = pycos.config.MsgTimeout
 
 
 class PeerStatus(object):
@@ -74,10 +70,10 @@ class Pycos(pycos.Pycos):
     hostnames or IP addresses where pycos runs network services.
 
     'udp_port' is port number where pycos listens for broadcast messages to find
-    other peers. Default value for udp_port is set to 9705.
+    other peers. Default value for udp_port is set to pycos.config.NetPort.
 
     'tcp_port' is port number used for TCP services. Its default value is None,
-    in which case, port 9705 is used.
+    in which case, port pycos.config.NetPort is used.
 
     'name' is used in locating peers. They must be unique. If 'name' is not
     given, it is set to string 'node:tcp_port'.
@@ -107,7 +103,7 @@ class Pycos(pycos.Pycos):
     _pycos = None
     _pycos_class = pycos.Pycos
 
-    def __init__(self, udp_port=9705, tcp_port=None, node=None, ext_ip_addr=None,
+    def __init__(self, udp_port=pycos.config.NetPort, tcp_port=None, node=None, ext_ip_addr=None,
                  socket_family=None, ipv4_udp_multicast=False, name=None, discover_peers=True,
                  secret='', certfile=None, keyfile=None, notifier=None,
                  dest_path=None, max_file_size=None):
@@ -185,7 +181,7 @@ class Pycos(pycos.Pycos):
                 if tcp_port is None:
                     tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                     try:
-                        tcp_sock.bind((addr, 9705))
+                        tcp_sock.bind((addr, pycos.config.NetPort))
                     except socket.error as e:
                         if (e.errno == EADDRINUSE):
                             tcp_sock.bind((addr, 0))
@@ -223,7 +219,7 @@ class Pycos(pycos.Pycos):
             raise Exception('Invalid "node"?')
 
         if udp_port is None:
-            udp_port = 9705
+            udp_port = pycos.config.NetPort
         udp_addrinfos = {}
         for addrinfo in self._addrinfos:
             udp_addrinfos[addrinfo.bind_addr] = addrinfo
@@ -239,7 +235,8 @@ class Pycos(pycos.Pycos):
             udp_sock.bind((bind_addr, udp_port))
             if addrinfo.family == socket.AF_INET:
                 if self.ipv4_udp_multicast:
-                    mreq = socket.inet_aton(IPV4_MULTICAST_GROUP) + socket.inet_aton(addrinfo.ip)
+                    mreq = socket.inet_aton(pycos.config.IPV4_MULTICAST_GROUP)
+                    mreq += socket.inet_aton(addrinfo.ip)
                     udp_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
             else:  # addrinfo.family == socket.AF_INET6:
                 mreq = socket.inet_pton(addrinfo.family, addrinfo.broadcast)
@@ -423,7 +420,7 @@ class Pycos(pycos.Pycos):
             raise StopIteration(ret)
         else:
             if not udp_port:
-                udp_port = 9705
+                udp_port = pycos.config.NetPort
             ping_msg = {'location': addrinfo.location, 'signature': self._signature,
                         'name': self._name, 'version': __version__, 'relay': relay}
             ping_msg = 'ping:'.encode() + serialize(ping_msg)
@@ -648,7 +645,7 @@ class Pycos(pycos.Pycos):
                 self.ip = ip
                 self.ifn = ifn
                 if family == socket.AF_INET and ipv4_multicast:
-                    self.broadcast = IPV4_MULTICAST_GROUP
+                    self.broadcast = pycos.config.IPV4_MULTICAST_GROUP
                 else:
                     self.broadcast = broadcast
                 self.netmask = netmask
@@ -715,9 +712,9 @@ class Pycos(pycos.Pycos):
                                 iface_infos.append(addrinfo)
                         else:  # sock_family == socket.AF_INET6
                             addr = str(link['addr'])
-                            broadcast = link.get('broadcast', IPV6_MULTICAST_GROUP)
+                            broadcast = link.get('broadcast', pycos.config.IPV6_MULTICAST_GROUP)
                             if broadcast.startswith(addr):
-                                broadcast = IPV6_MULTICAST_GROUP
+                                broadcast = pycos.config.IPV6_MULTICAST_GROUP
                             if_sfx = ['']
                             if not ifn and ('%' not in addr.split(':')[-1]):
                                 if_sfx.append('%' + iface)
@@ -764,7 +761,7 @@ class Pycos(pycos.Pycos):
                         addr = addr[-1][0]
                     else:  # sock_family == socket.AF_INET6
                         addr = Pycos.host_ipaddr(addr[-1][0])
-                        broadcast = IPV6_MULTICAST_GROUP
+                        broadcast = pycos.config.IPV6_MULTICAST_GROUP
                         logger.warning('IPv6 may not work without "netifaces" package!')
                     addrinfo = AddrInfo(sock_family, addr, ifn, broadcast, netmask)
                     if hosts:

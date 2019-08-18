@@ -46,6 +46,8 @@ else:
 if sys.version_info >= (3, 3):
     from time import perf_counter as _time
 
+from pycos.config import MsgTimeout
+
 
 __author__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __email__ = "pgiri@yahoo.com"
@@ -55,15 +57,13 @@ __maintainer__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __license__ = "Apache 2.0"
 __url__ = "https://pycos.sourceforge.io"
 __status__ = "Production"
-__version__ = "4.8.11"
+__version__ = "4.8.12"
 
 __all__ = ['Task', 'Pycos', 'Lock', 'RLock', 'Event', 'Condition', 'Semaphore',
            'AsyncSocket', 'HotSwapException', 'MonitorException', 'Location', 'Channel',
            'CategorizeMessages', 'AsyncThreadPool', 'AsyncDBCursor',
            'Singleton', 'logger', 'serialize', 'deserialize', 'unserialize', 'Logger']
 
-# timeout in seconds used when sending messages
-MsgTimeout = 10
 # PyPI / pip packaging adjusts assertion below for Python 3.7+
 assert sys.version_info.major == 3 and sys.version_info.minor < 7, \
     ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %

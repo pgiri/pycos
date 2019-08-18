@@ -47,6 +47,8 @@ else:
     from errno import EINVAL
     from time import time as _time
 
+from pycos.config import MsgTimeout
+
 
 __author__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __email__ = "pgiri@yahoo.com"
@@ -56,15 +58,12 @@ __maintainer__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __license__ = "Apache 2.0"
 __url__ = "https://pycos.sourceforge.io"
 __status__ = "Production"
-__version__ = "4.8.11"
+__version__ = "4.8.12"
 
 __all__ = ['Task', 'Pycos', 'Lock', 'RLock', 'Event', 'Condition', 'Semaphore',
            'AsyncSocket', 'HotSwapException', 'MonitorException', 'Location', 'Channel',
            'CategorizeMessages', 'AsyncThreadPool', 'AsyncDBCursor',
            'Singleton', 'logger', 'serialize', 'deserialize', 'unserialize', 'Logger']
-
-# timeout in seconds used when sending messages
-MsgTimeout = 10
 
 
 def serialize(obj):

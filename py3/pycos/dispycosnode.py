@@ -597,30 +597,31 @@ def _dispycos_node():
         num_cpus += _dispycos_config['cpus']
     del _dispycos_config['cpus']
 
-    tcp_ports = set()
-    for tcp_port in _dispycos_config.pop('tcp_ports', []):
-        tcp_port = tcp_port.split('-')
-        if len(tcp_port) == 1:
-            tcp_ports.add(int(tcp_port[0]))
-        elif len(tcp_port) == 2:
-            tcp_port = (int(tcp_port[0]), min(int(tcp_port[1]),
-                                              int(tcp_port[0]) + num_cpus - len(tcp_ports)))
-            tcp_ports = tcp_ports.union(range(tcp_port[0], tcp_port[1] + 1))
+    node_ports = set()
+    for node_port in _dispycos_config.pop('node_ports', []):
+        node_port = node_port.split('-')
+        if len(node_port) == 1:
+            node_ports.add(int(node_port[0]))
+        elif len(node_port) == 2:
+            node_port = (int(node_port[0]), min(int(node_port[1]),
+                                              int(node_port[0]) + num_cpus - len(node_ports)))
+            node_ports = node_ports.union(range(node_port[0], node_port[1] + 1))
         else:
-            raise Exception('Invalid TCP port range "%s"' % str(tcp_port))
+            raise Exception('Invalid TCP port range "%s"' % str(node_port))
 
-    if tcp_ports:
-        tcp_ports = sorted(tcp_ports)
-        tcp_ports = tcp_ports[:num_cpus + 1]
+    if node_ports:
+        node_ports = sorted(node_ports)
+        node_ports = node_ports[:num_cpus + 1]
     else:
-        tcp_ports = [9706]
+        node_ports = [eval(pycos.config.DispycosNodePort)]
 
-    for tcp_port in range(tcp_ports[-1] + 1, tcp_ports[-1] + 1 + num_cpus - len(tcp_ports) + 1):
-        if tcp_ports[-1]:
-            tcp_ports.append(tcp_port)
+    for node_port in range(node_ports[-1] + 1, node_ports[-1] + 1 + num_cpus - len(node_ports) + 1):
+        if node_ports[-1]:
+            node_ports.append(node_port)
         else:
-            tcp_ports.append(0)
-    del tcp_port
+            node_ports.append(0)
+    del node_port
+    _dispycos_config['udp_port'] = node_ports[0]
 
     peer = None
     for _dispycos_id in range(len(_dispycos_config['peers'])):
@@ -863,7 +864,7 @@ def _dispycos_node():
         _dispycos_var = os.path.join(dispycos_dest_path, '..', 'server-%d.pkl' % _dispycos_id)
         node_servers[_dispycos_id] = Struct(id=_dispycos_id, psproc=None, task=None, msg_oid=0,
                                             name='%s_server-%s' % (node_name, _dispycos_id),
-                                            port=tcp_ports[_dispycos_id], pid_file=_dispycos_var)
+                                            port=node_ports[_dispycos_id], pid_file=_dispycos_var)
     node_servers[0].name = None
 
     if _dispycos_config['clean']:
@@ -893,7 +894,7 @@ def _dispycos_node():
                           'max_file_size', 'ipv4_udp_multicast']:
         server_config[_dispycos_var] = _dispycos_config.get(_dispycos_var, None)
     server_config['name'] = '%s_server-0' % node_name
-    server_config['tcp_port'] = tcp_ports[0]
+    server_config['tcp_port'] = node_ports[0]
     if _dispycos_config['loglevel']:
         pycos.logger.setLevel(pycos.Logger.DEBUG)
         # pycos.logger.show_ms(True)
@@ -948,7 +949,7 @@ def _dispycos_node():
                 now = int(time.time())
                 yield task.sleep(service_times.start - now)
                 dispycos_scheduler.ignore_peers = False
-                dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
+                dispycos_scheduler.discover_peers(port=pycos.config.NetPort)
 
                 if service_times.stop:
                     now = int(time.time())
@@ -1178,7 +1179,7 @@ def _dispycos_node():
             if _dispycos_config['serve']:
                 if service_available():
                     dispycos_scheduler.ignore_peers = False
-                    dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
+                    dispycos_scheduler.discover_peers(port=pycos.config.NetPort)
             else:
                 if all(not server.task for server in node_servers):
                     # mp_queue.close()
@@ -1219,7 +1220,7 @@ def _dispycos_node():
                                         'client': comp_state.scheduler})
 
                 if ping_interval and (now - last_ping) > ping_interval and service_available():
-                    dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
+                    dispycos_scheduler.discover_peers(port=pycos.config.NetPort)
                     last_ping = now
 
         timer_task = pycos.Task(timer_proc)
@@ -1231,7 +1232,7 @@ def _dispycos_node():
             pycos.Task(service_times_proc)
         else:
             dispycos_scheduler.ignore_peers = False
-            dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
+            dispycos_scheduler.discover_peers(port=pycos.config.NetPort)
 
         for peer in _dispycos_config['peers']:
             pycos.Task(dispycos_scheduler.peer, pycos.deserialize(peer))
@@ -1296,7 +1297,7 @@ def _dispycos_node():
                     timer_task.resume()
                 else:
                     dispycos_scheduler.ignore_peers = False
-                    dispycos_scheduler.discover_peers(port=_dispycos_config['scheduler_port'])
+                    dispycos_scheduler.discover_peers(port=pycos.config.NetPort)
 
             elif req == 'computation':
                 client = msg.get('client', None)
@@ -1401,7 +1402,7 @@ def _dispycos_node():
     _dispycos_config['node_auth'] = node_auth
     _dispycos_config['busy_time'] = busy_time
     node_task = pycos.Task(node_proc)
-    del server_config, tcp_ports, _dispycos_var
+    del server_config, node_ports, _dispycos_var
 
     def sighandler(signum, frame):
         # pycos.logger.info('dispynode (%s) received signal %s', dispycos_pid, signum)
@@ -1516,6 +1517,7 @@ if __name__ == '__main__':
 
     import pycos
     import pycos.netpycos
+    import pycos.config
     from pycos.dispycos import MinPulseInterval, MaxPulseInterval, Computation
 
     pycos.logger.name = 'dispycosnode'
@@ -1536,12 +1538,11 @@ if __name__ == '__main__':
                         help='IP address or host name of this node')
     parser.add_argument('--ext_ip_addr', dest='ext_ip_addr', action='append', default=[],
                         help='External IP address to use (needed in case of NAT firewall/gateway)')
-    parser.add_argument('--tcp_ports', dest='tcp_ports', action='append', default=[],
-                        help='TCP port numbers to use')
-    parser.add_argument('-u', '--udp_port', dest='udp_port', type=int, default=9706,
-                        help='UDP port number to use')
-    parser.add_argument('--scheduler_port', dest='scheduler_port', type=int, default=9705,
-                        help='UDP port number used by dispycos scheduler')
+    parser.add_argument('--scheduler_port', dest='scheduler_port', type=str,
+                        default=eval(pycos.config.DispycosSchedulerPort),
+                        help='port number for dispycos scheduler')
+    parser.add_argument('--node_ports', dest='node_ports', action='append', default=[],
+                        help='port numbers for dispycos node')
     parser.add_argument('--ipv4_udp_multicast', dest='ipv4_udp_multicast', action='store_true',
                         default=False, help='use multicast for IPv4 UDP instead of broadcast')
     parser.add_argument('-n', '--name', dest='name', default='',
@@ -1566,8 +1567,8 @@ if __name__ == '__main__':
     parser.add_argument('--service_end', dest='service_end', default='',
                         help='time of day in HH:MM format when to end service '
                         '(terminate running jobs)')
-    parser.add_argument('--msg_timeout', dest='msg_timeout', default=pycos.MsgTimeout, type=int,
-                        help='timeout for delivering messages')
+    parser.add_argument('--msg_timeout', dest='msg_timeout', default=pycos.config.MsgTimeout,
+                        type=int, help='timeout for delivering messages')
     parser.add_argument('--min_pulse_interval', dest='min_pulse_interval',
                         default=MinPulseInterval, type=int,
                         help='minimum pulse interval clients can use in number of seconds')
@@ -1600,7 +1601,7 @@ if __name__ == '__main__':
         cfg.read(_dispycos_var)
         cfg = dict(cfg.items('DEFAULT'))
         cfg['cpus'] = int(cfg['cpus'])
-        cfg['udp_port'] = int(cfg['udp_port'])
+        cfg['port'] = int(cfg['port'])
         cfg['serve'] = int(cfg['serve'])
         cfg['msg_timeout'] = int(cfg['msg_timeout'])
         cfg['min_pulse_interval'] = int(cfg['min_pulse_interval'])
@@ -1611,9 +1612,9 @@ if __name__ == '__main__':
         cfg['clean'] = cfg['clean'] == 'True'
         # cfg['discover_peers'] = cfg['discover_peers'] == 'True'
         cfg['loglevel'] = cfg['loglevel'] == 'True'
-        cfg['tcp_ports'] = [_dispycos_var.strip()[1:-1] for _dispycos_var in
-                            cfg['tcp_ports'][1:-1].split(',')]
-        cfg['tcp_ports'] = [_dispycos_var for _dispycos_var in cfg['tcp_ports'] if _dispycos_var]
+        cfg['node_ports'] = [_dispycos_var.strip()[1:-1] for _dispycos_var in
+                             cfg['node_ports'][1:-1].split(',')]
+        cfg['node_ports'] = [_dispycos_var for _dispycos_var in cfg['node_ports'] if _dispycos_var]
         cfg['ipv4_udp_multicast'] = cfg['ipv4_udp_multicast'] == 'True'
         cfg['peers'] = [_dispycos_var.strip()[1:-1] for _dispycos_var in
                         cfg['peers'][1:-1].split(',')]
@@ -1634,5 +1635,6 @@ if __name__ == '__main__':
         exit(0)
 
     del parser, sys.modules['argparse'], globals()['argparse'], _dispycos_var
+    pycos.config.DispycosSchedulerPort = int(_dispycos_config.pop('scheduler_port'))
 
     _dispycos_node()
