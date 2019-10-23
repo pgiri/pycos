@@ -753,7 +753,8 @@ class Scheduler(object, metaclass=pycos.Singleton):
                     logger.debug('failed to create rtask: %s', rtask)
                     if job.cpu:
                         self.cpu_avail.set()
-                        if self.status == Scheduler.ServerInitialized:
+                        if (self.status == Scheduler.ServerInitialized and
+                            node.status == Scheduler.NodeInitialized):
                             node.cpu_avail.set()
                             self.scheduler._cpu_nodes.add(node)
                             self.scheduler._cpus_avail.set()
@@ -778,19 +779,18 @@ class Scheduler(object, metaclass=pycos.Singleton):
         self.__pulse_interval = kwargs.pop('pulse_interval', MaxPulseInterval)
         self.__ping_interval = kwargs.pop('ping_interval', 0)
         self.__zombie_period = kwargs.pop('zombie_period', 100 * MaxPulseInterval)
+        if not isinstance(pycos.config.DispycosSchedulerPort, int):
+            pycos.config.DispycosSchedulerPort = eval(pycos.config.DispycosSchedulerPort)
+        if not isinstance(pycos.config.DispycosNodePort, int):
+            pycos.config.DispycosNodePort = eval(pycos.config.DispycosNodePort)
         self._node_port = pycos.config.DispycosNodePort
-        if not isinstance(self._node_port, int):
-            self._node_port = eval(self._node_port)
         self.__server_locations = set()
 
         kwargs['name'] = 'dispycos_scheduler'
         clean = kwargs.pop('clean', False)
         nodes = kwargs.pop('nodes', [])
         relay_nodes = kwargs.pop('relay_nodes', False)
-        if isinstance(pycos.config.DispycosSchedulerPort, int):
-            kwargs['udp_port'] = kwargs['tcp_port'] = pycos.config.DispycosSchedulerPort
-        else:
-            kwargs['udp_port'] = kwargs['tcp_port'] = eval(pycos.config.DispycosSchedulerPort)
+        kwargs['udp_port'] = kwargs['tcp_port'] = pycos.config.DispycosSchedulerPort
         self.pycos = pycos.Pycos.instance(**kwargs)
         self.__dest_path = os.path.join(self.pycos.dest_path, 'dispycos', 'scheduler')
         if clean:
@@ -870,7 +870,8 @@ class Scheduler(object, metaclass=pycos.Singleton):
                 job = info[1]
                 if job.cpu:
                     server.cpu_avail.set()
-                    if server.status == Scheduler.ServerInitialized:
+                    if (server.status == Scheduler.ServerInitialized and
+                        node.status == Scheduler.NodeInitialized):
                         node.cpu_avail.set()
                         self._cpu_nodes.add(node)
                         self._cpus_avail.set()
