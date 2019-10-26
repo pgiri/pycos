@@ -19,7 +19,7 @@ if len(sys.argv) > 1 and sys.argv[1] == 'sdist':
     assert os.path.isdir('py3')
     shutil.rmtree('py3.7', ignore_errors=True)
     shutil.copytree('py3', 'py3.7')
-    for path in [os.path.join('py3.7', 'pycos'), os.path.join('py3.7', 'pycos', 'examples')]:
+    for path in ['py3.7', os.path.join('py3.7', 'examples')]:
         for filename in os.listdir(path):
             if filename.endswith('.py'):
                 filename = os.path.join(path, filename)
@@ -34,7 +34,7 @@ if len(sys.argv) > 1 and sys.argv[1] == 'sdist':
                     fd.write(''.join(lines))
                 os.chmod(filename, sbuf.st_mode)
 
-with open(os.path.join(base_dir, 'pycos', '__init__.py')) as fd:
+with open(os.path.join(base_dir, '__init__.py')) as fd:
     regex = re.compile(r'^__version__ = "([\d\.]+)"$')
     for line in fd:
         match = regex.match(line)
@@ -51,12 +51,12 @@ setup(
     url='http://pycos.sourceforge.io',
     author='Giridhar Pemmasani',
     author_email='pgiri@yahoo.com',
-    package_dir={'':base_dir},
+    package_dir={'pycos': base_dir},
     packages=['pycos'],
     package_data = {
         'pycos' : ['data/*', 'doc/*', 'examples/*'],
     },
-    scripts=[os.path.join(base_dir, 'pycos', script)
+    scripts=[os.path.join(base_dir, script)
              for script in ['dispycos.py', 'dispycosnode.py']],
     license='Apache 2.0',
     platforms='any',
