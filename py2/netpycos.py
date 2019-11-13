@@ -1166,7 +1166,7 @@ class Pycos(pycos.Pycos):
                                 reply = yield channel.subscribe(task)
                         else:
                             reply = yield channel.subscribe(subscriber)
-                    elif isinstance(subsriber, Channel):
+                    elif isinstance(subscriber, Channel):
                         if not subscriber._location:
                             Channel._pycos._lock.acquire()
                             sub_chan = self._channels.get(subscriber._name, None)
@@ -1195,7 +1195,7 @@ class Pycos(pycos.Pycos):
                                 reply = yield channel.unsubscribe(task)
                         else:
                             reply = yield channel.unsubscribe(subscriber)
-                    elif isinstance(subsriber, Channel):
+                    elif isinstance(subscriber, Channel):
                         if not subscriber._location:
                             Channel._pycos._lock.acquire()
                             sub_chan = self._channels.get(subscriber._name, None)
@@ -1431,7 +1431,7 @@ class RTI(object):
         'task' receives MonitorException messages. If call is successful, the
         result is 0.
         """
-        if not isinstance(task, Task) and monitor is not None:
+        if not isinstance(task, Task):
             raise StopIteration(-1)
         if self._mid:
             mid = self._mid
