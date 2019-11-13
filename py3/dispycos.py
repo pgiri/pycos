@@ -1291,7 +1291,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
 
         node.status = Scheduler.NodeDisconnected
         yield SysTask(self.__close_node, node).finish()
-        self._disabled_nodes[peer_status.location.addr] = node
+        self._disabled_nodes[node.addr] = node
         yield self.__get_node_info(node, task=task)
         raise StopIteration
 
