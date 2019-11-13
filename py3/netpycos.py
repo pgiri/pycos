@@ -8,6 +8,7 @@ import socket
 import inspect
 import traceback
 import os
+import sys
 import stat
 import hashlib
 import collections
@@ -34,6 +35,11 @@ if os.name == 'nt':
 else:
     from errno import EADDRINUSE
     from errno import EADDRNOTAVAIL
+
+# PyPI / pip packaging adjusts assertion below for Python 3.7+
+assert sys.version_info.major == 3 and sys.version_info.minor < 7, \
+    ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
+     (__file__, sys.version_info.major, sys.version_info.minor))
 
 __author__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __copyright__ = "Copyright (c) 2012-2014 Giridhar Pemmasani"
@@ -1787,7 +1793,7 @@ class _Peer(object):
                     if req.event:
                         req.event.set()
                     conn_errors += 1
-                    if conn_errors >= MaxConnectionErrors:
+                    if conn_errors >= pycos.config.MaxConnectionErrors:
                         logger.warning('too many connection errors to %s; removing it',
                                        self.location)
                         break

@@ -1794,7 +1794,7 @@ class _Peer(object):
                     if req.event:
                         req.event.set()
                     conn_errors += 1
-                    if conn_errors >= MaxConnectionErrors:
+                    if conn_errors >= pycos.config.MaxConnectionErrors:
                         logger.warning('too many connection errors to %s; removing it',
                                        self.location)
                         break
