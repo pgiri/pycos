@@ -2049,6 +2049,9 @@ if __name__ == '__main__':
                     )
             except KeyboardInterrupt:
                 break
+            except EOFError:
+                logger.warning('EOF ignored!\n')
+                continue
             _dispycos_cmd = _dispycos_cmd.strip().lower()
             if _dispycos_cmd in ('quit', 'exit'):
                 break

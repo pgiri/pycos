@@ -1433,6 +1433,9 @@ def _dispycos_node():
                 if os.path.exists(node_servers[0].pid_file):
                     node_task.send({'req': 'quit', 'auth': node_auth})
                 break
+            except EOFError:
+                pycos.logger.warning('EOF ignored!\n')
+                continue
             else:
                 cmd = cmd.strip().lower()
                 if not cmd:
