@@ -33,8 +33,9 @@ if platform.system() == 'Windows':
     from errno import WSAEINPROGRESS as EINPROGRESS
     from errno import WSAEWOULDBLOCK as EWOULDBLOCK
     from errno import WSAEINVAL as EINVAL
-    from time import clock as _time
-    _time()
+    if sys.version_info < (3, 3):
+        from time import clock as _time
+        _time()
     if not hasattr(socket, 'IPPROTO_IPV6'):
         socket.IPPROTO_IPV6 = 41
 else:
