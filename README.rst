@@ -82,8 +82,7 @@ availability status (CPU, memory and disk) is sent in status messages, and shown
 in web browser so node/application performance can be monitored.
 
 Under Windows efficient polling notifier I/O Completion Ports (IOCP) is
-supported only if `pywin32
-<http://sourceforge.net/projects/pywin32/files/pywin32/>`_ is available;
+supported only if `pywin32 <https://github.com/mhammond/pywin32>`_ is available;
 otherwise, inefficient *select* notifier is used.
 
 Installation
