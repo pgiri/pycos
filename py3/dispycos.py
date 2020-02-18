@@ -1935,13 +1935,14 @@ if __name__ == '__main__':
     import pycos.dispycos
     setattr(sys.modules['pycos.dispycos'], '_DispycosJob_', _DispycosJob_)
 
+    pycos.config.DispycosSchedulerPort = eval(pycos.config.DispycosSchedulerPort)
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--ip_addr', dest='node', action='append', default=[],
                         help='IP address or host name of this node')
     parser.add_argument('--ext_ip_addr', dest='ext_ip_addr', action='append', default=[],
                         help='External IP address to use (needed in case of NAT firewall/gateway)')
     parser.add_argument('--scheduler_port', dest='scheduler_port', type=str,
-                        default=str(eval(pycos.config.DispycosSchedulerPort)),
+                        default=str(pycos.config.DispycosSchedulerPort),
                         help='port number for dispycos scheduler')
     parser.add_argument('--node_port', dest='node_port', type=str,
                         default=str(eval(pycos.config.DispycosNodePort)),
