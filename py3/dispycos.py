@@ -1813,8 +1813,9 @@ class Scheduler(object, metaclass=pycos.Singleton):
                 # TODO: send Abandoned if node is zombie as well?
                 if server.status == Scheduler.ServerDisconnected:
                     for rtask, job in server.rtasks.values():
-                        status = pycos.MonitorException(rtask, (Scheduler.TaskAbandoned, None))
-                        status_task.send(status)
+                        if status_task:
+                            status = pycos.MonitorException(rtask, (Scheduler.TaskAbandoned, None))
+                            status_task.send(status)
                         if job.request.endswith('async'):
                             if job.done:
                                 job.done.set()
