@@ -915,7 +915,8 @@ def _dispycos_node():
         disk_path = dispycos_scheduler.dest_path
         _dispycos_config['node_location'] = pycos.serialize(task.location)
         comp_state = Struct(auth=None, scheduler=None, cpus_reserved=0, spawn_mpproc=None,
-                            interval=_dispycos_config['max_pulse_interval'])
+                            interval=_dispycos_config['max_pulse_interval'],
+                            abandon_zombie=False)
 
         def service_available():
             now = time.time()
@@ -1203,9 +1204,14 @@ def _dispycos_node():
 
                     if (zombie_period and ((now - busy_time.value) > zombie_period) and
                         comp_state.auth):
-                        pycos.logger.warning('Closing zombie computation "%s"', comp_state.auth)
-                        node_task.send({'req': 'release', 'auth': comp_state.auth,
-                                        'client': comp_state.scheduler})
+                        if comp_state.abandon_zombie:
+                            pycos.logger.debug('Not closing zombie computation from %s',
+                                               comp_state.scheduler.location)
+                        else:
+                            pycos.logger.warning('Closing zombie computation "%s" from %s',
+                                                 comp_state.auth, comp_state.scheduler.location)
+                            node_task.send({'req': 'release', 'auth': comp_state.auth,
+                                            'client': comp_state.scheduler})
 
                 if ping_interval and (now - last_ping) > ping_interval and service_available():
                     dispycos_scheduler.discover_peers(port=pycos.config.NetPort)
@@ -1254,6 +1260,8 @@ def _dispycos_node():
                     client.send(info)
 
             elif req == 'reserve':
+                # TODO: if current computation is zombie and has abandon_zombie set, release it
+                # and accept new reservation
                 client = msg.get('client', None)
                 cpus = msg.get('cpus', -1)
                 auth = msg.get('auth', None)
@@ -1371,6 +1379,11 @@ def _dispycos_node():
                 client = msg.get('client', None)
                 if isinstance(client, pycos.Task):
                     client.send(reply)
+
+            elif req == 'abandon_zombie':
+                auth = msg.get('auth', None)
+                if (auth == comp_state.auth and (msg.get('node_auth', '') == node_auth)):
+                    comp_state.abandon_zombie = msg.get('flag', False)
 
             else:
                 pycos.logger.warning('Invalid message %s ignored',
