@@ -1318,6 +1318,7 @@ def _dispycos_node():
                                                                  zombie_period / 3)
                     else:
                         _dispycos_config['pulse_interval'] = comp_state.interval
+                    comp_state.abandon_zombie = msg.get('abandon_zombie', False)
 
                     id_ports = [(server.id, server.port) for server in node_servers
                                 if server.id and not server.task]
@@ -1350,7 +1351,11 @@ def _dispycos_node():
                 auth = msg.get('auth', None)
                 if ((comp_state.auth and auth == comp_state.auth) or
                     (msg.get('node_auth') == node_auth)):
-                    yield close_computation(req='close', task=task)
+                    if msg.get('terminate', False):
+                        req = 'terminate'
+                    else:
+                        req = 'close'
+                    yield close_computation(req, task=task)
 
             elif req == 'close' or req == 'quit' or req == 'terminate':
                 auth = msg.get('auth', None)

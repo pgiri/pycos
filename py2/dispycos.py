@@ -137,7 +137,7 @@ class Computation(object):
     def __init__(self, components, nodes=[], status_task=None, node_setup=None, server_setup=None,
                  disable_nodes=False, disable_servers=False, peers_communicate=False,
                  pulse_interval=(5*MinPulseInterval), node_allocations=[],
-                 ping_interval=None, zombie_period=None):
+                 ping_interval=None, zombie_period=None, abandon_zombie_nodes=False):
         """'components' should be a list, each element of which is either a
         module, a (generator or normal) function, path name of a file, a class
         or an object (in which case the code for its class is sent).
@@ -210,6 +210,7 @@ class Computation(object):
         self._peers_communicate = bool(peers_communicate)
         self._disable_nodes = bool(disable_nodes)
         self._disable_servers = bool(disable_servers)
+        self._abandon_zombie = bool(abandon_zombie_nodes)
 
         depends = set()
         cwd = os.getcwd()
@@ -342,6 +343,21 @@ class Computation(object):
                 raise StopIteration([])
 
         yield Task(_servers, self).finish()
+
+    def tasks(self, where):
+        """Get list of tasks at given node or server for this computation.
+        Must be used with 'yield' as 'yield compute.tasks()'.
+
+        """
+
+        def _tasks(self, task=None):
+            msg = {'req': 'tasks', 'auth': self._auth, 'client': task, 'at': where}
+            if (yield self.scheduler.deliver(msg, timeout=MsgTimeout)) == 1:
+                yield task.receive(MsgTimeout)
+            else:
+                raise StopIteration([])
+
+        yield Task(_tasks, self).finish()
 
     def close(self, await_async=False, timeout=None):
         """Close computation. Must be used with 'yield' as 'yield
@@ -524,14 +540,38 @@ class Computation(object):
         if self.scheduler:
             self.scheduler.send({'req': 'enable_server', 'auth': self._auth, 'server': location})
 
-    def abandon_zombie(self, flag, location=None):
-        """TODO
+    def abandon_zombie(self, location, flag):
+        """If a node at given location is deemed zombie (i.e., no response in 'zombie_period'),
+        then abandon any jobs running on servers on that node. If a node is detected later,
+        it will be treated as new (instance of) node.
+
+        'location' can be either Location instance of any server at the node or of the node
+        itself, IP address of node or None. If 'location' is None, then all nodes currently used
+        by computation and any nodes added for computation will be abandoned (when they become
+        zombies) as well.
+
+        'flag' must be either True or False indicating whether nodes would be abandoned or not.
         """
         if self.scheduler:
             if isinstance(location, pycos.Location):
                 location = location.addr
             self.scheduler.send({'req': 'abandon_zombie', 'auth': self._auth, 'addr': location,
                                  'flag': bool(flag)})
+
+    def close_node(self, location, terminate=False):
+        """Close node at given location, which can be either a Location instance (of any server
+        at that node or of node itself) or IP address. After this call, no more tasks are
+        scheduled at that node.
+
+        If 'terminate' is True, any tasks running at any of the servers at the node are terminated
+        without waiting for them to finish. If it is False, the node will wait until tasks finish
+        before closing.
+        """
+        if self.scheduler:
+            if isinstance(location, pycos.Location):
+                location = location.addr
+            self.scheduler.send({'req': 'close_node', 'auth': self._auth, 'addr': location,
+                                 'terminate': bool(terminate)})
 
     def node_allocate(self, node_allocate):
         """Request scheduler to add 'node_allocate' to any previously sent
@@ -631,7 +671,7 @@ class Computation(object):
         for attr in ['_code', '_xfer_funcs', '_xfer_files', '_auth',  'scheduler', 'status_task',
                      '_node_setup', '_server_setup', '_disable_nodes', '_disable_servers',
                      '_peers_communicate', '_pulse_interval', '_pulse_task', '_ping_interval',
-                     '_zombie_period']:
+                     '_zombie_period', '_abandon_zombie']:
             state[attr] = getattr(self, attr)
         if self._pulse_task.location == self.scheduler.location:
             node_allocations = self._node_allocations
@@ -722,8 +762,7 @@ class Scheduler(object):
             self.lock = pycos.Lock()
             self.cpu_avail = pycos.Event()
             self.cpu_avail.clear()
-            # TODO: make default as False
-            self.abandon_zombie = True
+            self.abandon_zombie = False
 
     class _Server(object):
 
@@ -1160,7 +1199,8 @@ class Scheduler(object):
 
             node.task.send({'req': 'reserve', 'cpus': cpus, 'auth': computation._auth,
                             'status_task': self.__status_task, 'client': task,
-                            'computation_location': computation._pulse_task.location})
+                            'computation_location': computation._pulse_task.location,
+                            'abandon_zombie': computation._abandon_zombie})
             reply = yield task.receive(timeout=MsgTimeout)
             if not isinstance(reply, dict) or reply.get('cpus', 0) <= 0:
                 logger.debug('Reserving %s failed', node.addr)
@@ -1660,13 +1700,37 @@ class Scheduler(object):
             elif req == 'abandon_zombie':
                 addr = msg.get('addr', None)
                 if not addr:
+                    if self._cur_computation:
+                        if self._cur_computation.abandon_zombie == bool(msg.get('flag', False)):
+                            continue
+                        self._cur_computation.abandon_zombie = bool(msg.get('flag', False))
+                        req = {'req': 'abandon_zombie', 'auth': self._cur_computation._auth,
+                               'flag': bool(msg.get('flag', False))}
+                        for node in self._nodes.values():
+                            if node.task:
+                                req['node_auth'] = node.auth
+                                node.task.send(req)
                     continue
-                node = self._nodes.pop(addr, None)
+                node = self._nodes.get(addr, None)
                 if node:
-                    node.abandon_zombie = bool(msg.get('flag'))
+                    node.abandon_zombie = msg.get('flag')
                     if node.task and self._cur_computation:
                         node.task.send({'req': 'abandon_zombie', 'node_auth': node.auth,
                                         'auth': self._cur_computation._auth})
+
+            elif req == 'close_node':
+                addr = msg.get('addr', None)
+                if not addr:
+                    continue
+                node = self._nodes.pop(addr, None)
+                if not node:
+                    continue
+                self._disabled_nodes[node.addr] = node
+                if node.task and self._cur_computation:
+                    req = {'req': 'release', 'node_auth': node.auth,
+                           'auth': self._cur_computation._auth,
+                           'terminate': msg.get('terminate', False)}
+                    node.task.send(req)
 
             elif req == 'node_allocate':
                 node = req.get('node', None)
@@ -1694,6 +1758,39 @@ class Scheduler(object):
                                # if server.status == Scheduler.ServerInitialized
                                ]
                     client.send(servers)
+
+            elif req == 'tasks':
+                servers = []
+                tasks = []
+                where = msg.get('at', None)
+                if where:
+                    if isinstance(where, pycos.Location):
+                        addr = where.addr
+                    else:
+                        addr = where
+                    node = self._nodes.get(addr, None)
+                    if not node:
+                        node = self._disabled_nodes.get(addr, None)
+                    if node:
+                        if isinstance(where, pycos.Location):
+                            server = node.servers.get(where, None)
+                            if not server:
+                                server = node.disabled_servers.get(where, None)
+                            if server:
+                                servers = [server]
+                        else:
+                            servers.extend(node.servers.itervalues())
+                            servers.extend(node.disabled_servers.itervalues())
+
+                else:
+                    for node in self._nodes.values():
+                        servers.extend(node.servers.itervalues())
+                        servers.extend(node.disabled_servers.itervalues())
+
+                for server in servers:
+                    tasks.extend(server.rtasks.keys())
+                if isinstance(client, Task):
+                    client.send(tasks)
 
             elif req == 'schedule':
                 if not isinstance(client, Task):
