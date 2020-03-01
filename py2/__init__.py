@@ -3641,13 +3641,14 @@ class Pycos(object):
                         self._lock.release()
                         continue
                     else:
-                        if type(exc[1].args[0]) == GeneratorExit:
+                        v = exc[1].args
+                        if isinstance(v, tuple) and len(v) > 0 and type(v[0]) == GeneratorExit:
                             try:
                                 task._generator.close()
                             except Exception:
                                 logger.debug('closing %s raised exception: %s',
                                              task.name, traceback.format_exc())
-                            task._exceptions = [(GeneratorExit, exc[1].args[0], None)]
+                            task._exceptions = [(GeneratorExit, v[0], None)]
                         else:
                             task._exceptions.append(exc)
 
