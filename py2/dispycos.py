@@ -1357,7 +1357,7 @@ class Scheduler(object):
 
                     if (now - node_check) > self.__zombie_period:
                         node_check = now
-                        for node in self._nodes.values():
+                        for node in self._nodes.itervalues():
                             if (node.status != Scheduler.NodeInitialized and
                                 node.status != Scheduler.NodeDiscovered and
                                 node.status != Scheduler.NodeSuspended):
@@ -1706,7 +1706,7 @@ class Scheduler(object):
                         self._cur_computation.abandon_zombie = bool(msg.get('flag', False))
                         req = {'req': 'abandon_zombie', 'auth': self._cur_computation._auth,
                                'flag': bool(msg.get('flag', False))}
-                        for node in self._nodes.values():
+                        for node in self._nodes.itervalues():
                             if node.task:
                                 req['node_auth'] = node.auth
                                 node.task.send(req)
@@ -1783,7 +1783,7 @@ class Scheduler(object):
                             servers.extend(node.disabled_servers.itervalues())
 
                 else:
-                    for node in self._nodes.values():
+                    for node in self._nodes.itervalues():
                         servers.extend(node.servers.itervalues())
                         servers.extend(node.disabled_servers.itervalues())
 
