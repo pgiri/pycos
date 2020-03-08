@@ -25,11 +25,12 @@ if len(sys.argv) > 1 and sys.argv[1] == 'sdist':
                 filename = os.path.join(path, filename)
                 sbuf = os.stat(filename)
                 with open(filename, 'r') as fd:
-                    lines = [line.replace('sys.version_info.minor < 7',
-                                          'sys.version_info.minor >= 7')
-                             if line.endswith('sys.version_info.minor < 7, \\\n')
-                             else line.replace('raise StopIteration', 'return')
-                             for line in fd]
+                    lines = [line.replace('raise StopIteration', 'return') for line in fd]
+                    for i in range(len(lines)):
+                        if lines[i].endswith('sys.version_info.minor < 7, \\\n'):
+                            lines[i] = lines[i].replace('sys.version_info.minor < 7',
+                                                        'sys.version_info.minor >= 7')
+                            break
                 with open(filename, 'w') as fd:
                     fd.write(''.join(lines))
                 os.chmod(filename, sbuf.st_mode)
