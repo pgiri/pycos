@@ -1377,8 +1377,8 @@ def _dispycos_node():
             elif req == 'status':
                 if msg.get('status_task') == comp_state.scheduler and msg.get('auth') == node_auth:
                     reply = {'computation_auth': comp_state.auth,
-                           'servers': [server.task for server in node_servers
-                                       if server.id and server.task]}
+                             'servers': [server.task for server in node_servers
+                                         if server.id and server.task]}
                 else:
                     reply = None
                 client = msg.get('client', None)
