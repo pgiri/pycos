@@ -900,8 +900,11 @@ class AsyncPipe(object):
             stdin_task = Task(write_proc, self.stdin, input)
             yield stdin_task.finish()
 
-        raise StopIteration((yield stdout_task.finish()) if self.stdout else None,
-                            (yield stderr_task.finish()) if self.stderr else None)
+        out, err = ((yield stdout_task.finish()) if self.stdout else None,
+                    (yield stderr_task.finish()) if self.stderr else None)
+        # TODO: Is it possible for 'wait' to block even after I/O is finished?
+        self.wait()
+        raise StopIteration((out, err))
 
     def poll(self):
         """Similar to 'poll' of Popen.
