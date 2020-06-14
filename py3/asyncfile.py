@@ -822,31 +822,36 @@ class AsyncPipe(object):
         """Write data in buf to stdin of pipe. See 'write' method of
         AsyncFile for details.
         """
-        yield self.stdin.write(buf, full=full, timeout=timeout)
+        result = yield self.stdin.write(buf, full=full, timeout=timeout)
+        raise StopIteration(result)
 
     def read(self, size=0, timeout=None):
         """Read data from stdout of pipe. See 'read' method of
         AsyncFile for details.
         """
-        yield self.stdout.read(size=size, timeout=timeout)
+        result = yield self.stdout.read(size=size, timeout=timeout)
+        raise StopIteration(result)
 
     def readline(self, size=0, sizehint=100, timeout=None):
         """Read a line from stdout of pipe. See 'readline' method of
         AsyncFile for details.
         """
-        yield self.stdout.readline(size=size, sizehint=sizehint, timeout=timeout)
+        result = yield self.stdout.readline(size=size, sizehint=sizehint, timeout=timeout)
+        raise StopIteration(result)
 
     def read_stderr(self, size=0, timeout=None):
         """Read data from stderr of pipe. See 'read' method of
         AsyncFile for details.
         """
-        yield self.stderr.read(size=size, timeout=timeout)
+        result = yield self.stderr.read(size=size, timeout=timeout)
+        raise StopIteration(result)
 
     def readline_stderr(self, size=0, sizehint=100, timeout=None):
         """Read a line from stderr of pipe. See 'readline' method of
         AsyncFile for details.
         """
-        yield self.stderr.readline(size=size, sizehint=sizehint, timeout=timeout)
+        result = yield self.stderr.readline(size=size, sizehint=sizehint, timeout=timeout)
+        raise StopIteration(result)
 
     def communicate(self, input=None):
         """Similar to Popen's communicate. Must be used with 'yield' as

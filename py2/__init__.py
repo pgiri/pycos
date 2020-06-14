@@ -58,7 +58,7 @@ __maintainer__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __license__ = "Apache 2.0"
 __url__ = "https://pycos.sourceforge.io"
 __status__ = "Production"
-__version__ = "4.8.15"
+__version__ = "4.9.0"
 
 __all__ = ['Task', 'Pycos', 'Lock', 'RLock', 'Event', 'Condition', 'Semaphore',
            'AsyncSocket', 'HotSwapException', 'MonitorException', 'Location', 'Channel',
@@ -847,7 +847,7 @@ class _AsyncSocket(object):
         Messages are tagged with length of the data, so on the receiving side,
         recv_msg knows how much data to receive.
         """
-        yield self.sendall(struct.pack('>L', len(data)) + data)
+        raise StopIteration(yield self.sendall(struct.pack('>L', len(data)) + data))
 
     def _sync_send_msg(self, data):
         """Internal use only; use 'send_msg' instead.
@@ -2451,7 +2451,7 @@ class Task(object):
         """
         if not Task._pycos:
             Pycos.instance()
-        yield Task._locate('!' + name, location=location, timeout=timeout)
+        raise StopIteration(yield Task._locate('!' + name, location=location, timeout=timeout))
 
     @staticmethod
     def _locate(name, location, timeout):

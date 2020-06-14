@@ -324,7 +324,7 @@ class Computation(object):
                 yield self.close()
                 raise StopIteration(-1)
 
-        yield Task(_schedule, self).finish()
+        raise StopIteration(yield Task(_schedule, self).finish())
 
     def nodes(self):
         """Get list of addresses of nodes initialized for this computation. Must
@@ -338,7 +338,7 @@ class Computation(object):
             else:
                 raise StopIteration([])
 
-        yield Task(_nodes, self).finish()
+        raise StopIteration(yield Task(_nodes, self).finish())
 
     def servers(self):
         """Get list of Location instances of servers initialized for this
@@ -352,7 +352,7 @@ class Computation(object):
             else:
                 raise StopIteration([])
 
-        yield Task(_servers, self).finish()
+        raise StopIteration(yield Task(_servers, self).finish())
 
     def tasks(self, where):
         """Get list of tasks at given node or server for this computation.
@@ -367,7 +367,7 @@ class Computation(object):
             else:
                 raise StopIteration([])
 
-        yield Task(_tasks, self).finish()
+        raise StopIteration(yield Task(_tasks, self).finish())
 
     def close(self, await_async=False, timeout=None):
         """Close computation. Must be used with 'yield' as 'yield
@@ -412,13 +412,13 @@ class Computation(object):
         'gen' must be generator function, as it is used to run task at
         remote location.
         """
-        yield self._run_request('run_async', where, 1, gen, *args, **kwargs)
+        raise StopIteration(yield self._run_request('run_async', where, 1, gen, *args, **kwargs))
 
     def run(self, gen, *args, **kwargs):
         """Run CPU bound task at any remote server; see 'run_at'
         above.
         """
-        yield self._run_request('run_async', None, 1, gen, *args, **kwargs)
+        raise StopIteration(yield self._run_request('run_async', None, 1, gen, *args, **kwargs))
 
     def run_result_at(self, where, gen, *args, **kwargs):
         """Must be used with 'yield' as
@@ -432,13 +432,13 @@ class Computation(object):
 
         'where', 'gen', 'args', 'kwargs' are as explained in 'run_at'.
         """
-        yield self._run_request('run_result', where, 1, gen, *args, **kwargs)
+        raise StopIteration(yield self._run_request('run_result', where, 1, gen, *args, **kwargs))
 
     def run_result(self, gen, *args, **kwargs):
         """Run CPU bound task at any remote server and return result of
         that task; see 'run_result_at' above.
         """
-        yield self._run_request('run_result', None, 1, gen, *args, **kwargs)
+        raise StopIteration(yield self._run_request('run_result', None, 1, gen, *args, **kwargs))
 
     def run_async_at(self, where, gen, *args, **kwargs):
         """Must be used with 'yield' as
@@ -461,13 +461,13 @@ class Computation(object):
         'gen' must be generator function, as it is used to run task at
         remote location.
         """
-        yield self._run_request('run_async', where, 0, gen, *args, **kwargs)
+        raise StopIteration(yield self._run_request('run_async', where, 0, gen, *args, **kwargs))
 
     def run_async(self, gen, *args, **kwargs):
         """Run I/O bound task at any server; see 'run_async_at'
         above.
         """
-        yield self._run_request('run_async', None, 0, gen, *args, **kwargs)
+        raise StopIteration(yield self._run_request('run_async', None, 0, gen, *args, **kwargs))
 
     def run_results(self, gen, iter):
         """Must be used with 'yield', as for example,
@@ -630,7 +630,7 @@ class Computation(object):
                 reply = None
             raise StopIteration(reply)
 
-        yield Task(_run_req).finish()
+        raise StopIteration(yield Task(_run_req).finish())
 
     def _pulse_proc(self, task=None):
         """For internal use only.
