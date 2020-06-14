@@ -3778,18 +3778,12 @@ class Pycos(object, metaclass=Singleton):
                                                    task._name, task._id)
                                     task._monitors.discard(monitor)
 
-                        if (not task._exceptions or not task._monitors or
-                            (task._exceptions and task._exceptions[-1][0] == GeneratorExit)):
-                            task._msgs.clear()
-                            task._monitors.clear()
-                            task._exceptions = []
-                            if task._daemon is True:
-                                self._daemons -= 1
-                            self._tasks.pop(task._id, None)
-                        elif task._monitors:
-                            # a (local) monitor can restart it with hot_swap
-                            task._hot_swappable = True
-                            task._exceptions = []
+                        task._msgs.clear()
+                        task._monitors.clear()
+                        task._exceptions = []
+                        if task._daemon is True:
+                            self._daemons -= 1
+                        self._tasks.pop(task._id, None)
                         task._generator = None
                         if task._complete:
                             task._complete.set()
