@@ -1557,7 +1557,7 @@ class SysTask(pycos.Task):
     def locate(name, location=None, timeout=None):
         if not SysTask._pycos:
             Pycos.instance()
-        raise StopIteration(yield Task._locate('~' + name, location, timeout))
+        raise StopIteration((yield Task._locate('~' + name, location, timeout)))
 
 
 class _NetRequest(object):
