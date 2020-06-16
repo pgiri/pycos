@@ -2,9 +2,11 @@
 
 # server program for client sending requests to execute tasks
 
-# run this program and then client either on same node or different node on local network.
+# run this program and then 'rti_node_client.py' either on same node or different node on local
+# network.
 
 import sys
+import os
 import subprocess
 import hashlib
 
@@ -14,12 +16,14 @@ import pycos.netpycos
 
 
 def node_update_rti(client, script, n, task=None):
-    client_auth = yield task.recv()
+    rand = os.urandom(20)
+    client.send(rand)
+    resp = yield task.recv(timeout=5)
+    if not resp:
+        raise StopIteration(None)
     check_auth = auth.copy()
-    check_auth.update(repr(client).encode())
-    if check_auth.hexdigest() != client_auth:
-        # it is simpler to send appropriate error to client; instead, for illustration, client's
-        # monitor is used indicate failure
+    check_auth.update(rand)
+    if resp != check_auth.hexdigest():
         raise StopIteration('Invalid authentication')
 
     print('RTI %s running %s for client: %s' % (task, script, client))

@@ -51,10 +51,13 @@ def client_proc(script, task=None):
     # used here to illustrate potential use cases
     monitor = pycos.Task(monitor_proc, task)
     yield rti.monitor(monitor)
-    rtask = yield rti(task, script, random.uniform(2 ,5))
-    # add location in same format as this task is sent to server
-    auth.update(('%s@%s' % (task, task.location)).encode())
-    rtask.send(auth.hexdigest())
+    server = yield rti(task, script, random.uniform(2 ,5))
+    req = yield task.recv(timeout=10)
+    if not req:
+        monitor.terminate()
+        raise StopIteration
+    auth.update(req)
+    server.send(auth.hexdigest())
 
     outerr = yield task.recv()
     if outerr[0]:
