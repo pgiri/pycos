@@ -3614,10 +3614,12 @@ class Pycos(object):
                     if exc[0] == StopIteration:
                         v = exc[1].args
                         # assert isinstance(v, tuple)
-                        if v:
+                        if len(v) == 1:
                             task._value = v[0]
-                        else:
+                        elif len(v) == 0:
                             task._value = None
+                        else:  # len(v) > 1
+                            task._value = v
                         task._exceptions = []
                     elif exc[0] == HotSwapException:
                         v = exc[1].args
