@@ -212,6 +212,7 @@ def _dispycos_server_proc():
                     _dispycos_var = (sys.exc_info()[0], _dispycos_job.name, traceback.format_exc())
                 else:
                     _dispycos_job_tasks.add(_dispycos_var)
+                    _dispycos_jobs_done.clear()
                     logger.debug('task %s created at %s', _dispycos_var, _dispycos_task.location)
                     _dispycos_var.notify(_dispycos_monitor_task)
                     _dispycos_var.notify(_dispycos_scheduler_task)
@@ -339,10 +340,10 @@ def _dispycos_server_process(_dispycos_config, _dispycos_mp_queue, _dispycos_com
         try:
             _dispycos_scheduler = pycos.Pycos(**config)
         except Exception:
-            print('dispycos server %s failed for port %s; retrying in 5 seconds' %
+            print('dispycos server %s failed for port %s; retrying in 2 seconds' %
                   (server_id, config['tcp_port']))
             # print(traceback.format_exc())
-            time.sleep(5)
+            time.sleep(2)
         else:
             break
 
@@ -416,7 +417,7 @@ def _dispycos_spawn(_dispycos_config, _dispycos_id_ports, _dispycos_mp_queue,
     else:
         pycos.logger.setLevel(pycos.logger.INFO)
 
-    procs = []
+    id_procs = []
     os.chdir(_dispycos_config['dest_path'])
     sys.path.insert(0, _dispycos_config['dest_path'])
     os.environ['PATH'] = _dispycos_config['dest_path'] + os.pathsep + os.environ['PATH']
@@ -430,9 +431,9 @@ def _dispycos_spawn(_dispycos_config, _dispycos_id_ports, _dispycos_mp_queue,
             os.setregid(sgid, sgid)
             os.setreuid(suid, suid)
 
-    def close(status):
-        for i in range(len(procs)):
-            proc = procs[i]
+    def close_procs(child_procs):
+        for i in range(len(child_procs)):
+            proc = child_procs[i][1]
             if not proc:
                 continue
             if not proc.is_alive():
@@ -446,8 +447,8 @@ def _dispycos_spawn(_dispycos_config, _dispycos_id_ports, _dispycos_mp_queue,
                 # print(traceback.format_exc())
                 pass
 
-        for i in range(len(procs)):
-            proc = procs[i]
+        for i in range(len(child_procs)):
+            proc = child_procs[i][1]
             if proc and proc.is_alive():
                 for j in range(20):
                     proc.join(0.1)
@@ -477,9 +478,6 @@ def _dispycos_spawn(_dispycos_config, _dispycos_id_ports, _dispycos_mp_queue,
                                         'auth': _dispycos_config['computation_auth'],
                                         'server_id': _dispycos_id_ports[i][0], 'location': None})
 
-        _dispycos_pipe.send({'msg': 'closed', 'auth': _dispycos_config['computation_auth']})
-        exit(status)
-
     if os.name != 'nt':
         if _dispycos_computation._code:
             exec(_dispycos_computation._code) in globals()
@@ -495,13 +493,16 @@ def _dispycos_spawn(_dispycos_config, _dispycos_id_ports, _dispycos_mp_queue,
                 # print(traceback.format_exc())
                 ret = -1
             if ret != 0:
-                close(ret)
+                close_procs(id_procs)
+                _dispycos_pipe.send({'msg': 'closed', 'auth': _dispycos_config['computation_auth']})
+                exit(ret)
             _dispycos_computation._node_setup = None
 
     def sighandler(signum, frame):
         # pycos.logger.debug('Spawn process received signal %s', signum)
-        # _dispycos_pipe.send({'msg': 'closed', 'auth': _dispycos_config['computation_auth']})
-        close(0)
+        close_procs(id_procs)
+        _dispycos_pipe.send({'msg': 'closed', 'auth': _dispycos_config['computation_auth']})
+        exit(signum)
 
     signal.signal(signal.SIGINT, sighandler)
     if os.name == 'nt':
@@ -509,7 +510,7 @@ def _dispycos_spawn(_dispycos_config, _dispycos_id_ports, _dispycos_mp_queue,
 
     del sighandler
 
-    for id_port in _dispycos_id_ports:
+    def start_proc(id_port):
         server_config = dict(_dispycos_config)
         server_config['id'] = id_port[0]
         server_config['name'] = '%s_server-%s' % (_dispycos_config['name'], server_config['id'])
@@ -523,26 +524,46 @@ def _dispycos_spawn(_dispycos_config, _dispycos_id_ports, _dispycos_mp_queue,
         if isinstance(proc, multiprocessing.Process):
             proc.start()
             pycos.logger.debug('dispycos server %s started with PID %s', id_port[0], proc.pid)
-            procs.append(proc)
+            id_procs.append((id_port[0], proc))
         else:
             pycos.logger.warning('Could not start dispycos server for %s at %s',
                                  id_port[0], id_port[1])
 
+    for id_port in _dispycos_id_ports:
+        start_proc(id_port)
+
     _dispycos_pipe.send({'msg': 'started', 'auth': _dispycos_config['computation_auth'],
-                         'cpus': len(procs)})
+                         'cpus': len(id_procs)})
 
     while 1:
         try:
             req = _dispycos_pipe.recv()
         except Exception:
             break
-        if (isinstance(req, dict) and req.get('msg') == 'quit' and
-            req.get('auth') == _dispycos_config.get('computation_auth')):
-            break
-        else:
+        if ((not isinstance(req, dict)) or
+            (req.get('auth') != _dispycos_config.get('computation_auth'))):
             pycos.logger.warning('Ignoring invalid pipe cmd: %s' % str(req))
+            continue
 
-    close(0)
+        if req.get('msg') == 'quit':
+            break
+
+        elif req.get('msg') == 'restart_server':
+            id_port = (req.get('id'), req.get('port'))
+            if id_port[0] and id_port[1]:
+                try:
+                    close_procs([id_proc for id_proc in id_procs if id_proc[0] == id_port[0]])
+                    start_proc(id_port)
+                except Exception:
+                    pycos.logger.warning('Could not restart server %s', id_port[0])
+                    pycos.logger.warning(traceback.format_exc())
+
+        else:
+            pycos.logger.warning('spawn: ignoring invalid request')
+
+    close_procs(id_procs)
+    _dispycos_pipe.send({'msg': 'closed', 'auth': _dispycos_config['computation_auth']})
+    exit(0)
 
 
 def _dispycos_node():
@@ -853,7 +874,8 @@ def _dispycos_node():
         _dispycos_var = os.path.join(dispycos_dest_path, '..', 'server-%d.pkl' % _dispycos_id)
         node_servers[_dispycos_id] = Struct(id=_dispycos_id, psproc=None, task=None, msg_oid=0,
                                             name='%s_server-%s' % (node_name, _dispycos_id),
-                                            port=node_ports[_dispycos_id], pid_file=_dispycos_var)
+                                            port=node_ports[_dispycos_id], restart=False,
+                                            pid_file=_dispycos_var)
     node_servers[0].name = None
 
     if _dispycos_config['clean']:
@@ -1036,9 +1058,17 @@ def _dispycos_node():
                         os.remove(server.pid_file)
                     except Exception:
                         pass
-                comp_state.cpus_reserved -= 1
-                if comp_state.cpus_reserved == 0:
-                    pycos.Task(close_computation)
+
+                if server.restart:
+                    parent_pipe.send({'msg': 'restart_server', 'auth': comp_state.auth,
+                                      'id': server.id, 'port': server.port})
+                    # TODO: not reset 'restart'?
+                    server.restart = False
+                    raise StopIteration(0)
+
+                # comp_state.cpus_reserved -= 1
+                # if comp_state.cpus_reserved == 0:
+                #     pycos.Task(close_computation)
 
         def mp_queue_server():
             while 1:
@@ -1053,6 +1083,7 @@ def _dispycos_node():
                 raise StopIteration
             cur_auth = comp_state.auth
             for server in node_servers:
+                server.restart = False
                 if server.task:
                     server.task.send({'req': req, 'node_auth': node_auth})
             if (req == 'close' or req == 'quit') and any(server.task for server in node_servers):
@@ -1390,6 +1421,44 @@ def _dispycos_node():
                 client = msg.get('client', None)
                 if isinstance(client, pycos.Task):
                     client.send(reply)
+
+            elif req == 'close_server':
+                auth = msg.get('auth', None)
+                loc = msg.get('addr', None)
+                if (loc and comp_state.auth and auth == comp_state.auth and
+                    msg.get('node_auth', '') == node_auth):
+                    for server in node_servers:
+                        if server.task and server.task.location == loc:
+                            if msg.get('terminate', False):
+                                req = 'terminate'
+                            else:
+                                req = 'quit'
+                            server.task.send({'req': req, 'node_auth': node_auth})
+
+            elif req == 'restart_server':
+                auth = msg.get('auth', None)
+                loc = msg.get('addr', None)
+                if (loc and comp_state.auth and auth == comp_state.auth and
+                    msg.get('node_auth', '') == node_auth):
+                    for server in node_servers:
+                        if server.task and server.task.location == loc:
+                            break
+                        # TODO: make sure this server is reserved?
+                        if server.port == loc.port:
+                            break
+                    else:
+                        server = None
+                    if server:
+                        if server.task:
+                            server.restart = True
+                            if msg.get('terminate', False):
+                                req = 'terminate'
+                            else:
+                                req = 'quit'
+                            server.task.send({'req': req, 'node_auth': node_auth})
+                        else:
+                            parent_pipe.send({'msg': 'restart_server', 'auth': comp_state.auth,
+                                              'id': server.id, 'port': server.port})
 
             elif req == 'abandon_zombie':
                 auth = msg.get('auth', None)

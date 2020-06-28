@@ -540,23 +540,22 @@ class Computation(object):
         if self.scheduler:
             self.scheduler.send({'req': 'enable_server', 'auth': self._auth, 'server': location})
 
-    def abandon_zombie(self, location, flag):
-        """If a node at given location is deemed zombie (i.e., no response in 'zombie_period'),
-        then abandon any jobs running on servers on that node. If a node is detected later,
-        it will be treated as new (instance of) node.
+    def close_server(self, location, terminate=False):
+        """Close server at given location. After this call, no more tasks are scheduled
+        at that server.
 
-        'location' can be either Location instance of any server at the node or of the node
-        itself, IP address of node or None. If 'location' is None, then all nodes currently used
-        by computation and any nodes added for computation will be abandoned (when they become
-        zombies) as well.
+        If 'terminate' is True, any tasks running at that server are terminated without waiting
+        for them to finish. If it is False, the server will wait until tasks finish before closing.
+        """
+        if self.scheduler and isinstance(location, pycos.Location):
+            self.scheduler.send({'req': 'close_server', 'auth': self._auth, 'addr': location,
+                                 'terminate': bool(terminate)})
 
-        'flag' must be either True or False indicating whether nodes would be abandoned or not.
+    def restart_server(self, location):
+        """Restart server at given location. If 'terminate' is True, kill any running tasks.
         """
         if self.scheduler:
-            if isinstance(location, pycos.Location):
-                location = location.addr
-            self.scheduler.send({'req': 'abandon_zombie', 'auth': self._auth, 'addr': location,
-                                 'flag': bool(flag)})
+            self.scheduler.send({'req': 'restart_server', 'auth': self._auth, 'addr': location})
 
     def close_node(self, location, terminate=False):
         """Close node at given location, which can be either a Location instance (of any server
@@ -587,6 +586,24 @@ class Computation(object):
             node_allocate.__class__ = DispycosNodeAllocate
         return self.scheduler.send({'req': 'node_allocate', 'auth': self._auth,
                                     'node': node_allocate})
+
+    def abandon_zombie(self, location, flag):
+        """If a node at given location is deemed zombie (i.e., no response in 'zombie_period'),
+        then abandon any jobs running on servers on that node. If a node is detected later,
+        it will be treated as new (instance of) node.
+
+        'location' can be either Location instance of any server at the node or of the node
+        itself, IP address of node or None. If 'location' is None, then all nodes currently used
+        by computation and any nodes added for computation will be abandoned (when they become
+        zombies) as well.
+
+        'flag' must be either True or False indicating whether nodes would be abandoned or not.
+        """
+        if self.scheduler:
+            if isinstance(location, pycos.Location):
+                location = location.addr
+            self.scheduler.send({'req': 'abandon_zombie', 'auth': self._auth, 'addr': location,
+                                 'flag': bool(flag)})
 
     def _run_request(self, request, where, cpu, gen, *args, **kwargs):
         """Internal use only.
@@ -775,6 +792,7 @@ class Scheduler(object):
             self.cpu_avail = pycos.Event()
             self.cpu_avail.clear()
             self.scheduler = scheduler
+            self.name = None
 
         def run(self, job, computation, node):
             def _run(self, task=None):
@@ -942,8 +960,7 @@ class Scheduler(object):
                     if node:
                         server = node.servers.pop(msg.location, None)
                         if server:
-                            if node.servers:
-                                node.disabled_servers[msg.location] = server
+                            node.disabled_servers[msg.location] = server
                         else:
                             server = node.disabled_servers.get(msg.location, None)
 
@@ -952,8 +969,8 @@ class Scheduler(object):
                             SysTask(self.__close_server, server, node)
                         elif node.task and node.task.location == msg.location:
                             # TODO: inform scheduler / client
-                            if not self._nodes.pop(node.addr, None):
-                                self._disabled_nodes.get(node.addr, None)
+                            if self._nodes.pop(node.addr, None):
+                                self._disabled_nodes[node.addr] = node
                             node.status = Scheduler.NodeDisconnected
                             SysTask(self.__close_node, node)
 
@@ -1039,12 +1056,15 @@ class Scheduler(object):
                         continue
                     server = node.disabled_servers.pop(rtask.location, None)
                     if server:
-                        if (server.status != Scheduler.ServerDiscovered and
-                            server.status != Scheduler.ServerSuspended):
-                            continue
+                        # if (server.status != Scheduler.ServerDiscovered and
+                        #     server.status != Scheduler.ServerSuspended):
+                        #     continue
+                        server.status = Scheduler.ServerInitialized
+                        server.task = rtask
                     else:
                         server = Scheduler._Server(rtask, self)
 
+                    server.name = msg.get('name')
                     node.last_pulse = now
                     server.status = Scheduler.ServerInitialized
                     if node.status == Scheduler.NodeInitialized:
@@ -1097,7 +1117,6 @@ class Scheduler(object):
                     server.status = Scheduler.ServerClosed
                     node.disabled_servers[location] = server
                     if not node.servers:
-                        node.status = Scheduler.NodeClosed
                         self._nodes.pop(node.addr, None)
                         self._disabled_nodes[location.addr] = node
                         self._cpu_nodes.discard(node)
@@ -1118,7 +1137,9 @@ class Scheduler(object):
                     if not isinstance(location, pycos.Location):
                         continue
                     node = self._nodes.pop(location.addr, None)
-                    if not node:
+                    if node:
+                        self._disabled_nodes[location.addr] = node
+                    else:
                         node = self._disabled_nodes.get(location.addr, None)
                         if not node:
                             continue
@@ -1697,26 +1718,56 @@ class Scheduler(object):
                     info = DispycosStatus(node.status, info)
                     self._cur_computation.status_task.send(info)
 
-            elif req == 'abandon_zombie':
+            elif req == 'close_server':
                 addr = msg.get('addr', None)
-                if not addr:
-                    if self._cur_computation:
-                        if self._cur_computation.abandon_zombie == bool(msg.get('flag', False)):
-                            continue
-                        self._cur_computation.abandon_zombie = bool(msg.get('flag', False))
-                        req = {'req': 'abandon_zombie', 'auth': self._cur_computation._auth,
-                               'flag': bool(msg.get('flag', False))}
-                        for node in self._nodes.itervalues():
-                            if node.task:
-                                req['node_auth'] = node.auth
-                                node.task.send(req)
+                if not isinstance(addr, pycos.Location):
                     continue
-                node = self._nodes.get(addr, None)
-                if node:
-                    node.abandon_zombie = msg.get('flag')
-                    if node.task and self._cur_computation:
-                        node.task.send({'req': 'abandon_zombie', 'node_auth': node.auth,
-                                        'auth': self._cur_computation._auth})
+                node = self._nodes.get(addr.addr, None)
+                if not node:
+                    node = self._disabled_nodes.get(addr.addr, None)
+                    if not node:
+                        continue
+                server = node.servers.pop(addr, None)
+                if not server:
+                    server = node.disabled_servers.get(addr, None)
+                    if not server:
+                        continue
+                if server.status not in (Scheduler.ServerDiscovered, Scheduler.ServerInitialized,
+                                         Scheduler.ServerSuspended):
+                    continue
+                node.disabled_servers[addr] = server
+                # server.status = Scheduler.ServerClosed
+                server.cpu_avail.clear()
+                if not node.servers:
+                    node.cpu_avail.clear()
+                    self._cpu_nodes.discard(node)
+                    if not self._cpu_nodes:
+                        self._cpus_avail.clear()
+                    self._disabled_nodes[node.addr] = node
+                if node.task and self._cur_computation:
+                    req = {'req': 'close_server', 'addr': addr, 'node_auth': node.auth,
+                           'auth': self._cur_computation._auth,
+                           'terminate': msg.get('terminate', False)}
+                    node.task.send(req)
+
+            elif req == 'restart_server':
+                addr = msg.get('addr', None)
+                if not isinstance(addr, pycos.Location):
+                    continue
+                node = self._nodes.get(addr.addr, None)
+                if not node:
+                    node = self._disabled_nodes.get(addr.addr, None)
+                    if not node:
+                        continue
+                server = node.servers.get(addr, None)
+                if not server:
+                    server = node.disabled_servers.get(addr, None)
+                    if not server:
+                        continue
+                if node.task and self._cur_computation:
+                    req = {'req': 'restart_server', 'node_auth': node.auth, 'addr': addr,
+                           'auth': self._cur_computation._auth}
+                    node.task.send(req)
 
             elif req == 'close_node':
                 addr = msg.get('addr', None)
@@ -1859,6 +1910,27 @@ class Scheduler(object):
                 SysTask(self.__close_computation, client=client,
                         await_async=msg.get('await_async', False))
 
+            elif req == 'abandon_zombie':
+                addr = msg.get('addr', None)
+                if not addr:
+                    if self._cur_computation:
+                        if self._cur_computation.abandon_zombie == bool(msg.get('flag', False)):
+                            continue
+                        self._cur_computation.abandon_zombie = bool(msg.get('flag', False))
+                        req = {'req': 'abandon_zombie', 'auth': self._cur_computation._auth,
+                               'flag': bool(msg.get('flag', False))}
+                        for node in self._nodes.itervalues():
+                            if node.task:
+                                req['node_auth'] = node.auth
+                                node.task.send(req)
+                    continue
+                node = self._nodes.get(addr, None)
+                if node:
+                    node.abandon_zombie = msg.get('flag')
+                    if node.task and self._cur_computation:
+                        node.task.send({'req': 'abandon_zombie', 'node_auth': node.auth,
+                                        'auth': self._cur_computation._auth})
+
             else:
                 logger.warning('Ignoring invalid client request "%s"', req)
 
@@ -1890,11 +1962,12 @@ class Scheduler(object):
             yield close_task.finish()
         if (computation and computation.status_task):
             computation.status_task.send(DispycosStatus(node.status, status_info))
-        if ((node.status == Scheduler.NodeDisconnected) or
-            (node.status == Scheduler.NodeAbandoned and node.abandon_zombie)):
-            self._disabled_nodes.pop(node.addr, None)
-            # TODO: it is not safe to throw away peer if node is still running
-            Task(pycos.Pycos.instance().close_peer, node.task.location, timeout=2)
+
+        # if ((node.status == Scheduler.NodeDisconnected) or
+        #     (node.status == Scheduler.NodeAbandoned and node.abandon_zombie)):
+        #     # self._disabled_nodes.pop(node.addr, None)
+        #     # TODO: it is not safe to throw away peer if node is still running
+        #     Task(pycos.Pycos.instance().close_peer, node.task.location, timeout=2)
         if node.task and node.status not in [Scheduler.NodeAbandoned, Scheduler.NodeDisconnected]:
             node.task.send({'req': 'release', 'auth': computation._auth, 'node_auth': node.auth})
 
@@ -1957,11 +2030,11 @@ class Scheduler(object):
             server_task, server.task = server.task, None
             if not server_task:
                 raise StopIteration(0)
-            node.disabled_servers.pop(server_task.location, None)
-            if ((server.status == Scheduler.ServerDisconnected) or
-                (server.status == Scheduler.ServerAbandoned and node.abandon_zombie)):
-                # TODO: it is not safe to throw away peer if server is still running
-                Task(pycos.Pycos.instance().close_peer, server_task.location, timeout=2)
+            # if ((server.status == Scheduler.ServerDisconnected) or
+            #     (server.status == Scheduler.ServerAbandoned and node.abandon_zombie)):
+            #     # TODO: it is not safe to throw away peer if server is still running
+            #     # node.disabled_servers.pop(server_task.location, None)
+            #     Task(pycos.Pycos.instance().close_peer, server_task.location, timeout=2)
             server.xfer_files = []
             server.askew_results.clear()
             if status_task:
@@ -2003,6 +2076,11 @@ class Scheduler(object):
             self._cur_computation.status_task.send(DispycosStatus(Scheduler.ComputationClosed,
                                                                   id(self._cur_computation)))
         self.__cur_client_auth = self._cur_computation = None
+        close_peer = pycos.Pycos.instance().close_peer
+        close_tasks = [Task(close_peer, loc, timeout=2) for node in self._nodes.itervalues()
+                       for loc in node.servers.iterkeys()]
+        for close_task in close_tasks:
+            yield close_task.finish()
         self.__computation_sched_event.set()
         if client:
             client.send('closed')
