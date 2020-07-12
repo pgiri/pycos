@@ -141,7 +141,8 @@ class Computation(object):
     def __init__(self, components, nodes=[], status_task=None, node_setup=None, server_setup=None,
                  disable_nodes=False, disable_servers=False, peers_communicate=False,
                  pulse_interval=(5*MinPulseInterval), node_allocations=[],
-                 ping_interval=None, zombie_period=None, abandon_zombie_nodes=False):
+                 ping_interval=None, restart_servers=False,
+                 zombie_period=None, abandon_zombie_nodes=False):
         """'components' should be a list, each element of which is either a
         module, a (generator or normal) function, path name of a file, a class
         or an object (in which case the code for its class is sent).
@@ -214,6 +215,7 @@ class Computation(object):
         self._peers_communicate = bool(peers_communicate)
         self._disable_nodes = bool(disable_nodes)
         self._disable_servers = bool(disable_servers)
+        self._restart_servers = bool(restart_servers)
         self._abandon_zombie = bool(abandon_zombie_nodes)
 
         depends = set()
@@ -714,7 +716,7 @@ class Computation(object):
         for attr in ['_code', '_xfer_funcs', '_xfer_files', '_auth',  'scheduler', 'status_task',
                      '_node_setup', '_server_setup', '_disable_nodes', '_disable_servers',
                      '_peers_communicate', '_pulse_interval', '_pulse_task', '_ping_interval',
-                     '_zombie_period', '_abandon_zombie']:
+                     '_restart_servers', '_zombie_period', '_abandon_zombie']:
             state[attr] = getattr(self, attr)
         if self._pulse_task.location == self.scheduler.location:
             node_allocations = self._node_allocations
@@ -934,11 +936,14 @@ class Scheduler(object, metaclass=pycos.Singleton):
                         SysTask(self.__reclaim_node, node)
 
                 server = node.servers.get(rtask.location, None)
-                if not server:
+                if server:
+                    cpu = True
+                else:
                     server = node.disabled_servers.get(rtask.location, None)
                     if not server:
                         logger.warning('server "%s" is invalid', rtask.location)
                         continue
+                    cpu = False
                 node.last_pulse = now
                 info = server.rtasks.pop(rtask, None)
                 if not info:
@@ -951,10 +956,10 @@ class Scheduler(object, metaclass=pycos.Singleton):
                     continue
                 # assert isinstance(info[1], _DispycosJob_)
                 job = info[1]
-                if job.cpu:
-                    server.cpu_avail.set()
+                if cpu and job.cpu:
                     if (server.status == Scheduler.ServerInitialized and
                         node.status == Scheduler.NodeInitialized):
+                        server.cpu_avail.set()
                         node.cpu_avail.set()
                         self._cpu_nodes.add(node)
                         self._cpus_avail.set()
@@ -987,7 +992,6 @@ class Scheduler(object, metaclass=pycos.Singleton):
                             server = node.disabled_servers.get(msg.location, None)
 
                         if server:
-                            server.done.set()
                             server.status = Scheduler.ServerDisconnected
                             SysTask(self.__close_server, server, node)
                         elif node.task and node.task.location == msg.location:
@@ -1112,14 +1116,13 @@ class Scheduler(object, metaclass=pycos.Singleton):
                         logger.warning('Ignoring status %s from server %s', status, rtask.location)
                         continue
                     server = node.servers.pop(location, None)
-                    if not server:
+                    if server:
+                        node.disabled_servers[location] = server
+                    else:
                         server = node.disabled_servers.get(location, None)
                         if not server:
                             continue
-                    if status == Scheduler.ServerDisconnected:
-                        server.done.set()
                     server.status = status
-                    node.disabled_servers[location] = server
                     SysTask(self.__close_server, server, node)
 
                 elif status == Scheduler.NodeClosed:
@@ -1917,8 +1920,6 @@ class Scheduler(object, metaclass=pycos.Singleton):
         node.disabled_servers.update(node.servers)
         node.servers.clear()
         computation = self._cur_computation
-        status_info = DispycosNodeInfo(node.name, node.addr, node.cpus, node.platform,
-                                       node.avail_info)
         if node.status == Scheduler.NodeAbandoned:
             # TODO: safe to assume servers are disconnected as well?
             for server in node.disabled_servers.values():
@@ -1931,6 +1932,8 @@ class Scheduler(object, metaclass=pycos.Singleton):
         for close_task in close_tasks:
             yield close_task.finish()
         if (computation and computation.status_task):
+            status_info = DispycosNodeInfo(node.name, node.addr, node.cpus, node.platform,
+                                           node.avail_info)
             computation.status_task.send(DispycosStatus(node.status, status_info))
 
         # if ((node.status == Scheduler.NodeDisconnected) or
@@ -1942,37 +1945,32 @@ class Scheduler(object, metaclass=pycos.Singleton):
             node.task.send({'req': 'release', 'auth': node.auth})
 
     def __close_server(self, server, node, await_async=False, terminate=False, task=None):
-        if not server.task:
-            raise StopIteration(-1)
+        if (server.status == Scheduler.ServerDisconnected or
+            server.status == Scheduler.ServerAbandoned):
+            server.done.set()
+            if not server.cpu_avail.is_set():
+                server.cpu_avail.set()
+                node.cpus_used -= 1
+                if node.cpus_used == len(node.servers):
+                    self._cpu_nodes.discard(node)
+                    if not self._cpu_nodes:
+                        self._cpus_avail.clear()
+                    node.cpu_avail.clear()
+                if node.servers:
+                    node.load = float(node.cpus_used) / len(node.servers)
+                else:
+                    node.load = 0.0
+
         server_task, server.task = server.task, None
+        if not server_task:
+            raise StopIteration(0)
         computation = self._cur_computation
-        if node.servers.get(server_task.location, None) == server:
-            node.servers.pop(server_task.location)
-            node.disabled_servers[server_task.location] = server
-        elif node.disabled_servers.get(server_task.location, None) == server:
-            pass
-        else:
-            raise StopIteration(-1)
-
-        if not server.cpu_avail.is_set():
-            server.cpu_avail.set()
-            node.cpus_used -= 1
-            if node.cpus_used == len(node.servers):
-                self._cpu_nodes.discard(node)
-                if not self._cpu_nodes:
-                    self._cpus_avail.clear()
-                node.cpu_avail.clear()
-            if node.servers:
-                node.load = float(node.cpus_used) / len(node.servers)
-            else:
-                node.load = 0.0
-
         if server.status in (Scheduler.ServerInitialized, Scheduler.ServerSuspended,
                              Scheduler.ServerDiscovered):
             server_task.send({'req': 'terminate' if terminate else 'close', 'auth': node.auth})
             server.status = Scheduler.ServerClosed
             if server.rtasks:
-                if not server.cpu_avail.is_set():
+                if (not server.cpu_avail.is_set()):
                     logger.debug('Waiting for remote tasks at %s to finish', server_task.location)
                     yield server.cpu_avail.wait(timeout=MsgTimeout if terminate else None)
             if await_async:
