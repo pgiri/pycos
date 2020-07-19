@@ -198,9 +198,9 @@ class Computation(object):
         if nodes:
             self._node_allocations = [node if isinstance(node, DispycosNodeAllocate)
                                       else DispycosNodeAllocate(node) for node in nodes]
-            self._node_allocations.append(DispycosNodeAllocate('*', cpus=0))
         else:
-            self._node_allocations = [DispycosNodeAllocate('*')]
+            self._node_allocations = []
+        self._node_allocations.append(DispycosNodeAllocate('*'))
         self.status_task = status_task
         if node_setup:
             components.append(node_setup)
@@ -585,7 +585,7 @@ class Computation(object):
             self.scheduler.send({'req': 'close_node', 'auth': self._auth, 'addr': location,
                                  'terminate': bool(terminate), 'restart': False})
 
-    def restart_node(self, location, terminate=False):
+    def restart_node(self, location, *setup_args, terminate=False):
         """Close node at given location, which can be either a Location instance (of any server
         at that node or of node itself) or IP address. After this call, no more tasks are
         scheduled at that node.
@@ -598,7 +598,8 @@ class Computation(object):
             if isinstance(location, pycos.Location):
                 location = location.addr
             self.scheduler.send({'req': 'close_node', 'auth': self._auth, 'addr': location,
-                                 'terminate': bool(terminate), 'restart': True})
+                                 'terminate': bool(terminate), 'restart': True,
+                                 'setup_args': pycos.serialize(setup_args)})
 
     def node_allocate(self, node_allocate):
         """Request scheduler to add 'node_allocate' to any previously sent
@@ -1212,8 +1213,9 @@ class Scheduler(object, metaclass=pycos.Singleton):
 
             node.task.send({'req': 'reserve', 'cpus': cpus, 'auth': computation._auth,
                             'status_task': self.__status_task, 'client': task,
-                            'computation_location': computation._pulse_task.location,
-                            'abandon_zombie': computation._abandon_zombie})
+                            'client_location': computation._pulse_task.location,
+                            'abandon_zombie': computation._abandon_zombie,
+                            'pulse_interval': computation._pulse_interval})
             reply = yield task.receive(timeout=MsgTimeout)
             if not isinstance(reply, dict) or reply.get('cpus', 0) <= 0:
                 logger.debug('Reserving %s failed', node.addr)
@@ -1252,8 +1254,9 @@ class Scheduler(object, metaclass=pycos.Singleton):
                 node.lock.release()
                 raise StopIteration(-1)
 
-        node.task.send({'req': 'computation', 'computation': computation, 'auth': node.auth,
-                        'setup_args': setup_args, 'client': task})
+        node.task.send({'req': 'computation', 'computation': pycos.serialize(computation),
+                        'auth': node.auth, 'setup_args': setup_args,
+                        'restart_servers': computation._restart_servers, 'client': task})
         cpus = yield task.receive(timeout=MsgTimeout)
         if not cpus or computation != self._cur_computation:
             node.status = Scheduler.NodeClosed
@@ -1264,13 +1267,12 @@ class Scheduler(object, metaclass=pycos.Singleton):
         node.cpus = cpus
         node.status = Scheduler.NodeInitialized
         node.lock.release()
+        if computation.status_task:
+            info = DispycosNodeInfo(node.name, node.addr, node.cpus, node.platform, node.avail_info)
+            computation.status_task.send(DispycosStatus(node.status, info))
         servers = [server for server in node.disabled_servers.values()
                    if server.status == Scheduler.ServerInitialized]
         if servers:
-            if computation.status_task:
-                info = DispycosNodeInfo(node.name, node.addr, node.cpus, node.platform,
-                                        node.avail_info)
-                computation.status_task.send(DispycosStatus(node.status, info))
             self._disabled_nodes.pop(node.addr, None)
             self._nodes[node.addr] = node
             node.cpu_avail.set()
@@ -1751,6 +1753,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
                 self._disabled_nodes[node.addr] = node
                 if node.task and self._cur_computation:
                     req = {'req': 'release', 'auth': node.auth,
+                           'setup_args': msg.get('setup_args', None),
                            'terminate': msg.get('terminate', False),
                            'restart': msg.get('restart', False)}
                     node.task.send(req)
