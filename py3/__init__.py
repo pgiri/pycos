@@ -3785,6 +3785,7 @@ class Pycos(object, metaclass=Singleton):
                             self._daemons -= 1
                         self._tasks.pop(task._id, None)
                         task._generator = None
+                        task._state = None
                         if task._complete:
                             task._complete.set()
                         else:
