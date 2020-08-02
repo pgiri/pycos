@@ -40,16 +40,15 @@ def _dispycos_server_proc():
     _dispycos_task.register('dispycos_server')
     _dispycos_config = yield _dispycos_task.receive()
     _dispycos_auth = _dispycos_config.pop('auth', None)
-    _dispycos_var = deserialize(_dispycos_config['node_location'])
-    yield _dispycos_scheduler.peer(_dispycos_var)
-    _dispycos_node_task = yield Task.locate('dispycos_node', location=_dispycos_var)
+    _dispycos_node_task = _dispycos_config.pop('node_task')
     if not isinstance(_dispycos_node_task, Task):
         logger.warning('%s could not locate node', _dispycos_task.location)
-        raise StopIteration(-1)
-    yield _dispycos_node_task.deliver({'req': 'server_task', 'oid': 1, 'pid': os.getpid(),
-                                       'server_id': _dispycos_config['id'],
-                                       'location': _dispycos_task.location,
-                                       'auth': _dispycos_auth}, timeout=5)
+        raise StopIteration({'status': -1})
+    if (yield _dispycos_node_task.deliver({'req': 'server_task',  'auth': _dispycos_auth,
+                                           'iid': _dispycos_config['iid'],
+                                           'server_id': _dispycos_config['sid'], 'pid': os.getpid(),
+                                           'task': _dispycos_task}, timeout=5)) != 1:
+        raise StopIteration({'status': -1})
 
     if _dispycos_config['min_pulse_interval'] > 0:
         MinPulseInterval = _dispycos_config['min_pulse_interval']
@@ -70,7 +69,7 @@ def _dispycos_server_proc():
         del _dispycos_config[_dispycos_var]
 
     logger.info('dispycos server %s started at %s; computation files will be saved in "%s"',
-                _dispycos_config['id'], _dispycos_task.location, _dispycos_config['dest_path'])
+                _dispycos_config['sid'], _dispycos_task.location, _dispycos_config['dest_path'])
     _dispycos_req = _dispycos_client = _dispycos_msg = None
     _dispycos_peer_status = _dispycos_monitor_task = _dispycos_monitor_proc = _dispycos_job = None
     _dispycos_restart = False
@@ -129,17 +128,17 @@ def _dispycos_server_proc():
     _dispycos_var = deserialize(_dispycos_config['scheduler_location'])
     if (yield _dispycos_scheduler.peer(_dispycos_var)):
         logger.warning('%s could not communicate with scheduler', _dispycos_task.location)
-        raise StopIteration(-1)
+        raise StopIteration({'status': -1})
     _dispycos_peers.add(_dispycos_var)
     _dispycos_scheduler_task = yield SysTask.locate('dispycos_status', location=_dispycos_var,
                                                     timeout=5)
     if not isinstance(_dispycos_scheduler_task, SysTask):
         logger.warning('%s could not locate scheduler', _dispycos_task.location)
-        raise StopIteration(-1)
-    _dispycos_var = deserialize(_dispycos_config['computation_location'])
+        raise StopIteration({'status': -1})
+    _dispycos_var = deserialize(_dispycos_config['client_location'])
     if (yield _dispycos_scheduler.peer(_dispycos_var)):
         logger.warning('%s could not communicate with commputation', _dispycos_task.location)
-        raise StopIteration(-1)
+        raise StopIteration({'status': -1})
     _dispycos_peers.add(_dispycos_var)
 
     _dispycos_scheduler.peer_status(SysTask(_dispycos_peer_status))
@@ -148,8 +147,8 @@ def _dispycos_server_proc():
     for _dispycos_var in _dispycos_config.pop('peers', []):
         Task(_dispycos_scheduler.peer, deserialize(_dispycos_var))
 
-    if _dispycos_config['_server_setup']:
-        if _dispycos_config['_disable_servers']:
+    if _dispycos_config['server_setup']:
+        if _dispycos_config['disable_servers']:
             while 1:
                 _dispycos_msg = yield _dispycos_task.receive()
                 if ((not isinstance(_dispycos_msg, dict)) or
@@ -165,18 +164,18 @@ def _dispycos_server_proc():
                         _dispycos_scheduler_task.send({'status': Scheduler.ServerClosed,
                                                        'location': _dispycos_task.location,
                                                        'auth': _dispycos_auth})
-                    raise StopIteration
+                    raise StopIteration({'status': 0})
                 else:
                     logger.warning('Ignoring invalid request to run server setup')
         else:
             _dispycos_var = ()
-        _dispycos_var = yield pycos.Task(globals()[_dispycos_config['_server_setup']],
+        _dispycos_var = yield pycos.Task(globals()[_dispycos_config['server_setup']],
                                          *_dispycos_var).finish()
         if _dispycos_var:
-            logger.debug('dispycos server %s @ %s setup failed', _dispycos_config['id'],
+            logger.debug('dispycos server %s @ %s setup failed', _dispycos_config['sid'],
                          _dispycos_task.location)
-            raise StopIteration(_dispycos_var)
-        _dispycos_config['_server_setup'] = None
+            raise StopIteration({'status': -_dispycos_var})
+        _dispycos_config['server_setup'] = None
     _dispycos_scheduler_task.send({'status': Scheduler.ServerInitialized, 'task': _dispycos_task,
                                    'name': _dispycos_name, 'auth': _dispycos_auth})
 
@@ -303,14 +302,11 @@ def _dispycos_server_proc():
         shutil.rmtree(_dispycos_config['dest_path'], ignore_errors=True)
     except Exception:
         pass
-    yield _dispycos_node_task.deliver({'req': 'server_task', 'oid': 3,
-                                       'server_id': _dispycos_config['id'], 'location': None,
-                                       'auth': _dispycos_auth}, timeout=5)
-    logger.debug('dispycos server %s @ %s done', _dispycos_config['id'], _dispycos_task.location)
-    raise StopIteration(_dispycos_restart)
+    logger.debug('dispycos server %s @ %s done', _dispycos_config['sid'], _dispycos_task.location)
+    raise StopIteration({'status': 0, 'restart': _dispycos_restart})
 
 
-def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config, _dispycos_computation):
+def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config):
     import os
     import sys
     import time
@@ -334,7 +330,8 @@ def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config, _dispycos_com
     del _dispycos_config['loglevel']
 
     pycos.logger.name = 'dispycosserver'
-    _dispycos_id = _dispycos_config['id']
+    _dispycos_sid = _dispycos_config['sid']
+    _dispycos_iid = _dispycos_config['iid']
     _dispycos_auth = _dispycos_config['auth']
     _dispycos_queue, _dispycos_mp_queue = _dispycos_mp_queue, None
     config = {}
@@ -348,38 +345,64 @@ def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config, _dispycos_com
             _dispycos_scheduler = pycos.Pycos(**config)
         except Exception:
             print('dispycos server %s failed for port %s; retrying in 2 seconds' %
-                  (_dispycos_id, config['tcp_port']))
+                  (_dispycos_sid, config['tcp_port']))
             # print(traceback.format_exc())
             time.sleep(2)
         else:
             break
     else:
-        _dispycos_queue.put({'req': 'server_task', 'auth': _dispycos_auth, 'oid': 3,
-                             'pid': os.getpid(), 'server_id': _dispycos_id, 'location': None,
+        _dispycos_queue.put({'req': 'server_task', 'auth': _dispycos_auth, 'task': None,
+                             'iid': _dispycos_iid, 'server_id': _dispycos_sid, 'pid': os.getpid(),
                              'restart': False})
         exit(-1)
 
-    if os.name == 'nt':
-        _dispycos_computation = pycos.deserialize(_dispycos_computation)
-        if _dispycos_computation._code:
-            exec(_dispycos_computation._code) in globals()
+    _dispycos_scheduler = pycos.Pycos.instance()
 
-    _dispycos_config['_disable_servers'] = _dispycos_computation._disable_servers
-    _dispycos_config['_server_setup'] = _dispycos_computation._server_setup
+    def start_proc(task=None):
+        if os.name == 'nt':
+            code = _dispycos_config.pop('code')
+            if code:
+                try:
+                    exec(code) in globals()
+                except Exception:
+                    raise StopIteration(-1)
+            del code
+
+        loc = pycos.deserialize(_dispycos_config.pop('node_location'))
+        yield _dispycos_scheduler.peer(loc)
+        node_task = yield pycos.Task.locate('dispycos_node', location=loc, timeout=5)
+        if not isinstance(node_task, pycos.Task):
+            logger.warning('%s could not locate node', _dispycos_scheduler.location)
+            raise StopIteration(-1)
+        _dispycos_config['node_task'] = node_task
+        raise StopIteration(0)
+
+    if (pycos.SysTask(start_proc).value()) != 0:
+        _dispycos_scheduler.ignore_peers = True
+        for location in _dispycos_scheduler.peers():
+            pycos.Task(_dispycos_scheduler.close_peer, location)
+        _dispycos_scheduler.finish()
+        _dispycos_queue.put({'req': 'server_task', 'auth': _dispycos_auth, 'task': None,
+                             'server_id': _dispycos_sid, 'iid': _dispycos_iid,
+                             'pid': os.getpid(), 'status': -1, 'restart': False})
+        exit(0)
+
+    _dispycos_node_task = _dispycos_config['node_task']
     _dispycos_task = pycos.SysTask(_dispycos_config.pop('server_proc'))
-    assert isinstance(_dispycos_task, pycos.Task)
     _dispycos_config['dest_path'] = config['dest_path']
     _dispycos_task.send(_dispycos_config)
-    time.sleep(0.1)
-    _dispycos_queue.put({'req': 'server_task', 'auth': _dispycos_auth, 'oid': 1, 'pid': os.getpid(),
-                         'server_id': _dispycos_id, 'location': _dispycos_task.location})
+    _dispycos_queue.put({'req': 'server_task', 'auth': _dispycos_auth, 'task': _dispycos_task,
+                         'iid': _dispycos_iid, 'server_id': _dispycos_sid, 'pid': os.getpid()})
 
     _dispycos_config = None
     del config, _dispycos_var
 
     def sighandler(signum, frame):
-        pycos.logger.debug('Server %s received signal %s', _dispycos_id, signum)
-        _dispycos_task.send({'req': 'terminate', 'auth': _dispycos_auth})
+        pycos.logger.debug('Server %s received signal %s', _dispycos_sid, signum)
+        if _dispycos_task:
+            _dispycos_task.send({'req': 'terminate', 'auth': _dispycos_auth})
+        else:
+            pycos.logger.debug('Server %s ignoring signal %s', _dispycos_sid, signum)
 
     signal.signal(signal.SIGINT, sighandler)
     if os.name == 'nt':
@@ -387,28 +410,33 @@ def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config, _dispycos_com
 
     del sighandler
 
-    _dispycos_restart = _dispycos_task.value()
+    _dispycos_status = _dispycos_task.value()
+    _dispycos_task = None
+    if not isinstance(_dispycos_status, dict):
+        _dispycos_status = {'status': _dispycos_status, 'restart': False}
+    _dispycos_node_task.send({'req': 'server_task', 'auth': _dispycos_auth,
+                              'iid': _dispycos_iid, 'task': None, 'server_id': _dispycos_sid})
     _dispycos_scheduler.ignore_peers = True
     for location in _dispycos_scheduler.peers():
         pycos.Task(_dispycos_scheduler.close_peer, location)
     _dispycos_scheduler.finish()
-    _dispycos_queue.put({'req': 'server_task', 'auth': _dispycos_auth, 'oid': 3, 'pid': os.getpid(),
-                         'server_id': _dispycos_id, 'location': None, 'restart': _dispycos_restart})
+    _dispycos_queue.put({'req': 'server_task', 'auth': _dispycos_auth, 'task': None,
+                         'server_id': _dispycos_sid, 'iid': _dispycos_iid, 'pid': os.getpid(),
+                         'status': _dispycos_status.get('status', -1),
+                         'restart': _dispycos_status.get('restart', False)})
     exit(0)
 
 
-def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_id_ports, _dispycos_computation,
-                    _dispycos_setup_args):
+def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
     import os
     import sys
     import signal
     import time
     import threading
     import multiprocessing
+    import cPickle as pickle
     import traceback
 
-    _dispycos_config['server_proc'] = _dispycos_server_proc
-    server_process = _dispycos_server_process
     for _dispycos_var in list(globals()):
         if _dispycos_var.startswith('_dispycos_'):
             if _dispycos_var in ('_dispycos_server_process', '_dispycos_server_proc'):
@@ -420,9 +448,11 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_id_ports, _dispy
             sys.modules.pop(_dispycos_var)
     globals().pop('pycos', None)
 
+    global pycos
     import pycos
 
     pycos.logger.name = 'dispycosnode'
+    _dispycos_config['server_proc'] = _dispycos_server_proc
     if _dispycos_config['loglevel']:
         pycos.logger.setLevel(pycos.logger.DEBUG)
         # pycos.logger.show_ms(True)
@@ -440,11 +470,11 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_id_ports, _dispy
             else:
                 raise AttributeError('Invalid attribute "%s"' % name)
 
-    children = [Struct(sid=sid, port=port, proc=None, status=None, msg_oid=0, restart=False)
-                for sid, port in _dispycos_id_ports]
+    children = [Struct(sid=sid, port=port, proc=None, status=None, restart=False, iid=0)
+                for sid, port in _dispycos_sid_ports]
     mp_q = multiprocessing.Queue()
+    lock = threading.Lock()
     spawn_closed = False
-    spawn_pid = os.getpid()
     os.chdir(_dispycos_config['dest_path'])
     sys.path.insert(0, _dispycos_config['dest_path'])
     os.environ['PATH'] = _dispycos_config['dest_path'] + os.pathsep + os.environ['PATH']
@@ -458,78 +488,36 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_id_ports, _dispy
             os.setregid(sgid, sgid)
             os.setreuid(suid, suid)
 
-    if os.name != 'nt':
-        if _dispycos_computation._code:
-            exec(_dispycos_computation._code) in globals()
+    try:
+        with open(os.path.join(_dispycos_config['dest_path'], '..', 'dispycos_computation'),
+                  'rb') as fd:
+            computation = pickle.load(fd)
+            assert computation['auth'] == _dispycos_config['auth']
+            _dispycos_config['disable_servers'] = computation['disable_servers']
+            _dispycos_config['server_setup'] = computation['server_setup']
 
-        if _dispycos_computation._node_setup:
-            try:
-                _dispycos_setup_args = pycos.deserialize(_dispycos_setup_args)
-                ret = pycos.Task(globals()[_dispycos_computation._node_setup],
-                                 *_dispycos_setup_args).value()
-            except Exception:
-                pycos.logger.warning('node_setup failed for %s', _dispycos_config['auth'])
-                # print(traceback.format_exc())
-                ret = -1
-            if ret != 0:
-                _dispycos_pipe.send({'msg': 'closed', 'auth': _dispycos_config['auth']})
-                exit(ret)
-            _dispycos_computation._node_setup = None
+        if os.name == 'nt':
+            _dispycos_config['code'] = computation['code']
+        else:
+            if computation['code']:
+                exec(computation['code']) in globals()
 
-    def sighandler(signum, frame):
-        if not spawn_closed:
-            mp_q.put({'req': 'quit', 'auth': _dispycos_config['auth']})
-
-    signal.signal(signal.SIGINT, sighandler)
-    if os.name == 'nt':
-        signal.signal(signal.SIGBREAK, sighandler)
-
-    del sighandler
-
-    def mp_q_proc():
-        while 1:
-            msg = mp_q.get(block=True)
-            if not isinstance(msg, dict):
-                pycos.logger.warning('Ignoring mp queue message: %s', type(msg))
-                continue
-            try:
-                oid = msg['oid']
-                auth = msg['auth']
-                server_id = msg['server_id']
-                location = msg['location']
-            except Exception:
-                if msg.get('req') == 'quit' and msg.get('auth') == _dispycos_config['auth']:
-                    close_procs(children)
-                    _dispycos_pipe.send({'msg': 'closed', 'auth': _dispycos_config['auth']})
-                    exit(0)
-                else:
-                    pycos.logger.debug('Ignoring invalid message')
-                continue
-
-            if auth != _dispycos_config['auth']:
-                pycos.logger.warning('Ignoring invalid server msg %s: %s != %s',
-                                     oid, auth, _dispycos_config['auth'])
-                continue
-            for child in children:
-                if child.sid == server_id:
-                    break
-            else:
-                pycos.logger.debug('Ignoring server task information for %s', server_id)
-                continue
-
-            if location:
-                child.status = 'running'
-                child.msg_oid = oid
-            else:
-                if child.msg_oid > oid:
-                    continue
-                child.status = 'closed'
-                child.msg_oid = 0
-                if (child.restart or _dispycos_computation._restart_servers or
-                    (msg.get('restart', False) and child.port >= 0)):
-                    start_proc(child)
-                    if child.restart:
-                        child.restart = False
+            if computation['node_setup']:
+                try:
+                    setup_args = pycos.deserialize(computation['setup_args'])
+                    ret = pycos.Task(globals()[computation['node_setup']], *setup_args).value()
+                except Exception:
+                    pycos.logger.warning('node_setup failed for %s', _dispycos_config['auth'])
+                    # print(traceback.format_exc())
+                    ret = -1
+                assert ret == 0
+                computation['node_setup'] = None
+                computation['setup_args'] = None
+                del setup_args
+    except Exception:
+        pycos.logger.debug(traceback.format_exc())
+        _dispycos_pipe.send({'msg': 'closed', 'auth': _dispycos_config['auth']})
+        exit(-1)
 
     def close_procs(child_procs):
         for child in child_procs:
@@ -547,7 +535,7 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_id_ports, _dispy
                 continue
             try:
                 if os.name == 'nt':
-                    os.kill(child.proc.pid, signal.CTRL_BREAK_EVENT)
+                    os.kill(child.proc.pid, signal.CTRL_C_EVENT)
                 else:
                     os.kill(child.proc.pid, signal.SIGINT)
             except Exception:
@@ -578,22 +566,43 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_id_ports, _dispy
                         pycos.logger.debug('Could not terminate server %s (PID %s): %s',
                                            child.sid, child.proc.pid, traceback.format_exc())
 
-            if child.proc and child.proc.exitcode:
-                pycos.logger.warning('Server %s (process %s) reaped', child.sid, child.proc.pid)
-                # TODO: need to inform node?
+            lock.acquire()
+            if child.status and child.proc and (not child.proc.is_alive()):
+                if child.proc.exitcode:
+                    pycos.logger.warning('Server %s (process %s) reaped', child.sid, child.proc.pid)
+                child.status = None
+                child.proc = None
+            lock.release()
 
     def start_proc(child):
+        if computation['code'] is None:
+            with open(os.path.join(_dispycos_config['dest_path'], '..', 'dispycos_computation'),
+                      'rb') as fd:
+                try:
+                    info = pickle.load(fd)
+                    assert info['auth'] == _dispycos_config['auth']
+                    computation['code'] = info['code']
+                except Exception:
+                    pycos.logger.warning('Invalid computation to start dispycos server!')
+                    return
         server_config = dict(_dispycos_config)
-        server_config['id'] = child.sid
-        server_config['name'] = '%s_server-%s' % (_dispycos_config['name'], server_config['id'])
+        server_config['sid'] = child.sid
+        server_config['name'] = '%s_server-%s' % (_dispycos_config['name'], server_config['sid'])
         server_config['tcp_port'] = child.port
         server_config['peers'] = _dispycos_config['peers'][:]
         server_config['dest_path'] = os.path.join(_dispycos_config['dest_path'],
-                                                  'dispycos_server_%s' % server_config['id'])
-        proc = multiprocessing.Process(target=server_process, name=server_config['name'],
-                                       args=(mp_q, server_config, _dispycos_computation))
+                                                  'dispycos_server_%s' % server_config['sid'])
+        lock.acquire()
+        if child.status is not None:
+            pycos.logger.warning('Server %s already started?: %s', child.sid, child.status)
+            lock.release()
+            return
+        child.iid += 1
+        server_config['iid'] = child.iid
+        child.status = 'pending'
+        proc = multiprocessing.Process(target=_dispycos_server_process, name=server_config['name'],
+                                       args=(mp_q, server_config))
         if isinstance(proc, multiprocessing.Process):
-            child.status = 'pending'
             proc.start()
             pycos.logger.debug('dispycos server %s started with PID %s', child.sid, proc.pid)
             child.proc = proc
@@ -601,71 +610,164 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_id_ports, _dispy
             pycos.logger.warning('Could not start dispycos server for %s at %s',
                                  child.sid, child.port)
             child.status = None
-            mp_q.put({'req': 'server_task', 'oid': 3, 'pid': None, 'auth': _dispycos_config['auth'],
-                      'server_id': child.sid, 'location': None})
+            mp_q.put({'req': 'server_task', 'auth': _dispycos_config['auth'], 'task': None,
+                      'iid': child.iid, 'server_id': child.sid, 'pid': None})
+        lock.release()
+        # TODO: delete computation to release memory?
 
-    mp_q_thread = threading.Thread(target=mp_q_proc)
-    mp_q_thread.daemon = True
-    mp_q_thread.start()
+    def pipe_proc():
+        for child in children:
+            start_proc(child)
 
-    for child in children:
-        start_proc(child)
-
-    for j in range(60):
-        if all((child.status == 'running' or child.status is None) for child in children):
-            break
-        time.sleep(0.2)
-
-    _dispycos_pipe.send({'msg': 'started', 'auth': _dispycos_config['auth'],
-                         'ids': [child.sid for child in children
-                                 if child.proc and child.status == 'running']})
-
-    while 1:
-        try:
-            req = _dispycos_pipe.recv()
-        except Exception:
-            break
-        if ((not isinstance(req, dict)) or
-            (req.get('auth') != _dispycos_config.get('auth'))):
-            pycos.logger.warning('Ignoring invalid pipe cmd: %s' % str(req))
-            continue
-
-        if req.get('msg') == 'quit':
-            _dispycos_computation._restart_servers = False
-            for child in children:
-                child.restart = False
-                child.port = -1
-            break
-
-        elif req.get('msg') == 'restart_server':
-            id_port = (req.get('id'), req.get('port'))
-            if id_port[0]:
-                for child in children:
-                    if child.sid == id_port[0]:
-                        break
-                else:
-                    pycos.logger.warning('Invalid server id %s', id_port[0])
-                    continue
-                if child.proc is None:
-                    try:
-                        start_proc(child)
-                    except Exception:
-                        pycos.logger.warning('Could not restart server %s', id_port[0])
-                        pycos.logger.warning(traceback.format_exc())
-                else:
-                    child.restart = True
+        for j in range(60):
+            if any(child.status == 'pending' for child in children):
+                time.sleep(0.2)
             else:
-                # assert req.get('restart') == False
-                _dispycos_computation._restart_servers = False
+                break
+
+        if not computation['restart_servers'] and computation['code']:
+            computation['code'] = None
+        _dispycos_pipe.send({'msg': 'started', 'auth': _dispycos_config['auth'],
+                             'sids': [child.sid for child in children
+                                      if child.proc and child.status == 'running']})
+
+        while 1:
+            try:
+                req = _dispycos_pipe.recv()
+            except Exception:
+                break
+            if ((not isinstance(req, dict)) or
+                (req.get('auth') != _dispycos_config.get('auth'))):
+                pycos.logger.warning('Ignoring invalid pipe cmd: %s' % str(req))
+                continue
+
+            if req.get('msg') == 'quit':
+                computation['restart_servers'] = False
                 for child in children:
                     child.restart = False
-                _dispycos_pipe.send({'msg': 'restart_ack', 'auth': _dispycos_config['auth']})
+                mp_q.put({'req': 'quit', 'auth': _dispycos_config['auth']})
+                break
 
+            elif req.get('msg') == 'close_server':
+                sid = req.get('sid', None)
+                if sid:
+                    for child in children:
+                        if child.sid == sid:
+                            break
+                    else:
+                        pycos.logger.warning('Invalid server id %s', sid)
+                        continue
+                    child.restart = req.get('restart', False)
+                    if child.status is None:
+                        if child.restart:
+                            try:
+                                start_proc(child)
+                            except Exception:
+                                pycos.logger.warning('Could not restart server %s', sid)
+                                pycos.logger.warning(traceback.format_exc())
+                    else:
+                        if child.status == 'running' and req.get('terminate', False):
+                            close_procs([child])
+                else:
+                    # assert req.get('restart') == False
+                    computation['restart_servers'] = req.get('restart', False)
+                    if not computation['restart_servers']:
+                        for child in children:
+                            child.restart = False
+                    _dispycos_pipe.send({'msg': 'restart_ack', 'auth': _dispycos_config['auth']})
+
+            else:
+                pycos.logger.warning('spawn: ignoring invalid request')
+
+    pipe_thread = threading.Thread(target=pipe_proc)
+    pipe_thread.daemon = True
+    pipe_thread.start()
+
+    def sighandler(signum, frame):
+        pycos.logger.debug('Spawn received signal %s', signum)
+        if spawn_closed:
+            pycos.logger.debug('Spawn ignoring signal %s', signum)
+            return
         else:
-            pycos.logger.warning('spawn: ignoring invalid request')
+            mp_q.put({'req': 'quit', 'auth': _dispycos_config['auth']})
+
+    signal.signal(signal.SIGINT, sighandler)
+    if os.name == 'nt':
+        signal.signal(signal.SIGBREAK, sighandler)
+
+    del sighandler
+
+    while 1:
+        msg = mp_q.get(block=True)
+        if not isinstance(msg, dict):
+            pycos.logger.warning('Ignoring mp queue message: %s', type(msg))
+            continue
+        try:
+            auth = msg['auth']
+            server_id = msg['server_id']
+            iid = msg['iid']
+            server_task = msg['task']
+        except Exception:
+            if msg.get('req') == 'quit' and msg.get('auth') == _dispycos_config['auth']:
+                break
+            else:
+                pycos.logger.debug('Ignoring invalid message')
+            continue
+
+        if msg.get('req') != 'server_task':
+            pycos.logger.warning('Ignoring invalid server msg %s', msg.get('req'))
+            continue
+        if auth != _dispycos_config['auth']:
+            pycos.logger.warning('Ignoring invalid server msg: %s != %s',
+                                 auth, _dispycos_config['auth'])
+            continue
+        for child in children:
+            if child.sid == server_id:
+                break
+        else:
+            pycos.logger.debug('Ignoring server task information for %s', server_id)
+            continue
+        if child.iid != iid:
+            pycos.logger.warning('Invalid instance id for server %s: %s / %s!',
+                                 server_id, child.iid, iid)
+            continue
+
+        if server_task:
+            lock.acquire()
+            if child.proc and child.proc.pid == msg.get('pid'):
+                if child.status == 'pending':
+                    child.status = 'running'
+                else:
+                    pycos.logger.warning('Invalid status %s for server %s',
+                                         child.status, child.sid)
+            else:
+                pycos.logger.warning('Invalid PID for server %s: %s', server_id, msg.get('pid'))
+                child.status = 'running'
+            lock.release()
+        else:
+            # assert server_task is None
+            lock.acquire()
+            child.proc = None
+            child.status = None
+            lock.release()
+            if (child.restart or computation['restart_servers'] or
+                (msg.get('restart', False) and child.port >= 0 and (msg['status'] == 0))):
+                start_proc(child)
+                if child.restart:
+                    child.restart = False
 
     spawn_closed = True
+    computation['restart_servers'] = False
+    for child in children:
+        child.restart = False
+    for child in children:
+        if child.proc:
+            try:
+                child.proc.join(2)
+            except Exception:
+                pass
     close_procs(children)
+    mp_q.close()
     _dispycos_pipe.send({'msg': 'closed', 'auth': _dispycos_config['auth']})
     exit(0)
 
@@ -728,7 +830,7 @@ def _dispycos_node():
             node_ports.add(int(node_port[0]))
         elif len(node_port) == 2:
             node_port = (int(node_port[0]), min(int(node_port[1]),
-                                              int(node_port[0]) + num_cpus - len(node_ports)))
+                                                int(node_port[0]) + num_cpus - len(node_ports)))
             node_ports = node_ports.union(range(node_port[0], node_port[1] + 1))
         else:
             raise Exception('Invalid TCP port range "%s"' % str(node_port))
@@ -846,142 +948,118 @@ def _dispycos_node():
     node_auth = hashlib.sha1(os.urandom(20)).hexdigest()
     node_servers = [None] * (num_cpus + 1)
     if _dispycos_config['dest_path']:
-        dispycos_dest_path = _dispycos_config['dest_path']
+        dispycos_path = _dispycos_config['dest_path']
     else:
         import tempfile
-        dispycos_dest_path = os.path.join(os.sep, tempfile.gettempdir(), 'pycos')
-    dispycos_dest_path = os.path.join(dispycos_dest_path, 'dispycos', 'node')
-    _dispycos_config['dest_path'] = dispycos_dest_path
+        dispycos_path = os.path.join(os.sep, tempfile.gettempdir(), 'pycos')
+    dispycos_path = os.path.join(dispycos_path, 'dispycos', 'node')
+    _dispycos_config['dest_path'] = dispycos_path
 
-    if not os.path.isdir(dispycos_dest_path):
+    if not os.path.isdir(dispycos_path):
         try:
-            os.makedirs(dispycos_dest_path)
+            os.makedirs(dispycos_path)
         except Exception:
-            print('Could not create directory "%s"' % dispycos_dest_path)
+            print('Could not create directory "%s"' % dispycos_path)
             exit(1)
 
     if os.name == 'nt':
-        proc_signals = [signal.CTRL_BREAK_EVENT, signal.CTRL_BREAK_EVENT, signal.SIGTERM]
+        proc_signals = [signal.CTRL_C_EVENT, signal.CTRL_C_EVENT, signal.SIGTERM]
     else:
         proc_signals = [signal.SIGINT, 0, signal.SIGKILL]
 
-    def close_server(server, ppid=None):
-        server_dir = os.path.join(dispycos_dest_path, 'dispycos_server_%s' % server.id)
-
-        psproc = pid = pid_info = None
-        if not ppid:
+    def kill_proc(pid, ppid, kill):
+        if pid <= 0:
+            return 0
+        psproc = None
+        if psutil:
             try:
-                with open(server.pid_file, 'rb') as fd:
-                    pid_info = pickle.load(fd)
-                    ppid = pid_info['ppid']
+                psproc = psutil.Process(pid)
+                assert psproc.is_running()
+                if psproc.ppid() not in [ppid, 1]:
+                    pycos.logger.warning('PPID of PID %s is different from expected %s: %s',
+                                         pid, ppid, psproc.ppid())
+                    return -1
+                assert any(arg.endswith('dispycosnode.py') for arg in psproc.cmdline())
+                psproc.send_signal(proc_signals[0])
+            except psutil.NoSuchProcess:
+                return 0
             except Exception:
-                pid_info = {}
+                pycos.logger.debug(traceback.format_exc())
+                return -1
 
-        if pid_info:
-            pid = pid_info.get('pid', None)
-            if pid and psutil:
-                try:
-                    psproc = psutil.Process(pid)
-                    assert psproc.is_running()
-                    assert psproc.ppid() in (ppid, 1)
-                    if server.id:
-                        main_proc = psutil.Process(ppid)
-                    else:
-                        main_proc = psproc
-                    assert any(arg.endswith('dispycosnode.py') for arg in main_proc.cmdline())
-                except Exception:
-                    pid = None
-
-        if pid:
+        if not psproc:
             try:
                 os.kill(pid, proc_signals[0])
+            except ProcessLookupError:
+                return 0
             except Exception:
                 # TODO: handle failures
                 pycos.logger.debug(traceback.format_exc())
 
-        if server.id and ppid and ppid != 1:
-            try:
-                os.kill(ppid, proc_signals[0])
-            except Exception:
-                pycos.logger.debug(traceback.format_exc())
-
-        if psproc:
+        for signum in range(1, len(proc_signals) if kill else (len(proc_signals) - 1)):
             for i in range(20):
-                try:
-                    psproc.wait(0.1)
-                except Exception:
-                    pass
+                if psproc:
+                    try:
+                        psproc.wait(0.2)
+                    except Exception:
+                        pass
+                    if not psproc.is_running():
+                        return 0
+                    if i == 15:
+                        try:
+                            if signum == 1:
+                                psproc.terminate()
+                            else:
+                                psproc.kill()
+                        except psutil.NoSuchProcess:
+                            return 0
+                        except Exception:
+                            pycos.logger.debug(traceback.format_exc())
                 else:
-                    time.sleep(0.1)
-                if not psproc.is_running():
-                    break
-                if i < 15:
-                    continue
-                if i == 15:
-                    try:
-                        psproc.terminate()
-                    except Exception:
-                        # print(traceback.format_exc())
-                        pass
-                elif i == 19:
-                    try:
-                        psproc.kill()
-                    except Exception:
-                        # print(traceback.format_exc())
-                        pass
-            else:
-                pycos.logger.warning('Could not terminate process with ID %s', pid)
-
-        elif pid:
-            signum = proc_signals[1]
-            for i in range(1, 20):
-                time.sleep(0.1)
-                if signum and i < 15:
-                    continue
-                if i == 15:
-                    signum = proc_signals[2]
-                try:
-                    os.kill(pid, signum)
-                except OSError:
-                    break
-            else:
-                pycos.logger.debug('Could not terminate process with ID %s', pid)
-
-        shutil.rmtree(server_dir, ignore_errors=True)
-
-        if os.path.exists(server.pid_file):
-            try:
-                os.remove(server.pid_file)
-            except Exception:
-                print('\n    Could not remove file "%s";\n'
-                      '    ensure no dispycosnode and servers are running and\n'
-                      '    remove *.pid files in "%s"\n' % (server.pid_file, dispycos_dest_path))
-
-        server.task = None
-        return 0
+                    time.sleep(0.2)
+                    if proc_signals[signum] == 0 or i == 15:
+                        try:
+                            os.kill(pid, proc_signals[signum])
+                        except OSError:
+                            return 0
+        pycos.logger.debug('Could not terminate PID %s', pid)
+        return -1
 
     for _dispycos_id in range(0, num_cpus + 1):
-        _dispycos_var = os.path.join(dispycos_dest_path, '..', 'server-%d.pkl' % _dispycos_id)
-        node_servers[_dispycos_id] = Struct(id=_dispycos_id, task=None, msg_oid=0,
+        _dispycos_var = os.path.join(dispycos_path, '..', 'server-%d.pkl' % _dispycos_id)
+        node_servers[_dispycos_id] = Struct(id=_dispycos_id, iid=1, task=None,
                                             name='%s_server-%s' % (node_name, _dispycos_id),
                                             port=node_ports[_dispycos_id], restart=False,
                                             pid_file=_dispycos_var, done=pycos.Event())
     node_servers[0].name = None
 
-    comp_state = Struct(auth=None, scheduler=None, cpus_reserved=0, setup_args=None,
+    comp_state = Struct(auth=None, scheduler=None, client_location=None, cpus_reserved=0,
                         spawn_mpproc=None, interval=_dispycos_config['max_pulse_interval'],
-                        restart_servers=False, abandon_zombie=False, served=0)
+                        abandon_zombie=False, served=0)
 
     if _dispycos_config['clean']:
-        for _dispycos_id in range(1, len(node_servers)) + [0]:
-            server = node_servers[_dispycos_id]
-            if not os.path.exists(server.pid_file):
-                continue
-            close_server(server)
-    if any(os.path.exists(server.pid_file) for server in node_servers):
+        if os.path.isfile(node_servers[0].pid_file):
+            with open(node_servers[0].pid_file, 'rb') as fd:
+                pid_info = pickle.load(fd)
+                if kill_proc(pid_info['pid'], pid_info['ppid'], kill=False):
+                    for _dispycos_var in range(20):
+                        if not os.path.isfile(node_servers[0].pid_file):
+                            break
+                        time.sleep(0.2)
+                    else:
+                        kill_proc(pid_info['spid'], pid_info['pid'], kill=True)
+                        kill_proc(pid_info['pid'], pid_info['ppid'], kill=True)
+                else:
+                    if os.path.isfile(node_servers[0].pid_file):
+                        try:
+                            os.remove(node_servers[0].pid_file)
+                        except Exception:
+                            pass
+
+    if os.path.exists(node_servers[0].pid_file):
         print('\n    Another dispycosnode seems to be running;\n'
               '    ensure no dispycosnode and servers are running and\n'
-              '    remove *.pkl files in %s"\n' % (os.path.join(dispycos_dest_path, '..')))
+              '    remove *.pkl files in %s"\n' % (os.path.join(dispycos_path, '..')))
         exit(1)
 
     dispycos_pid = os.getpid()
@@ -1000,27 +1078,24 @@ def _dispycos_node():
         server_config[_dispycos_var] = _dispycos_config.get(_dispycos_var, None)
     server_config['name'] = '%s_dispycosnode' % node_name
     server_config['tcp_port'] = node_ports[0]
-    if _dispycos_config['loglevel']:
-        pycos.logger.setLevel(pycos.Logger.DEBUG)
-        # pycos.logger.show_ms(True)
-    else:
-        pycos.logger.setLevel(pycos.Logger.INFO)
     dispycos_scheduler = pycos.Pycos(**server_config)
     dispycos_scheduler.ignore_peers = True
     for _dispycos_var in dispycos_scheduler.peers():
         pycos.Task(dispycos_scheduler.close_peer, _dispycos_var)
-    if dispycos_dest_path != dispycos_scheduler.dest_path:
+    if dispycos_path != dispycos_scheduler.dest_path:
         print('\n    Destination paths inconsistent: "%s" != "%s"\n' %
-              (dispycos_dest_path, dispycos_scheduler.dest_path))
+              (dispycos_path, dispycos_scheduler.dest_path))
         exit(1)
     if 'suid' in _dispycos_config:
-        os.chown(dispycos_dest_path, -1, _dispycos_config['sgid'])
-        os.chmod(dispycos_dest_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR |
+        os.chown(dispycos_path, -1, _dispycos_config['sgid'])
+        os.chmod(dispycos_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR |
                  stat.S_IRGRP | stat.S_IWGRP | stat.S_IXGRP | stat.S_ISGID)
-    os.chmod(os.path.join(dispycos_dest_path, '..'), stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR |
+    os.chmod(os.path.join(dispycos_path, '..'), stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR |
              stat.S_IXGRP)
+    os.chdir(dispycos_path)
 
     del _dispycos_id
+    parent_pipe, child_pipe = multiprocessing.Pipe(duplex=True)
 
     def node_proc(task=None):
         from pycos.dispycos import DispycosNodeAvailInfo, DispycosNodeInfo
@@ -1031,6 +1106,19 @@ def _dispycos_node():
         zombie_period = _dispycos_config['zombie_period']
         disk_path = dispycos_scheduler.dest_path
         _dispycos_config['node_location'] = pycos.serialize(task.location)
+
+        def close_server(server, terminate=False, restart=False, task=None):
+            parent_pipe.send({'msg': 'close_server', 'auth': comp_state.auth,
+                              'sid': server.id, 'terminate': False, 'restart': restart})
+            if not server.task:
+                raise StopIteration
+            if (yield server.task.deliver({'req': 'terminate' if terminate else 'quit',
+                                           'auth': comp_state.auth})) != 1:
+                parent_pipe.send({'msg': 'close_server', 'auth': comp_state.auth,
+                                  'sid': server.id, 'terminate': bool(terminate),
+                                  'restart': False})
+                server.task = None
+                server.done.set()
 
         def service_available():
             now = time.time()
@@ -1059,7 +1147,7 @@ def _dispycos_node():
                     yield task.sleep(service_times.stop - now)
                     for server in node_servers:
                         if server.task:
-                            server.task.send({'req': 'quit', 'auth': comp_state.auth})
+                            pycos.Task(close_server, server)
 
                 dispycos_scheduler.ignore_peers = True
                 if service_times.end:
@@ -1067,7 +1155,8 @@ def _dispycos_node():
                     yield task.sleep(service_times.end - now)
                     for server in node_servers:
                         if server.task:
-                            server.task.send({'req': 'terminate', 'auth': comp_state.auth})
+                            pycos.Task(close_server, server, terminate=True)
+
                     for peer in dispycos_scheduler.peers():
                         pycos.Task(dispycos_scheduler.close_peer, peer)
 
@@ -1091,60 +1180,47 @@ def _dispycos_node():
                     if comp_state.scheduler and comp_state.scheduler.location == msg.location:
                         node_task.send({'req': 'release', 'auth': comp_state.auth})
 
-        def server_task_msg(msg, task=None):
+        def server_task_msg(msg):
             try:
-                oid = msg['oid']
                 auth = msg['auth']
                 server_id = msg['server_id']
-                location = msg['location']
+                iid = msg['iid']
+                server_task = msg['task']
             except Exception:
-                raise StopIteration(-1)
+                return -1
 
             if auth != comp_state.auth and comp_state.auth:
                 pycos.logger.warning('Ignoring invalid server msg %s: %s != %s',
-                                     oid, auth, comp_state.auth)
-                raise StopIteration(-1)
+                                     auth, comp_state.auth)
+                return -1
             if server_id < 1 or server_id > len(node_servers):
                 pycos.logger.debug('Ignoring server task information for %s', server_id)
-                raise StopIteration(-1)
+                return -1
             server = node_servers[server_id]
-            if location:
-                for i in range(5):
-                    if server.task and server.msg_oid >= oid:
-                        raise StopIteration(0)
-                    if (yield dispycos_scheduler.peer(location)):
-                        pycos.logger.debug('Could not communicate with server %s at %s',
-                                           server.id, location)
-                        yield task.sleep(0.2)
-                    else:
-                        break
-                else:
-                    raise StopIteration(-1)
-                for i in range(3):
-                    server_task = yield pycos.SysTask.locate('dispycos_server',
-                                                             location=location, timeout=5)
-                    if isinstance(server_task, pycos.SysTask):
-                        break
-                else:
-                    raise StopIteration(-1)
+            if server_task:
+                if not isinstance(server_task, pycos.SysTask):
+                    pycos.logger.warning('Invalid task: %s', type(server_task))
+                    return -1
+                if server.task and server.task != server_task:
+                    if iid != server.iid:
+                        pycos.logger.warning('Updating server %s instance ID from %s to %s',
+                                             server_id, server.iid, iid)
                 if not comp_state.cpus_reserved:
                     server_task.send({'req': 'terminate', 'auth': comp_state.auth})
-                    raise StopIteration(0)
-                if auth != comp_state.auth:
-                    raise StopIteration(-1)
-                if (not server.task and server.msg_oid < oid):
-                    server.task = server_task
-                    server.msg_oid = oid
-                    server.done.clear()
-                    pid = msg.get('pid', None)
-                    with open(server.pid_file, 'wb') as fd:
-                        pickle.dump({'pid': pid, 'ppid': comp_state.spawn_mpproc.pid}, fd)
+                    return 0
+                server.task = server_task
+                server.iid = iid
+                server.done.clear()
+                pid = msg.get('pid', None)
+                with open(server.pid_file, 'wb') as fd:
+                    pickle.dump({'pid': pid, 'ppid': comp_state.spawn_mpproc.pid}, fd)
             else:
-                if server.msg_oid > oid:
-                    raise StopIteration(-1)
+                if server.iid != iid:
+                    pycos.logger.warning('Invalid server %s instance ID %s / %s!',
+                                         server_id, server.iid, iid)
                 server.task = None
-                server.msg_oid = 0
                 server.done.set()
+                server.iid += 1
                 if os.path.exists(server.pid_file):
                     try:
                         os.remove(server.pid_file)
@@ -1157,28 +1233,14 @@ def _dispycos_node():
                 parent_pipe.recv()
             while child_pipe.poll(0.1):
                 child_pipe.recv()
-            if computation:
-                scomp = pycos.serialize(computation)
-                with open('computation', 'wb') as fd:
-                    pickle.dump({'computation': scomp, 'auth': comp_state.auth}, fd)
-            else:
-                with open('computation', 'rb') as fd:
-                    scomp = pickle.load(fd)
-                    if scomp['auth'] != comp_state.auth:
-                        return 0
-                    scomp = scomp['computation']
-                computation = pycos.deserialize(scomp)
             busy_time.value = int(time.time())
-            _dispycos_config['scheduler_location'] = pycos.serialize(
-                comp_state.scheduler.location)
-            _dispycos_config['computation_location'] = pycos.serialize(
-                computation._pulse_task.location)
+            _dispycos_config['scheduler_location'] = pycos.serialize(comp_state.scheduler.location)
+            _dispycos_config['client_location'] = pycos.serialize(comp_state.client_location)
             _dispycos_config['auth'] = comp_state.auth
-            comp_state.interval = computation._pulse_interval
             if comp_state.interval < _dispycos_config['min_pulse_interval']:
                 comp_state.interval = _dispycos_config['min_pulse_interval']
-                pycos.logger.warning('Pulse interval for computation has been '
-                                     'raised to %s', comp_state.interval)
+                pycos.logger.warning('Pulse interval for computation has been raised to %s',
+                                     comp_state.interval)
             if zombie_period:
                 _dispycos_config['pulse_interval'] = min(comp_state.interval,
                                                          zombie_period / 3)
@@ -1190,8 +1252,7 @@ def _dispycos_node():
             id_ports = id_ports[:comp_state.cpus_reserved]
             if not id_ports:
                 return 0
-            args = (child_pipe, _dispycos_config, id_ports,
-                    scomp if os.name == 'nt' else computation, comp_state.setup_args)
+            args = (child_pipe, _dispycos_config, id_ports)
             comp_state.spawn_mpproc = multiprocessing.Process(target=_dispycos_spawn, args=args)
             comp_state.spawn_mpproc.start()
             with open(node_servers[0].pid_file, 'wb') as fd:
@@ -1201,13 +1262,21 @@ def _dispycos_node():
                 msg = parent_pipe.recv()
                 if (isinstance(msg, dict) and msg.get('msg', None) == 'started' and
                     msg.get('auth', None) == comp_state.auth):
-                    for i in msg['ids']:
-                        node_servers[i].done.clear()
-                    cpus = len(msg['ids'])
+                    for i in msg['sids']:
+                        if i < 1 or i >= len(node_servers):
+                            pycos.logger.warning('Invalid server ID: %s', i)
+                            # quit?
+                            continue
+                        server = node_servers[i]
+                        server.done.clear()
+                        server.iid = 1
+                    cpus = len(msg['sids'])
                 else:
                     cpus = 0
             else:
                 cpus = 0
+            if not cpus:
+                comp_state.spawn_mpproc = None
             return cpus
 
         def close_computation(req='close', restart=False, task=None):
@@ -1215,19 +1284,22 @@ def _dispycos_node():
                 raise StopIteration
             cpus_reserved, comp_state.cpus_reserved = comp_state.cpus_reserved, 0
             cur_auth = comp_state.auth
-            if comp_state.restart_servers:
-                parent_pipe.send({'msg': 'restart_server', 'auth': comp_state.auth,
-                                  'id': 0, 'port': -1, 'restart': False})
+            if comp_state.spawn_mpproc:
+                parent_pipe.send({'msg': 'close_server', 'auth': comp_state.auth, 'sid': 0,
+                                  'restart': False})
                 if parent_pipe.poll(2):
                     msg = parent_pipe.recv()
+                    if msg.get('auth', None) == comp_state.auth and msg.get('msg') == 'closed':
+                        if comp_state.spawn_mpproc:
+                            comp_state.spawn_mpproc = None
             for server in node_servers:
                 if server.task:
-                    server.task.send({'req': req, 'auth': comp_state.auth})
+                    pycos.Task(close_server, server)
             for server in node_servers:
                 if server.task:
                     yield server.done.wait()
             if comp_state.spawn_mpproc and comp_state.spawn_mpproc.is_alive():
-                spawn_pid = comp_state.spawn_mpproc.pid
+                proc = comp_state.spawn_mpproc
                 parent_pipe.send({'msg': 'quit', 'auth': comp_state.auth})
                 for i in range(5):
                     if parent_pipe.poll(1):
@@ -1236,7 +1308,6 @@ def _dispycos_node():
                         msg = parent_pipe.recv()
                         if (isinstance(msg, dict) and msg.get('msg', None) == 'closed' and
                             msg.get('auth', None) == comp_state.auth):
-                            comp_state.spawn_mpproc = None
                             break
                 else:
                     if comp_state.auth != cur_auth:
@@ -1249,31 +1320,29 @@ def _dispycos_node():
                         comp_state.spawn_mpproc.join(1)
                         if comp_state.auth != cur_auth:
                             raise StopIteration
-                        if comp_state.spawn_mpproc and comp_state.spawn_mpproc.is_alive():
-                            try:
-                                os.kill(spawn_pid, proc_signals[0])
-                            except Exception:
-                                pass
                         for i in range(10):
-                            if not comp_state.spawn_mpproc or not comp_state.spawn_mpproc.is_alive():
+                            if not proc.is_alive():
                                 break
-                            comp_state.spawn_mpproc.join(1)
+                            proc.join(1)
                             if comp_state.auth != cur_auth:
                                 raise StopIteration
                             if i == 9:
                                 try:
-                                    os.kill(spawn_pid, proc_signals[2])
+                                    os.kill(proc.pid, proc_signals[2])
+                                except ProcessLookupError:
+                                    break
+                                except OSError:
+                                    break
                                 except Exception:
                                     pass
-                    comp_state.spawn_mpproc = None
+                    if comp_state.spawn_mpproc:
+                        comp_state.spawn_mpproc = None
 
                 # clear pipe
                 while parent_pipe.poll(0.1):
                     parent_pipe.recv()
                 while child_pipe.poll(0.1):
                     child_pipe.recv()
-            else:
-                spawn_pid = None
             if comp_state.auth != cur_auth:
                 raise StopIteration
 
@@ -1286,25 +1355,23 @@ def _dispycos_node():
                     else:
                         if comp_state.auth != cur_auth:
                             raise StopIteration
-                        path = os.path.join(dispycos_dest_path, 'dispycos_server_%s' % server.id)
+                        path = os.path.join(dispycos_path, 'dispycos_server_%s' % server.id)
                         if os.path.isdir(path):
                             try:
                                 shutil.rmtree(path)
                             except Exception:
                                 pycos.logger.warning('Could not remove "%s"', path)
                         break
-                else:
-                    close_server(server, ppid=spawn_pid)
             if comp_state.auth != cur_auth:
                 raise StopIteration
             if restart:
                 comp_state.cpus_reserved = cpus_reserved
                 if start_computation(None) == 0:
-                    yield close_computation(req='quit', restart=False, task=task)
+                    yield close_computation(req='close', restart=False, task=task)
                 raise StopIteration
-            if os.path.isdir(dispycos_dest_path):
-                for name in os.listdir(dispycos_dest_path):
-                    name = os.path.join(dispycos_dest_path, name)
+            if os.path.isdir(dispycos_path):
+                for name in os.listdir(dispycos_path):
+                    name = os.path.join(dispycos_path, name)
                     try:
                         if os.path.isfile(name):
                             os.remove(name)
@@ -1313,21 +1380,23 @@ def _dispycos_node():
                     except Exception:
                         pycos.logger.warning('Could not remove "%s"' % name)
 
-            loc = _dispycos_config.pop('computation_location', None)
-            if loc:
-                loc = pycos.deserialize(loc)
-                pycos.Task(dispycos_scheduler.close_peer, loc)
-            if not os.path.isdir(dispycos_dest_path):
+            f = os.path.join(dispycos_path, '..', 'dispycos_computation')
+            try:
+                os.remove(f)
+            except Exception:
+                pycos.logger.warning('Computation to remove "%s" vanished!', f)
+            pycos.Task(dispycos_scheduler.close_peer, comp_state.client_location)
+            if not os.path.isdir(dispycos_path):
                 pycos.logger.warning('Apparently dispycosnode directory "%s" vanished after '
-                                     'computation from %s', dispycos_dest_path, comp_state.scheduler)
+                                     'computation from %s', dispycos_path, comp_state.scheduler)
                 try:
-                    os.path.makedirs(dispycos_dest_path)
+                    os.path.makedirs(dispycos_path)
                     if 'suid' in _dispycos_config:
-                        os.chmod(dispycos_dest_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR
+                        os.chmod(dispycos_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR
                                  | stat.S_IXGRP | stat.S_IXOTH)
                 except Exception:
                     pycos.logger.warning('Could not create dispyconode directory "%s"',
-                                         dispycos_dest_path)
+                                         dispycos_path)
                     _dispycos_config['serve'] = 0
 
             comp_state.scheduler.send({'status': pycos.dispycos.Scheduler.NodeClosed,
@@ -1335,6 +1404,7 @@ def _dispycos_node():
             comp_state.auth = None
             comp_state.interval = _dispycos_config['max_pulse_interval']
             comp_state.scheduler = None
+            comp_state.client_location = None
             comp_state.served += 1
             timer_task.resume()
             if req == 'quit' or req == 'terminate':
@@ -1371,7 +1441,7 @@ def _dispycos_node():
                     sent = yield comp_state.scheduler.deliver(msg, timeout=msg_timeout)
                     if sent == 1:
                         last_pulse = now
-                    elif comp_state.auth and (now - last_pulse) > (5 * comp_state.interval):
+                    elif comp_state.scheduler and (now - last_pulse) > (5 * comp_state.interval):
                         pycos.logger.warning('Scheduler is not reachable; closing computation "%s"',
                                              comp_state.auth)
                         node_task.send({'req': 'release', 'auth': comp_state.auth,
@@ -1379,7 +1449,7 @@ def _dispycos_node():
                         pycos.Task(dispycos_scheduler.close_peer, comp_state.scheduler.location)
 
                     if (zombie_period and ((now - busy_time.value) > zombie_period) and
-                        comp_state.auth):
+                        comp_state.scheduler):
                         if comp_state.abandon_zombie:
                             pycos.logger.debug('Not closing zombie computation from %s',
                                                comp_state.scheduler.location)
@@ -1404,9 +1474,6 @@ def _dispycos_node():
         for peer in _dispycos_config['peers']:
             pycos.Task(dispycos_scheduler.peer, pycos.deserialize(peer))
 
-        # TODO: create new pipe for each computation instead?
-        parent_pipe, child_pipe = multiprocessing.Pipe(duplex=True)
-
         while 1:
             msg = yield task.receive()
             try:
@@ -1415,7 +1482,7 @@ def _dispycos_node():
                 continue
 
             if req == 'server_task':
-                pycos.Task(server_task_msg, msg)
+                server_task_msg(msg)
 
             elif req == 'dispycos_node_info':
                 client = msg.get('client', None)
@@ -1440,15 +1507,15 @@ def _dispycos_node():
                 auth = msg.get('auth', None)
                 if (isinstance(client, pycos.Task) and isinstance(cpus, int) and
                     isinstance(msg.get('status_task', None), pycos.Task) and auth and
-                    isinstance(msg.get('computation_location', None), pycos.Location)):
+                    isinstance(msg.get('client_location', None), pycos.Location)):
                     pass
                 else:
                     continue
 
                 avail_cpus = len([server for server in node_servers
                                   if server.id and not server.task])
-                if (not comp_state.auth) and service_available() and (0 < cpus <= avail_cpus):
-                    if (yield dispycos_scheduler.peer(msg['computation_location'])):
+                if (not comp_state.scheduler) and service_available() and (0 < cpus <= avail_cpus):
+                    if (yield dispycos_scheduler.peer(msg['client_location'])):
                         cpus = 0
                     else:
                         if not cpus:
@@ -1460,13 +1527,26 @@ def _dispycos_node():
                     auth = hashlib.sha1(os.urandom(20)).hexdigest()
                 else:
                     auth = None
+                comp_state.interval = msg['pulse_interval']
+                comp_state.abandon_zombie = msg.get('abandon_zombie', False)
+                if comp_state.interval < _dispycos_config['min_pulse_interval']:
+                    comp_state.interval = _dispycos_config['min_pulse_interval']
+                    pycos.logger.warning('Pulse interval for computation from %s has been '
+                                         'raised to %s', client.location, comp_state.interval)
+                if zombie_period:
+                    _dispycos_config['pulse_interval'] = min(comp_state.interval,
+                                                             zombie_period / 3)
+                else:
+                    _dispycos_config['pulse_interval'] = comp_state.interval
+                # TODO: inform scheduler about pulse interval
                 reply = {'cpus': cpus, 'auth': auth}
                 if ((yield client.deliver(reply, timeout=msg_timeout)) == 1 and cpus):
                     comp_state.auth = auth
-                    dispycos_scheduler.ignore_peers = True
                     comp_state.cpus_reserved = cpus
-                    busy_time.value = int(time.time())
                     comp_state.scheduler = msg['status_task']
+                    comp_state.client_location = msg['client_location']
+                    busy_time.value = int(time.time())
+                    dispycos_scheduler.ignore_peers = True
                     timer_task.resume()
                 else:
                     dispycos_scheduler.ignore_peers = False
@@ -1476,21 +1556,40 @@ def _dispycos_node():
                 client = msg.get('client', None)
                 computation = msg.get('computation', None)
                 if (comp_state.auth == msg.get('auth', None) and
-                    isinstance(client, pycos.Task) and isinstance(computation, Computation) and
-                    comp_state.cpus_reserved > 0):
-                    # TODO: save setup_args in file instead?
-                    comp_state.setup_args = msg.get('setup_args')
-                    comp_state.restart_servers = computation._restart_servers
+                    isinstance(client, pycos.Task) and comp_state.cpus_reserved > 0):
+                    with open(os.path.join(dispycos_path, '..', 'dispycos_computation'), 'wb') as fd:
+                        pickle.dump({'auth': comp_state.auth, 'code': computation._code,
+                                     'disable_servers': computation._disable_servers,
+                                     'server_setup': computation._server_setup,
+                                     'restart_servers': computation._restart_servers,
+                                     'node_setup': computation._node_setup,
+                                     'setup_args': msg['setup_args']}, fd)
                     cpus = start_computation(computation)
                     if ((yield client.deliver(cpus)) == 1) and cpus:
                         comp_state.cpus_reserved = cpus
                         timer_task.resume()
                     else:
                         pycos.Task(close_computation)
+                del computation
 
             elif req == 'release':
                 auth = msg.get('auth', None)
                 if comp_state.auth == auth:
+                    setup_args = msg.get('setup_args', None)
+                    if setup_args:
+                        computation = None
+                        try:
+                            with open(os.path.join(dispycos_path, '..', 'dispycos_computation'),
+                                      'rb') as fd:
+                                computation = pickle.load(fd)
+                            computation['setup_args'] = setup_args
+                            with open(os.path.join(dispycos_path, '..', 'dispycos_computation'),
+                                      'wb') as fd:
+                                pickle.dump(computation, fd)
+                        except Exception:
+                            pycos.logger.warning('Could not save setup_args for computation from %s',
+                                                 comp_state.scheduler.location)
+                        del computation
                     restart = msg.get('restart', False)
                     if msg.get('terminate', False):
                         req = 'terminate'
@@ -1506,7 +1605,7 @@ def _dispycos_node():
                     elif req == 'quit':
                         req = 'terminate'
                     if comp_state.scheduler:
-                        yield close_computation(req=req, task=task)
+                        pycos.Task(close_computation, req=req)
                     elif req == 'quit' or req == 'terminate':
                         break
 
@@ -1538,15 +1637,9 @@ def _dispycos_node():
                     else:
                         server = None
                     if server:
-                        if msg.get('restart', False):
-                            parent_pipe.send({'msg': 'restart_server', 'auth': comp_state.auth,
-                                              'id': server.id, 'port': server.port})
                         if server.task:
-                            if msg.get('terminate', False):
-                                req = 'terminate'
-                            else:
-                                req = 'quit'
-                            server.task.send({'req': req, 'auth': comp_state.auth})
+                            pycos.Task(close_server, server, terminate=msg.get('terminate', False),
+                                       restart=msg.get('restart', False))
 
             elif req == 'abandon_zombie':
                 auth = msg.get('auth', None)
@@ -1562,22 +1655,32 @@ def _dispycos_node():
         except Exception:
             pass
         if os.name == 'nt':
-            os.kill(dispycos_pid, signal.SIGTERM)
+            os.kill(dispycos_pid, signal.CTRL_C_EVENT)
         else:
             os.kill(dispycos_pid, signal.SIGINT)
 
     _dispycos_config['name'] = node_name
-    _dispycos_config['dest_path'] = dispycos_dest_path
+    _dispycos_config['dest_path'] = dispycos_path
     _dispycos_config['busy_time'] = busy_time
     node_task = pycos.Task(node_proc)
     del server_config, node_ports, _dispycos_var
 
     def sighandler(signum, frame):
-        # pycos.logger.info('dispynode (%s) received signal %s', dispycos_pid, signum)
-        if os.path.isfile(node_servers[0].pid_file):
-            node_task.send({'req': 'terminate', 'auth': node_auth})
+        pycos.logger.debug('dispycosnode (%s) received signal %s', dispycos_pid, signum)
+        proc = comp_state.spawn_mpproc
+        if proc:
+            parent_pipe.send({'msg': 'quit', 'auth': comp_state.auth})
+            proc.join(2)
+        if node_task.is_alive():
+            node_task.send({'req': 'quit', 'auth': node_auth})
         else:
-            raise KeyboardInterrupt
+            if os.path.isfile(node_servers[0].pid_file):
+                try:
+                    os.remove(node_servers[0].pid_file)
+                except Exception:
+                    pycos.logger.debug(traceback.format_exc())
+                    pass
+            # raise KeyboardInterrupt
 
     signal.signal(signal.SIGINT, sighandler)
     if os.name == 'nt':
@@ -1586,6 +1689,8 @@ def _dispycos_node():
         signal.signal(signal.SIGQUIT, sighandler)
     if hasattr(signal, 'SIGHUP'):
         signal.signal(signal.SIGHUP, sighandler)
+    if hasattr(signal, 'SIGTERM'):
+        signal.signal(signal.SIGTERM, sighandler)
 
     del sighandler
 
@@ -1609,13 +1714,10 @@ def _dispycos_node():
                         '          close current computation when current jobs are finished\n'
                         '  "quit" to "close" current computation and exit dispycosnode\n'
                         '  "terminate" to kill current jobs and "quit": ')
-            except KeyboardInterrupt:
+            except (KeyboardInterrupt, EOFError):
                 if os.path.exists(node_servers[0].pid_file):
                     node_task.send({'req': 'quit', 'auth': node_auth})
                 break
-            except EOFError:
-                pycos.logger.warning('EOF ignored!\n')
-                continue
             else:
                 cmd = cmd.strip().lower()
                 if not cmd:
@@ -1640,10 +1742,6 @@ def _dispycos_node():
     for peer in dispycos_scheduler.peers():
         pycos.Task(dispycos_scheduler.close_peer, peer)
 
-    try:
-        os.rmdir(dispycos_dest_path)
-    except Exception:
-        pass
     # if 'suid' in _dispycos_config:
     #     os.setegid(_dispycos_config['sgid'])
     #     os.seteuid(_dispycos_config['suid'])
@@ -1689,7 +1787,7 @@ if __name__ == '__main__':
     import pycos
     import pycos.netpycos
     import pycos.config
-    from pycos.dispycos import MinPulseInterval, MaxPulseInterval, Computation
+    from pycos.dispycos import MinPulseInterval, MaxPulseInterval
 
     pycos.logger.name = 'dispycosnode'
     parser = argparse.ArgumentParser()
@@ -1803,4 +1901,8 @@ if __name__ == '__main__':
     del parser, sys.modules['argparse'], globals()['argparse'], _dispycos_var
     pycos.config.DispycosSchedulerPort = int(_dispycos_config.pop('scheduler_port'))
 
+    if _dispycos_config['loglevel']:
+        pycos.logger.setLevel(pycos.Logger.DEBUG)
+    else:
+        pycos.logger.setLevel(pycos.Logger.INFO)
     _dispycos_node()

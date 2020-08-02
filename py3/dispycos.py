@@ -169,9 +169,9 @@ class Computation(object):
         if status_task and not isinstance(status_task, Task):
             raise Exception('status_task must be Task instance')
         if node_setup and not inspect.isgeneratorfunction(node_setup):
-            raise Exception('"node_setup" must be a task (generator function)')
+            raise Exception('"node_setup" must be a task (generator) function')
         if server_setup and not inspect.isgeneratorfunction(server_setup):
-            raise Exception('"server_setup" must be a task (generator function)')
+            raise Exception('"server_setup" must be a task (generator) function')
         if (disable_nodes or disable_servers) and not status_task:
             raise Exception('status_task must be given when nodes or servers are disabled')
         if zombie_period:
@@ -1254,9 +1254,8 @@ class Scheduler(object, metaclass=pycos.Singleton):
                 node.lock.release()
                 raise StopIteration(-1)
 
-        node.task.send({'req': 'computation', 'computation': pycos.serialize(computation),
-                        'auth': node.auth, 'setup_args': setup_args,
-                        'restart_servers': computation._restart_servers, 'client': task})
+        node.task.send({'req': 'computation', 'computation': computation,
+                        'auth': node.auth, 'setup_args': setup_args, 'client': task})
         cpus = yield task.receive(timeout=MsgTimeout)
         if not cpus or computation != self._cur_computation:
             node.status = Scheduler.NodeClosed
