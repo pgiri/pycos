@@ -866,7 +866,7 @@ class _AsyncSocket(object):
         Messages are tagged with length of the data, so on the receiving side,
         recv_msg knows how much data to receive.
         """
-        raise StopIteration(yield self.sendall(struct.pack('>L', len(data)) + data))
+        raise StopIteration((yield self.sendall(struct.pack('>L', len(data)) + data)))
 
     def _sync_send_msg(self, data):
         """Internal use only; use 'send_msg' instead.
@@ -2514,7 +2514,7 @@ class Task(object):
         """
         if not Task._pycos:
             Pycos.instance()
-        raise StopIteration(yield Task._locate('!' + name, location=location, timeout=timeout))
+        raise StopIteration((yield Task._locate('!' + name, location=location, timeout=timeout)))
 
     @staticmethod
     def _locate(name, location, timeout):
