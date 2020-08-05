@@ -21,11 +21,11 @@ def compute(data_file, alg, n, client_task, task=None):
     yield task.sleep(n)
     # send result to client
     client_task.send((data_file, alg, checksum.hexdigest()))
-    # 'dispycos_server_quit' will cause server process to terminate. The server can be restarted
+    # 'dispycos_close_server' will cause server process to terminate. The server can be restarted
     # with 'restart=True' in this call or in using 'restart_servers=True' parameter to
     # Computation. Then a server is restarted (with new process) automatically so new computation
     # can be sent to it.
-    dispycos_server_quit(restart=True)
+    dispycos_close_server(restart=True)
 
 
 # 'server_available' is executed at client to send a data file to server that became available and
@@ -64,8 +64,6 @@ def client_proc(computation, task=None):
         result = yield task.recv()
         print('    %ssum for %s: %s' % (result[1], result[0], result[2]))
 
-    yield task.sleep(random.uniform(0, 2))
-    pycos.logger.debug('   CLOSING COMPUTATION!')
     yield computation.close()
 
 
@@ -80,9 +78,6 @@ if __name__ == '__main__':
         # use files in 'examples' directory
         data_files = glob.glob(os.path.join(os.path.dirname(pycos.__file__), 'examples', '*.py'))
 
-    data_files = data_files[:2]
-    print(data_files)
-
     # if scheduler is not already running (on a node as a program), start private scheduler:
     Scheduler()
 
@@ -90,7 +85,7 @@ if __name__ == '__main__':
     # illustrate how client can distribute data).
 
     # servers can be restarted with 'restart_servers=True' here, or with 'restart=True' to
-    # 'dispycos_server_quit'
+    # 'dispycos_close_server'
     # computation = Computation([compute], status_task=pycos.Task(status_proc), restart_servers=True)
     computation = Computation([compute], status_task=pycos.Task(status_proc))
     client_task = pycos.Task(client_proc, computation)

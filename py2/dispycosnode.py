@@ -122,7 +122,7 @@ def _dispycos_server_proc():
                        'auth': auth})
         return wrapped
 
-    globals()['dispycos_server_quit'] = _dispycos_quit_wrapper()
+    globals()['dispycos_close_server'] = _dispycos_quit_wrapper()
     del _dispycos_quit_wrapper
 
     _dispycos_var = deserialize(_dispycos_config['scheduler_location'])
@@ -372,7 +372,7 @@ def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config):
         yield _dispycos_scheduler.peer(loc)
         node_task = yield pycos.Task.locate('dispycos_node', location=loc, timeout=5)
         if not isinstance(node_task, pycos.Task):
-            logger.warning('%s could not locate node', _dispycos_scheduler.location)
+            pycos.logger.warning('%s could not locate node', _dispycos_scheduler.location)
             raise StopIteration(-1)
         _dispycos_config['node_task'] = node_task
         raise StopIteration(0)
@@ -970,6 +970,7 @@ def _dispycos_node():
     def kill_proc(pid, ppid, kill):
         if pid <= 0:
             return 0
+        pycos.logger.info('Killing process with ID %s', pid)
         psproc = None
         if psutil:
             try:
@@ -1601,7 +1602,8 @@ def _dispycos_node():
                 auth = msg.get('auth', None)
                 if auth == node_auth:
                     if _dispycos_config['serve']:
-                        _dispycos_config['serve'] = 0
+                        if req != 'close':
+                            _dispycos_config['serve'] = 0
                     elif req == 'quit':
                         req = 'terminate'
                     if comp_state.scheduler:
@@ -1650,10 +1652,6 @@ def _dispycos_node():
                 pycos.logger.warning('Invalid message %s ignored',
                                      str(msg) if isinstance(msg, dict) else '')
 
-        try:
-            os.remove(node_servers[0].pid_file)
-        except Exception:
-            pass
         if os.name == 'nt':
             os.kill(dispycos_pid, signal.CTRL_C_EVENT)
         else:
@@ -1674,13 +1672,8 @@ def _dispycos_node():
         if node_task.is_alive():
             node_task.send({'req': 'quit', 'auth': node_auth})
         else:
-            if os.path.isfile(node_servers[0].pid_file):
-                try:
-                    os.remove(node_servers[0].pid_file)
-                except Exception:
-                    pycos.logger.debug(traceback.format_exc())
-                    pass
-            # raise KeyboardInterrupt
+            if os.name != 'nt' or daemon:
+                raise KeyboardInterrupt
 
     signal.signal(signal.SIGINT, sighandler)
     if os.name == 'nt':
@@ -1699,7 +1692,7 @@ def _dispycos_node():
             try:
                 time.sleep(3600)
             except Exception:
-                if os.path.exists(node_servers[0].pid_file):
+                if node_task.is_alive():
                     node_task.send({'req': 'quit', 'auth': node_auth})
                 break
     else:
@@ -1715,7 +1708,7 @@ def _dispycos_node():
                         '  "quit" to "close" current computation and exit dispycosnode\n'
                         '  "terminate" to kill current jobs and "quit": ')
             except (KeyboardInterrupt, EOFError):
-                if os.path.exists(node_servers[0].pid_file):
+                if node_task.is_alive():
                     node_task.send({'req': 'quit', 'auth': node_auth})
                 break
             else:
@@ -1733,7 +1726,8 @@ def _dispycos_node():
                         print('  dispycos server "%s" is not currently used' % server.name)
             elif cmd in ('close', 'quit', 'terminate'):
                 node_task.send({'req': cmd, 'auth': node_auth})
-                break
+                if cmd == 'quit' or cmd == 'terminate':
+                    break
 
     try:
         node_task.value()
@@ -1742,6 +1736,12 @@ def _dispycos_node():
     for peer in dispycos_scheduler.peers():
         pycos.Task(dispycos_scheduler.close_peer, peer)
 
+    if os.path.isfile(node_servers[0].pid_file):
+        try:
+            os.remove(node_servers[0].pid_file)
+        except Exception:
+            pycos.logger.debug(traceback.format_exc())
+            pass
     # if 'suid' in _dispycos_config:
     #     os.setegid(_dispycos_config['sgid'])
     #     os.seteuid(_dispycos_config['suid'])
