@@ -56,7 +56,6 @@ class HTTPServer(object):
     ServerStatus = {dispycos.Scheduler.ServerDiscovered: 'Discovered',
                     dispycos.Scheduler.ServerInitialized: 'Initialized',
                     dispycos.Scheduler.ServerClosed: 'Closed',
-                    dispycos.Scheduler.ServerIgnore: 'Ignore',
                     dispycos.Scheduler.ServerDisconnected: 'Disconnected',
                     dispycos.Scheduler.ServerSuspended: 'Suspended',
                     dispycos.Scheduler.ServerResumed: 'Initialized'}
