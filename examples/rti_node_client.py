@@ -47,6 +47,11 @@ def client_proc(script, task=None):
     # rti = yield pycos.RTI.locate('rti', loc)
     print('RTI server is at %s' % rti.location)
 
+    sent = yield pycos.Pycos.instance().send_file(rti.location, script, overwrite=True, timeout=5)
+    if sent < 0:
+        print('Could not send file %s: %s' % (script, sent))
+        raise StopIteration
+
     # it is simpler to have server send error directly to this client task, but a monitor is
     # used here to illustrate potential use cases
     monitor = pycos.Task(monitor_proc, task)
@@ -79,6 +84,8 @@ if __name__ == '__main__':
     else:
         read_input = raw_input
     auth = hashlib.sha512(read_input('Enter authentication string: ').strip().encode())
-    scheduler = pycos.Pycos(name='client')
+
+    # if this script is in shared environment, secret itself can be read from input
+    scheduler = pycos.Pycos(name='client', secret='update')
 
     pycos.Task(client_proc, script)
