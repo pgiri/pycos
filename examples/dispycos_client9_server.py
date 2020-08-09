@@ -54,7 +54,8 @@ def setup_server(data_file, task=None):  # executed on remote server
         data = fd.read()
     os.remove(data_file)  # data_file is not needed anymore
     # generator functions must have at least one 'yield'
-    yield 0  # indicate successful initialization with exit value 0
+    ret = yield 0  # indicate successful initialization with exit value 0
+    raise StopIteration(ret)
 
 
 # 'compute' is executed at remote server process repeatedly to compute checksum
@@ -78,6 +79,8 @@ def status_proc(task=None):
         if msg.status == Scheduler.ServerDiscovered:
             pycos.Task(server_available, msg.info, data_files[i])
             i += 1
+            if i >= len(data_files):
+                i = 0
 
 
 def client_proc(computation, task=None):
@@ -109,13 +112,16 @@ if __name__ == '__main__':
             ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
              (__file__, sys.version_info.major, sys.version_info.minor))
 
-    if os.path.dirname(sys.argv[0]):
-        os.chdir(os.path.dirname(sys.argv[0]))
+    # optional first argument must be a directory containing Python files
+    if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
+        data_files = glob.glob(os.path.join(sys.argv[1], '*.py'))
+    else:
+        # use files in 'examples' directory
+        data_files = glob.glob(os.path.join(os.path.dirname(pycos.__file__), 'examples', '*.py'))
+
     # if scheduler is not already running (on a node as a program), start
     # private scheduler:
     Scheduler()
-
-    data_files = glob.glob('dispycos_client*.py')
 
     # send 'compute' generator function; the client sends data files when server
     # is discovered (to illustrate how client can distribute data).

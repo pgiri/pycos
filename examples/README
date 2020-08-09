@@ -85,6 +85,9 @@ framework for distributed and parallel computing.
   may run as many servers as there are processors on that node), which is then
   read in memory on that server for in-memory processing at server level.
 
+* dispycos_client_restart_servers.py shows how to (close and) restart servers
+  to start computations with a pristine (global) state.
+
 * dispycos_cloud_computing.py shows configuration for cloud computing using EC2
   nodes as servers and client on local computer.
 
@@ -115,6 +118,12 @@ framework for distributed and parallel computing.
 * pipe_grep.py uses chained pipes with asynchronous read and write interface to
   count number of lines matching a pattern.
 
+* remote_channel_client.py and remote_channel_server.py use broadcasting
+  channels to exchange messages among a sender and local/remote recipients.
+
+* remote_task_client.py and remote_task_server.py exchange messages with
+  one-to-one message passing to exchange messages between two remote tasks.
+
 * rti_monitor_client.py and rti_monitor_server.py illustrate another approach to
   execute remote tasks: The server registers a function and client requests to
   execute task with that function. Compare this to dispycos_client.py where the
@@ -122,11 +131,9 @@ framework for distributed and parallel computing.
   execute arbitrary functions, whereas with RTI only registered functions can be
   executed by clients.
 
-* remote_channel_client.py and remote_channel_server.py use broadcasting
-  channels to exchange messages among a sender and local/remote recipients.
-
-* remote_task_client.py and remote_task_server.py exchange messages with
-  one-to-one message passing to exchange messages between two remote tasks.
+* rti_node_client.py and rti_node_server.py use RTI feature so client can run
+  a script (node_update_script.py in this example) on the server. Authentication is
+  used to prevent unauthorized use of this feature.
 
 * sock_client.py and sock_server.py use asynchronous network programmming to
   communicate.

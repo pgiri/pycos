@@ -67,10 +67,10 @@ def node_setup(task=None):
         import numpy
     except:
         # non-zero "return" indicates failure and this node won't be used
-        yield -1
+        ret = yield -1
     else:
-        yield 0
-
+        ret = yield 0
+    raise StopIteration(ret)
 
 # This task runs locally. It creates two remote tasks at two dispycosnode server
 # processes, two local tasks, one to receive trend signal from one of the remote
@@ -133,6 +133,6 @@ if __name__ == '__main__':
     # available. However, 'node_setup' doesn't work with Windows, so this
     # example disables Windows nodes; alternately 'server_setup' (that works for
     # Windows nodes as well) can be used instead of 'node_setup'.
-    node_allocations = [DispycosNodeAllocate(node='*', platform='Windows', cpus=0)]
-    computation = Computation([], node_allocations=node_allocations, node_setup=node_setup)
+    nodes = [DispycosNodeAllocate(node='*', platform='Windows', cpus=0)]
+    computation = Computation([], nodes=nodes, node_setup=node_setup)
     pycos.Task(client_proc, computation)

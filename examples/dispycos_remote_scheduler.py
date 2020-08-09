@@ -75,9 +75,8 @@ if __name__ == '__main__':
             print('Allocate %s (%s): %s' % (ip_addr, platform, cpus))
             return cpus - 1
 
-    node_allocations = [NodeAllocate(node='*')]
-    computation = Computation([compute], pulse_interval=10, zombie_period=51,
-                              node_allocations=node_allocations)
+    nodes = [NodeAllocate(node='*')]
+    computation = Computation([compute], pulse_interval=10, zombie_period=51, nodes=nodes)
     # start httpd so computation can be monitored with a browser
     http_server = pycos.httpd.HTTPServer(computation)
 

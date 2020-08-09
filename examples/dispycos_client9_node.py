@@ -30,7 +30,8 @@ def node_available(avail_info, data_file, task=None):
 
     # value of task (last value yield'ed or value of 'raise StopIteration') will
     # be passed to node_setup as argument(s).
-    yield computation.enable_node(avail_info.location.addr, data_file)
+    ret = yield computation.enable_node(avail_info.location.addr, data_file)
+    raise StopIteration(ret)
 
 
 def node_setup(data_file):
@@ -49,12 +50,16 @@ def node_setup(data_file):
         data = fd.read()
     os.remove(data_file)  # data_file is not needed anymore
     file_name = data_file
-    yield 0  # task must have at least one 'yield' and 0 indicates success
+    ret = yield 0  #  task must have at least one 'yield' and 0 indicates success
+    raise StopIteration(ret)
 
 
 # 'compute' is executed at remote server process repeatedly to compute checksum
 # of data in memory, initialized by 'node_setup'
 def compute(alg, n, task=None):
+    # note that files sent in 'node_available' would've been at parent of working directory, so to
+    # access 'data_file' above (if not removed in 'node_setup' as done in this case), it can do so
+    # with, e.g., as "open(os.path.join('..', data_file), 'rb')"
     global data, hashlib
     yield task.sleep(n)
     checksum = getattr(hashlib, alg)()
@@ -71,6 +76,8 @@ def status_proc(task=None):
         if not isinstance(msg, DispycosStatus):
             continue
         if msg.status == Scheduler.NodeDiscovered:
+            if i >= len(data_files):
+                i = 0
             pycos.Task(node_available, msg.info.avail_info, data_files[i])
             i += 1
 
@@ -83,7 +90,6 @@ def client_proc(computation, task=None):
     # created can be more than number of server processes available; the
     # scheduler will use as many processes as necessary/available, running one
     # job at a server process
-    yield task.sleep(2)
     algorithms = ['md5', 'sha1', 'sha224', 'sha256', 'sha384', 'sha512']
     args = [(algorithms[i % len(algorithms)], random.uniform(1, 3)) for i in range(15)]
     results = yield computation.run_results(compute, args)
@@ -98,25 +104,27 @@ def client_proc(computation, task=None):
 
 if __name__ == '__main__':
     import sys, os, random, glob
-    # pycos.logger.setLevel(pycos.Logger.DEBUG)
+    pycos.logger.setLevel(pycos.Logger.DEBUG)
     # PyPI / pip packaging adjusts assertion below for Python 3.7+
     if sys.version_info.major == 3:
         assert sys.version_info.minor < 7, \
             ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
              (__file__, sys.version_info.major, sys.version_info.minor))
 
-    if os.path.dirname(sys.argv[0]):
-        os.chdir(os.path.dirname(sys.argv[0]))
+    # optional first argument must be a directory containing Python files
+    if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
+        data_files = glob.glob(os.path.join(sys.argv[1], '*.py'))
+    else:
+        # use files in 'examples' directory
+        data_files = glob.glob(os.path.join(os.path.dirname(pycos.__file__), 'examples', '*.py'))
+
     # if scheduler is not already running (on a node as a program),
     # start private scheduler:
     Scheduler()
 
-    data_files = glob.glob('dispycos_client*.py')
-
-    # Since this example doesn't work with Windows, 'node_allocations' feature
-    # is used to filter out nodes running Windows.
-    node_allocations = [DispycosNodeAllocate(node='*', platform='Windows', cpus=0)]
-    computation = Computation([compute], node_allocations=node_allocations,
-                              status_task=pycos.Task(status_proc), node_setup=node_setup,
-                              disable_nodes=True)
+    # Since this example doesn't work with Windows, 'nodes' feature is used to filter out nodes
+    # running Windows.
+    nodes = [DispycosNodeAllocate(node='*', platform='Windows', cpus=0)]
+    computation = Computation([compute], nodes=nodes, node_setup=node_setup, disable_nodes=True,
+                              status_task=pycos.Task(status_proc))
     pycos.Task(client_proc, computation)
