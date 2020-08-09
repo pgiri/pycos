@@ -159,7 +159,7 @@ def _dispycos_server_proc():
                 if _dispycos_req == 'enable_server':
                     _dispycos_var = pycos.deserialize(_dispycos_msg['setup_args'])
                     break
-                elif _dispycos_req == 'terminate':
+                elif _dispycos_req == 'terminate' or _dispycos_req == 'quit':
                     if _dispycos_scheduler_task:
                         _dispycos_scheduler_task.send({'status': Scheduler.ServerClosed,
                                                        'location': _dispycos_task.location,
@@ -1445,7 +1445,7 @@ def _dispycos_node():
                     elif comp_state.scheduler and (now - last_pulse) > (5 * comp_state.interval):
                         pycos.logger.warning('Scheduler is not reachable; closing computation "%s"',
                                              comp_state.auth)
-                        node_task.send({'req': 'release', 'auth': comp_state.auth,
+                        node_task.send({'req': 'close', 'auth': comp_state.auth,
                                         'client': comp_state.scheduler})
                         pycos.Task(dispycos_scheduler.close_peer, comp_state.scheduler.location)
 
@@ -1457,7 +1457,7 @@ def _dispycos_node():
                         else:
                             pycos.logger.warning('Closing zombie computation "%s" from %s',
                                                  comp_state.auth, comp_state.scheduler.location)
-                            node_task.send({'req': 'release', 'auth': comp_state.auth,
+                            node_task.send({'req': 'close', 'auth': comp_state.auth,
                                             'client': comp_state.scheduler})
 
                 if ping_interval and (now - last_ping) > ping_interval and service_available():
