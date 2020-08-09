@@ -1047,7 +1047,8 @@ class Scheduler(object, metaclass=pycos.Singleton):
                     server = Scheduler._Server(rtask, self)
                     server.status = status
                     node.disabled_servers[rtask.location] = server
-                    if self._cur_computation and self._cur_computation.status_task:
+                    if (node.status == Scheduler.NodeInitialized and self._cur_computation and
+                        self._cur_computation.status_task):
                         info = DispycosStatus(server.status, server.task.location)
                         self._cur_computation.status_task.send(info)
 
@@ -1269,21 +1270,24 @@ class Scheduler(object, metaclass=pycos.Singleton):
         if computation.status_task:
             info = DispycosNodeInfo(node.name, node.addr, node.cpus, node.platform, node.avail_info)
             computation.status_task.send(DispycosStatus(node.status, info))
-        servers = [server for server in node.disabled_servers.values()
-                   if server.status == Scheduler.ServerInitialized]
-        if servers:
-            self._disabled_nodes.pop(node.addr, None)
-            self._nodes[node.addr] = node
-            node.cpu_avail.set()
-            self._cpu_nodes.add(node)
-            self._cpus_avail.set()
-            for server in servers:
+        for server in list(node.disabled_servers.values()):
+            if server.status == Scheduler.ServerDiscovered:
+                if computation.status_task:
+                    info = DispycosStatus(server.status, server.task.location)
+                    self._cur_computation.status_task.send(info)
+            elif server.status == Scheduler.ServerInitialized:
                 node.disabled_servers.pop(server.task.location)
                 node.servers[server.task.location] = server
                 server.cpu_avail.set()
                 if computation.status_task:
                     computation.status_task.send(DispycosStatus(server.status,
                                                                 server.task.location))
+        if node.servers:
+            self._disabled_nodes.pop(node.addr, None)
+            self._nodes[node.addr] = node
+            node.cpu_avail.set()
+            self._cpu_nodes.add(node)
+            self._cpus_avail.set()
 
     def __discover_node(self, peer_status, task=None):
         for _ in range(10):
