@@ -47,7 +47,7 @@ else:
 if sys.version_info >= (3, 3):
     from time import perf_counter as _time
 
-from pycos.config import MsgTimeout
+from pycos.config import MsgTimeout, PickleProtocolVersion
 
 
 __author__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
@@ -63,21 +63,26 @@ __version__ = "4.9.0"
 __all__ = ['Task', 'Pycos', 'Lock', 'RLock', 'Event', 'Condition', 'Semaphore',
            'AsyncSocket', 'HotSwapException', 'MonitorException', 'Location', 'Channel',
            'CategorizeMessages', 'AsyncThreadPool', 'AsyncDBCursor',
-           'Singleton', 'logger', 'serialize', 'deserialize', 'unserialize', 'Logger']
+           'Singleton', 'logger', 'serialize', 'deserialize', 'Logger']
 
 # PyPI / pip packaging adjusts assertion below for Python 3.7+
 assert sys.version_info.major == 3 and sys.version_info.minor < 7, \
     ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
      (__file__, sys.version_info.major, sys.version_info.minor))
+if PickleProtocolVersion is None:
+    PickleProtocolVersion = pickle.HIGHEST_PROTOCOL
+elif PickleProtocolVersion == 0:
+    PickleProtocolVersion = pickle.DEFAULT_PROTOCOL
+elif not isinstance(PickleProtocolVersion, int):
+    raise Exception('PickleProtocolVersion must be an integer')
 
 
 def serialize(obj):
-    return pickle.dumps(obj, pickle.HIGHEST_PROTOCOL)
+    return pickle.dumps(obj, protocol=PickleProtocolVersion)
 
 
 def deserialize(pkl):
     return pickle.loads(pkl)
-unserialize = deserialize
 
 
 class Singleton(type):

@@ -1,3 +1,6 @@
+# if None, HIGHEST_PROTOCOL is used; if 0, DEFAULT_PROTOCOL is used;
+# otherwise, given protocol version is used
+PickleProtocolVersion = None
 # timeout in seconds used when sending messages
 MsgTimeout = 10
 # if connections to a peer are not successful consecutively MaxConnectionErrors
