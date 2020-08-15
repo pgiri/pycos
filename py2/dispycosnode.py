@@ -37,25 +37,33 @@ def _dispycos_server_proc():
         globals().pop(_dispycos_var, None)
     _dispycos_scheduler = pycos.Pycos.instance()
     _dispycos_task = pycos.Pycos.cur_task()
-    _dispycos_task.register('dispycos_server')
     _dispycos_config = yield _dispycos_task.receive()
-    _dispycos_auth = _dispycos_config.pop('auth', None)
+    if not isinstance(_dispycos_config, dict):
+        raise StopIteration(-1)
     _dispycos_node_task = _dispycos_config.pop('node_task')
     if not isinstance(_dispycos_node_task, Task):
-        logger.warning('%s could not locate node', _dispycos_task.location)
-        raise StopIteration({'status': -1})
-    if (yield _dispycos_node_task.deliver({'req': 'server_task',  'auth': _dispycos_auth,
-                                           'iid': _dispycos_config['iid'],
-                                           'server_id': _dispycos_config['sid'], 'pid': os.getpid(),
-                                           'task': _dispycos_task}, timeout=5)) != 1:
-        raise StopIteration({'status': -1})
-
+        logger.warning('%s: invalid node task: %s',
+                       _dispycos_task.location, type(_dispycos_node_task))
+        raise StopIteration(-1)
+    _dispycos_auth = _dispycos_config.pop('auth', None)
     if _dispycos_config['min_pulse_interval'] > 0:
         MinPulseInterval = _dispycos_config['min_pulse_interval']
     if _dispycos_config['max_pulse_interval'] > 0:
         MaxPulseInterval = _dispycos_config['max_pulse_interval']
     _dispycos_busy_time = _dispycos_config.pop('busy_time')
-    pycos.MsgTimeout = _dispycos_config.pop('msg_timeout')
+    pycos.netpycos.MsgTimeout = pycos.MsgTimeout = _dispycos_config.pop('msg_timeout')
+
+    if ((yield _dispycos_node_task.deliver({'req': 'server_task',  'auth': _dispycos_auth,
+                                            'iid': _dispycos_config['iid'], 'task': _dispycos_task,
+                                            'server_id': _dispycos_config['sid'],
+                                            'pid': os.getpid()}, timeout=pycos.MsgTimeout)) != 1):
+        raise StopIteration(-1)
+    _dispycos_var = yield _dispycos_task.recv(timeout=pycos.MsgTimeout)
+    if (isinstance(_dispycos_var, dict) and _dispycos_var.get('auth') == _dispycos_auth and
+        _dispycos_var.get('node_task') == _dispycos_node_task):
+        pass
+    else:
+        raise StopIteration(-1)
 
     _dispycos_name = _dispycos_scheduler.name
     os.chdir(_dispycos_config['dest_path'])
@@ -128,17 +136,17 @@ def _dispycos_server_proc():
     _dispycos_var = deserialize(_dispycos_config['scheduler_location'])
     if (yield _dispycos_scheduler.peer(_dispycos_var)):
         logger.warning('%s could not communicate with scheduler', _dispycos_task.location)
-        raise StopIteration({'status': -1})
+        raise StopIteration(-1)
     _dispycos_peers.add(_dispycos_var)
     _dispycos_scheduler_task = yield SysTask.locate('dispycos_status', location=_dispycos_var,
                                                     timeout=5)
     if not isinstance(_dispycos_scheduler_task, SysTask):
         logger.warning('%s could not locate scheduler', _dispycos_task.location)
-        raise StopIteration({'status': -1})
+        raise StopIteration(-1)
     _dispycos_var = deserialize(_dispycos_config['client_location'])
     if (yield _dispycos_scheduler.peer(_dispycos_var)):
         logger.warning('%s could not communicate with commputation', _dispycos_task.location)
-        raise StopIteration({'status': -1})
+        raise StopIteration(-1)
     _dispycos_peers.add(_dispycos_var)
 
     _dispycos_scheduler.peer_status(SysTask(_dispycos_peer_status))
@@ -164,17 +172,17 @@ def _dispycos_server_proc():
                         _dispycos_scheduler_task.send({'status': Scheduler.ServerClosed,
                                                        'location': _dispycos_task.location,
                                                        'auth': _dispycos_auth})
-                    raise StopIteration({'status': 0})
+                    raise StopIteration(0)
                 else:
                     logger.warning('Ignoring invalid request to run server setup')
         else:
             _dispycos_var = ()
         _dispycos_var = yield pycos.Task(globals()[_dispycos_config['server_setup']],
                                          *_dispycos_var).finish()
-        if _dispycos_var:
+        if _dispycos_var != 0:
             logger.debug('dispycos server %s @ %s setup failed', _dispycos_config['sid'],
                          _dispycos_task.location)
-            raise StopIteration({'status': -_dispycos_var})
+            raise StopIteration(_dispycos_var)
         _dispycos_config['server_setup'] = None
     _dispycos_scheduler_task.send({'status': Scheduler.ServerInitialized, 'task': _dispycos_task,
                                    'name': _dispycos_name, 'auth': _dispycos_auth})
@@ -1212,9 +1220,11 @@ def _dispycos_node():
                 server.task = server_task
                 server.iid = iid
                 server.done.clear()
+                server_task.send({'auth': comp_state.auth, 'node_task': node_task})
                 pid = msg.get('pid', None)
                 with open(server.pid_file, 'wb') as fd:
                     pickle.dump({'pid': pid, 'ppid': comp_state.spawn_mpproc.pid}, fd)
+                return 0
             else:
                 if server.iid != iid:
                     pycos.logger.warning('Invalid server %s instance ID %s / %s!',
