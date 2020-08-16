@@ -115,6 +115,11 @@ def _dispycos_server_proc():
                 if not _dispycos_job_tasks:
                     _dispycos_jobs_done.set()
                 _dispycos_busy_time.value = int(time.time())
+                try:
+                    pycos.serialize(msg.args[1][1])
+                except Exception:
+                    msg.args[1] = (msg.args[1][0], type(msg.args[1][1]))
+                _dispycos_scheduler_task.send(msg)
             elif not msg:
                 if _dispycos_job_tasks:
                     _dispycos_busy_time.value = int(time.time())
@@ -230,7 +235,6 @@ def _dispycos_server_proc():
                     _dispycos_jobs_done.clear()
                     logger.debug('task %s created at %s', _dispycos_var, _dispycos_task.location)
                     _dispycos_var.notify(_dispycos_monitor_task)
-                    _dispycos_var.notify(_dispycos_scheduler_task)
                 _dispycos_client.send(_dispycos_var)
                 Task._pycos._lock.release()
 
