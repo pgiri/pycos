@@ -76,6 +76,7 @@ def _dispycos_server_proc():
     for _dispycos_var in ['min_pulse_interval', 'max_pulse_interval']:
         del _dispycos_config[_dispycos_var]
 
+    _dispycos_busy_time.value = int(time.time())
     logger.info('dispycos server %s started at %s; computation files will be saved in "%s"',
                 _dispycos_config['sid'], _dispycos_task.location, _dispycos_config['dest_path'])
     _dispycos_req = _dispycos_client = _dispycos_msg = None
@@ -86,29 +87,33 @@ def _dispycos_server_proc():
 
     def _dispycos_peer_status(task=None):
         task.set_daemon()
+        pulse_interval = _dispycos_config['pulse_interval']
         while 1:
-            status = yield task.receive()
-            if not isinstance(status, pycos.PeerStatus):
+            status = yield task.receive(timeout=pulse_interval)
+            if not status:
+                if _dispycos_job_tasks:
+                    _dispycos_busy_time.value = int(time.time())
+            elif isinstance(status, pycos.PeerStatus):
+                if status.status == pycos.PeerStatus.Offline:
+                    if (_dispycos_scheduler_task and
+                        _dispycos_scheduler_task.location == status.location):
+                        if _dispycos_auth:
+                            _dispycos_task.send({'req': 'close', 'auth': _dispycos_auth})
+                else:  # status.status == pycos.PeerStatus.Online
+                    if (status.location not in _dispycos_peers):
+                        peer = yield SysTask.locate('dispycos_server', location=status.location,
+                                                    timeout=5)
+                        if isinstance(peer, SysTask):
+                            _dispycos_peers.add(status.location)
+                        else:
+                            Task(_dispycos_scheduler.close_peer, status.location)
+            else:
                 logger.warning('Invalid peer status %s ignored', type(status))
-                continue
-            if status.status == pycos.PeerStatus.Offline:
-                if (_dispycos_scheduler_task and
-                    _dispycos_scheduler_task.location == status.location):
-                    if _dispycos_auth:
-                        _dispycos_task.send({'req': 'close', 'auth': _dispycos_auth})
-            else:  # status.status == pycos.PeerStatus.Online
-                if (status.location not in _dispycos_peers):
-                    peer = yield SysTask.locate('dispycos_server', location=status.location,
-                                                timeout=5)
-                    if isinstance(peer, SysTask):
-                        _dispycos_peers.add(status.location)
-                    else:
-                        Task(_dispycos_scheduler.close_peer, status.location)
 
-    def _dispycos_monitor_proc(pulse_interval, task=None):
+    def _dispycos_monitor_proc(task=None):
         task.set_daemon()
         while 1:
-            msg = yield task.receive(timeout=pulse_interval)
+            msg = yield task.receive()
             if isinstance(msg, MonitorException):
                 logger.debug('task %s done at %s', msg.args[0], task.location)
                 _dispycos_job_tasks.discard(msg.args[0])
@@ -118,11 +123,8 @@ def _dispycos_server_proc():
                 try:
                     pycos.serialize(msg.args[1][1])
                 except Exception:
-                    msg.args[1] = (msg.args[1][0], type(msg.args[1][1]))
+                    msg.args = (msg.args[0], (msg.args[1][0], type(msg.args[1][1])))
                 _dispycos_scheduler_task.send(msg)
-            elif not msg:
-                if _dispycos_job_tasks:
-                    _dispycos_busy_time.value = int(time.time())
             else:
                 logger.warning('invalid message to monitor ignored: %s', type(msg))
 
@@ -192,9 +194,7 @@ def _dispycos_server_proc():
     _dispycos_scheduler_task.send({'status': Scheduler.ServerInitialized, 'task': _dispycos_task,
                                    'name': _dispycos_name, 'auth': _dispycos_auth})
 
-    _dispycos_var = _dispycos_config['pulse_interval']
-    _dispycos_monitor_task = SysTask(_dispycos_monitor_proc, _dispycos_var)
-    _dispycos_busy_time.value = int(time.time())
+    _dispycos_monitor_task = SysTask(_dispycos_monitor_proc)
     logger.debug('dispycos server "%s": Computation "%s" from %s', _dispycos_name,
                  _dispycos_auth, _dispycos_scheduler_task.location)
 
