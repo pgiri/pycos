@@ -1010,7 +1010,7 @@ def _dispycos_node():
         if not psproc:
             try:
                 os.kill(pid, proc_signals[0])
-            except ProcessLookupError:
+            except OSError:
                 return 0
             except Exception:
                 # TODO: handle failures
@@ -1355,8 +1355,6 @@ def _dispycos_node():
                             if i == 9:
                                 try:
                                     os.kill(proc.pid, proc_signals[2])
-                                except ProcessLookupError:
-                                    break
                                 except OSError:
                                     break
                                 except Exception:

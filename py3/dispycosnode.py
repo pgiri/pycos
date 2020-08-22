@@ -1398,7 +1398,7 @@ def _dispycos_node():
                     if comp_state.spawn_mpproc:
                         proc.join(2)
                         if not proc.is_alive():
-                            if hasattr(pproc, 'close'):
+                            if hasattr(proc, 'close'):
                                 proc.close()
                             comp_state.spawn_mpproc = None
 
