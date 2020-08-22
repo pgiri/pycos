@@ -53,6 +53,7 @@ def _dispycos_server_proc():
     _dispycos_busy_time = _dispycos_config.pop('busy_time')
     pycos.netpycos.MsgTimeout = pycos.MsgTimeout = _dispycos_config.pop('msg_timeout')
 
+    _dispycos_task.register('_dispycos_server')
     if ((yield _dispycos_node_task.deliver({'req': 'server_task',  'auth': _dispycos_auth,
                                             'iid': _dispycos_config['iid'], 'task': _dispycos_task,
                                             'server_id': _dispycos_config['sid'],
@@ -95,18 +96,25 @@ def _dispycos_server_proc():
                     _dispycos_busy_time.value = int(time.time())
             elif isinstance(status, pycos.PeerStatus):
                 if status.status == pycos.PeerStatus.Offline:
-                    if (_dispycos_scheduler_task and
-                        _dispycos_scheduler_task.location == status.location):
-                        if _dispycos_auth:
-                            _dispycos_task.send({'req': 'close', 'auth': _dispycos_auth})
+                    try:
+                        _dispycos_peers.remove(status.location)
+                    except KeyError:
+                        if (_dispycos_scheduler_task and
+                            _dispycos_scheduler_task.location == status.location):
+                            if _dispycos_auth:
+                                _dispycos_task.send({'req': 'close', 'auth': _dispycos_auth})
                 else:  # status.status == pycos.PeerStatus.Online
                     if (status.location not in _dispycos_peers):
-                        peer = yield SysTask.locate('dispycos_server', location=status.location,
-                                                    timeout=5)
-                        if isinstance(peer, SysTask):
-                            _dispycos_peers.add(status.location)
-                        else:
-                            Task(_dispycos_scheduler.close_peer, status.location)
+                        def dispycos_peer(location, task=None):
+                            peer = yield SysTask.locate('_dispycos_server', location,
+                                                        timeout=pycos.MsgTimeout)
+                            if isinstance(peer, SysTask):
+                                # TODO: accept only if serving same computation?
+                                _dispycos_peers.add(location)
+                                # TODO: inform user tasks?
+                            else:
+                                Task(_dispycos_scheduler.close_peer, location)
+                        SysTask(dispycos_peer, status.location)
             else:
                 logger.warning('Invalid peer status %s ignored', type(status))
 
@@ -250,6 +258,11 @@ def _dispycos_server_proc():
                              'closing computation', _dispycos_name, len(_dispycos_job_tasks))
                 if (yield _dispycos_jobs_done.wait(timeout=5)):
                     break
+                _dispycos_var = yield _dispycos_task.recv(timeout=0)
+                if (isinstance(_dispycos_var, dict) and
+                    (_dispycos_var.get('req', None) == 'terminate') and
+                    (_dispycos_var.get('auth', None) == _dispycos_auth)):
+                    break
             if _dispycos_msg.get('restart', False):
                 _dispycos_restart = True
             break
@@ -333,6 +346,7 @@ def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config):
     global pycos
     import pycos
     import pycos.netpycos
+    import pycos.config
 
     if _dispycos_config['loglevel']:
         pycos.logger.setLevel(pycos.logger.DEBUG)
@@ -352,6 +366,7 @@ def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config):
                           'ipv4_udp_multicast']:
         config[_dispycos_var] = _dispycos_config.pop(_dispycos_var, None)
 
+    pycos.config.NetPort = config['udp_port']
     for _dispycos_var in range(5):
         try:
             _dispycos_scheduler = pycos.Pycos(**config)
