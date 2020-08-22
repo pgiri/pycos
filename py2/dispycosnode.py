@@ -109,7 +109,6 @@ def _dispycos_server_proc():
                             Task(_dispycos_scheduler.close_peer, status.location)
             else:
                 logger.warning('Invalid peer status %s ignored', type(status))
-                continue
 
     def _dispycos_monitor_proc(task=None):
         task.set_daemon()
@@ -465,12 +464,12 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
     import pycos
 
     pycos.logger.name = 'dispycosnode'
-    _dispycos_config['server_proc'] = _dispycos_server_proc
     if _dispycos_config['loglevel']:
         pycos.logger.setLevel(pycos.logger.DEBUG)
         # pycos.logger.show_ms(True)
     else:
         pycos.logger.setLevel(pycos.logger.INFO)
+    pycos.Pycos.instance()
 
     class Struct(object):
 
@@ -488,6 +487,7 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
     mp_q = multiprocessing.Queue()
     lock = threading.Lock()
     spawn_closed = False
+    _dispycos_config['server_proc'] = _dispycos_server_proc
     os.chdir(_dispycos_config['dest_path'])
     sys.path.insert(0, _dispycos_config['dest_path'])
     os.environ['PATH'] = _dispycos_config['dest_path'] + os.pathsep + os.environ['PATH']
@@ -506,27 +506,30 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
                   'rb') as fd:
             computation = pickle.load(fd)
             assert computation['auth'] == _dispycos_config['auth']
-            _dispycos_config['disable_servers'] = computation['disable_servers']
-            _dispycos_config['server_setup'] = computation['server_setup']
+            setup_args = computation['setup_args']
+            computation = pycos.deserialize(computation['computation'])
+            computation._node_allocations = []
+            _dispycos_config['server_setup'] = computation._server_setup
+            _dispycos_config['disable_servers'] = computation._disable_servers
 
         if os.name == 'nt':
-            _dispycos_config['code'] = computation['code']
+            _dispycos_config['code'] = computation._code
         else:
-            if computation['code']:
-                exec(computation['code']) in globals()
+            if computation._code:
+                exec(computation._code) in globals()
 
-            if computation['node_setup']:
+            if computation._node_setup:
                 try:
-                    setup_args = pycos.deserialize(computation['setup_args'])
-                    ret = pycos.Task(globals()[computation['node_setup']], *setup_args).value()
+                    setup_args = pycos.deserialize(setup_args)
+                    ret = pycos.Task(globals()[computation._node_setup], *setup_args).value()
                 except Exception:
                     pycos.logger.warning('node_setup failed for %s', _dispycos_config['auth'])
                     # print(traceback.format_exc())
                     ret = -1
                 assert ret == 0
-                computation['node_setup'] = None
-                computation['setup_args'] = None
-                del setup_args
+        computation._code = None
+        computation._node_setup = None
+        del setup_args
     except Exception:
         pycos.logger.debug(traceback.format_exc())
         _dispycos_pipe.send({'msg': 'closed', 'auth': _dispycos_config['auth']})
@@ -588,16 +591,6 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
             lock.release()
 
     def start_proc(child):
-        if computation['code'] is None:
-            with open(os.path.join(_dispycos_config['dest_path'], '..', 'dispycos_computation'),
-                      'rb') as fd:
-                try:
-                    info = pickle.load(fd)
-                    assert info['auth'] == _dispycos_config['auth']
-                    computation['code'] = info['code']
-                except Exception:
-                    pycos.logger.warning('Invalid computation to start dispycos server!')
-                    return
         server_config = dict(_dispycos_config)
         server_config['sid'] = child.sid
         server_config['name'] = '%s_server-%s' % (_dispycos_config['name'], server_config['sid'])
@@ -638,8 +631,6 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
             else:
                 break
 
-        if not computation['restart_servers'] and computation['code']:
-            computation['code'] = None
         _dispycos_pipe.send({'msg': 'started', 'auth': _dispycos_config['auth'],
                              'sids': [child.sid for child in children
                                       if child.proc and child.status == 'running']})
@@ -655,7 +646,7 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
                 continue
 
             if req.get('msg') == 'quit':
-                computation['restart_servers'] = False
+                computation._restart_servers = False
                 for child in children:
                     child.restart = False
                 mp_q.put({'req': 'quit', 'auth': _dispycos_config['auth']})
@@ -683,8 +674,8 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
                             close_procs([child])
                 else:
                     # assert req.get('restart') == False
-                    computation['restart_servers'] = req.get('restart', False)
-                    if not computation['restart_servers']:
+                    computation._restart_servers = req.get('restart', False)
+                    if not computation._restart_servers:
                         for child in children:
                             child.restart = False
                     _dispycos_pipe.send({'msg': 'restart_ack', 'auth': _dispycos_config['auth']})
@@ -763,14 +754,14 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
             child.proc = None
             child.status = None
             lock.release()
-            if (child.restart or computation['restart_servers'] or
+            if (child.restart or computation._restart_servers or
                 (msg.get('restart', False) and child.port >= 0 and (msg['status'] == 0))):
                 start_proc(child)
                 if child.restart:
                     child.restart = False
 
     spawn_closed = True
-    computation['restart_servers'] = False
+    computation._restart_servers = False
     for child in children:
         child.restart = False
     for child in children:
@@ -1242,8 +1233,9 @@ def _dispycos_node():
                         os.remove(server.pid_file)
                     except Exception:
                         pass
+                return 0
 
-        def start_computation(computation):
+        def start_computation():
             # clear pipe
             while parent_pipe.poll(0.1):
                 parent_pipe.recv()
@@ -1572,13 +1564,9 @@ def _dispycos_node():
                 if (comp_state.auth == msg.get('auth', None) and
                     isinstance(client, pycos.Task) and comp_state.cpus_reserved > 0):
                     with open(os.path.join(dispycos_path, '..', 'dispycos_computation'), 'wb') as fd:
-                        pickle.dump({'auth': comp_state.auth, 'code': computation._code,
-                                     'disable_servers': computation._disable_servers,
-                                     'server_setup': computation._server_setup,
-                                     'restart_servers': computation._restart_servers,
-                                     'node_setup': computation._node_setup,
+                        pickle.dump({'auth': comp_state.auth, 'computation': computation,
                                      'setup_args': msg['setup_args']}, fd)
-                    cpus = start_computation(computation)
+                    cpus = start_computation()
                     if ((yield client.deliver(cpus)) == 1) and cpus:
                         comp_state.cpus_reserved = cpus
                         timer_task.resume()

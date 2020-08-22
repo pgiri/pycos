@@ -1255,7 +1255,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
                 node.lock.release()
                 raise StopIteration(-1)
 
-        node.task.send({'req': 'computation', 'computation': computation,
+        node.task.send({'req': 'computation', 'computation': pycos.serialize(computation),
                         'auth': node.auth, 'setup_args': setup_args, 'client': task})
         cpus = yield task.receive(timeout=MsgTimeout)
         if not cpus or computation != self._cur_computation:
