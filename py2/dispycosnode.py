@@ -1288,21 +1288,21 @@ def _dispycos_node():
             return cpus
 
         def close_computation(req='close', restart=False, task=None):
-            if not comp_state.cpus_reserved:
-                raise StopIteration
-            cpus_reserved, comp_state.cpus_reserved = comp_state.cpus_reserved, 0
-            cur_auth = comp_state.auth
-            if comp_state.spawn_mpproc:
+            if comp_state.cpus_reserved and comp_state.spawn_mpproc:
                 parent_pipe.send({'msg': 'close_server', 'auth': comp_state.auth, 'sid': 0,
                                   'restart': False})
                 if parent_pipe.poll(2):
                     msg = parent_pipe.recv()
-                    if msg.get('auth', None) == comp_state.auth and msg.get('msg') == 'closed':
-                        if comp_state.spawn_mpproc:
-                            comp_state.spawn_mpproc = None
+                    if (isinstance(msg, dict) and msg.get('auth', None) == comp_state.auth and
+                        msg.get('msg') == 'restart_ack'):
+                        pass
             for server in node_servers:
                 if server.task:
-                    pycos.Task(close_server, server)
+                    pycos.Task(close_server, server, terminate=(req == 'terminate'))
+            if not comp_state.cpus_reserved:
+                raise StopIteration
+            cpus_reserved, comp_state.cpus_reserved = comp_state.cpus_reserved, 0
+            cur_auth = comp_state.auth
             for server in node_servers:
                 if server.task:
                     yield server.done.wait()
@@ -1310,28 +1310,31 @@ def _dispycos_node():
                 proc = comp_state.spawn_mpproc
                 parent_pipe.send({'msg': 'quit', 'auth': comp_state.auth})
                 for i in range(5):
-                    if parent_pipe.poll(1):
+                    if parent_pipe.poll(2):
                         if comp_state.auth != cur_auth:
                             raise StopIteration
                         msg = parent_pipe.recv()
                         if (isinstance(msg, dict) and msg.get('msg', None) == 'closed' and
                             msg.get('auth', None) == comp_state.auth):
+                            proc.join(2)
+                            if not proc.is_alive():
+                                comp_state.spawn_mpproc = None
                             break
                 else:
                     if comp_state.auth != cur_auth:
                         raise StopIteration
-                    if comp_state.spawn_mpproc and comp_state.spawn_mpproc.is_alive():
+                    if comp_state.spawn_mpproc and proc.is_alive():
                         try:
-                            comp_state.spawn_mpproc.terminate()
+                            proc.terminate()
                         except Exception:
                             pass
-                        comp_state.spawn_mpproc.join(1)
+                        proc.join(2)
                         if comp_state.auth != cur_auth:
                             raise StopIteration
                         for i in range(10):
                             if not proc.is_alive():
                                 break
-                            proc.join(1)
+                            proc.join(2)
                             if comp_state.auth != cur_auth:
                                 raise StopIteration
                             if i == 9:
@@ -1344,7 +1347,9 @@ def _dispycos_node():
                                 except Exception:
                                     pass
                     if comp_state.spawn_mpproc:
-                        comp_state.spawn_mpproc = None
+                        proc.join(2)
+                        if not proc.is_alive():
+                            comp_state.spawn_mpproc = None
 
                 # clear pipe
                 while parent_pipe.poll(0.1):
@@ -1374,7 +1379,7 @@ def _dispycos_node():
                 raise StopIteration
             if restart:
                 comp_state.cpus_reserved = cpus_reserved
-                if start_computation(None) == 0:
+                if start_computation() == 0:
                     yield close_computation(req='close', restart=False, task=task)
                 raise StopIteration
             if os.path.isdir(dispycos_path):
@@ -1666,10 +1671,11 @@ def _dispycos_node():
 
     def sighandler(signum, frame):
         pycos.logger.debug('dispycosnode (%s) received signal %s', dispycos_pid, signum)
-        proc = comp_state.spawn_mpproc
-        if proc:
-            parent_pipe.send({'msg': 'quit', 'auth': comp_state.auth})
-            proc.join(2)
+        if comp_state.spawn_mpproc:
+            try:
+                parent_pipe.send({'msg': 'quit', 'auth': comp_state.auth})
+            except Exception:
+                pass
         if node_task.is_alive():
             node_task.send({'req': 'quit', 'auth': node_auth})
         else:
@@ -1698,9 +1704,9 @@ def _dispycos_node():
                 break
     else:
         while 1:
-            # wait a bit for any output for previous command is done
-            time.sleep(0.2)
             try:
+                # wait a bit for any output for previous command is done
+                time.sleep(0.2)
                 cmd = raw_input(
                         '\nEnter\n'
                         '  "status" to get status\n'
@@ -1726,9 +1732,9 @@ def _dispycos_node():
                     elif server.id:
                         print('  dispycos server "%s" is not currently used' % server.name)
             elif cmd in ('close', 'quit', 'terminate'):
-                node_task.send({'req': cmd, 'auth': node_auth})
-                if cmd == 'quit' or cmd == 'terminate':
+                if not node_task.is_alive():
                     break
+                node_task.send({'req': cmd, 'auth': node_auth})
 
     try:
         node_task.value()
