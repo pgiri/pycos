@@ -1490,8 +1490,7 @@ def _dispycos_node():
                     elif comp_state.scheduler and (now - last_pulse) > (5 * comp_state.interval):
                         pycos.logger.warning('Scheduler is not reachable; closing computation "%s"',
                                              comp_state.auth)
-                        node_task.send({'req': 'close', 'auth': comp_state.auth,
-                                        'client': comp_state.scheduler})
+                        node_task.send({'req': 'close', 'auth': node_auth})
                         pycos.Task(dispycos_scheduler.close_peer, comp_state.scheduler.location)
 
                     if (zombie_period and ((now - busy_time.value) > zombie_period) and
@@ -1502,8 +1501,7 @@ def _dispycos_node():
                         else:
                             pycos.logger.warning('Closing zombie computation "%s" from %s',
                                                  comp_state.auth, comp_state.scheduler.location)
-                            node_task.send({'req': 'close', 'auth': comp_state.auth,
-                                            'client': comp_state.scheduler})
+                            node_task.send({'req': 'close', 'auth': node_auth})
 
                 if ping_interval and (now - last_ping) > ping_interval and service_available():
                     dispycos_scheduler.discover_peers(port=pycos.config.NetPort)
