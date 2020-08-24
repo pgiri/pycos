@@ -4,7 +4,7 @@
 This file is part of pycos project. See https://pycos.sourceforge.io for details.
 
 This module provides API for creating distributed communicating
-processes. 'Computation' class should be used to package computation components
+processes. 'Client' class should be used to package client components
 (Python generator functions, Python functions, files, classes, modules) and then
 schedule runs that create remote tasks at remote server processes running
 'dispycosnode.py'.
@@ -35,7 +35,7 @@ __copyright__ = "Copyright (c) 2014-2015 Giridhar Pemmasani"
 __license__ = "Apache 2.0"
 __url__ = "https://pycos.sourceforge.io"
 
-__all__ = ['Scheduler', 'Computation', 'DispycosStatus', 'DispycosTaskInfo',
+__all__ = ['Scheduler', 'Client', 'Computation', 'DispycosStatus', 'DispycosTaskInfo',
            'DispycosNodeInfo', 'DispycosNodeAvailInfo', 'DispycosNodeAllocate']
 
 # status about nodes / servers are sent with this structure
@@ -65,7 +65,7 @@ class DispycosNodeAvailInfo(object):
 
 
 class DispycosNodeAllocate(object):
-    """Allocation of nodes can be customized by specifying 'nodes' of Computation
+    """Allocation of nodes can be customized by specifying 'nodes' of Client
     with DispycosNodeAllocate instances.
 
     'node' must be hostname or IP address (with possibly '*' to match rest of IP
@@ -129,7 +129,7 @@ class DispycosNodeAllocate(object):
         return state
 
 
-class Computation(object):
+class Client(object):
     """Packages components to distribute to remote pycos schedulers to create
     (remote) tasks.
     """
@@ -260,15 +260,15 @@ class Computation(object):
                 self._xfer_funcs.add(name)
                 self._code += '\n' + inspect.getsource(dep).lstrip()
             else:
-                raise Exception('Invalid computation: %s' % dep)
+                raise Exception('Invalid component: %s' % dep)
         # check code can be compiled
         compile(self._code, '<string>', 'exec')
 
     def schedule(self, location=None, timeout=None):
-        """Schedule computation for execution. Must be used with 'yield' as
-        'result = yield compute.schedule()'. If scheduler is executing other
-        computations, this will block until scheduler processes them
-        (computations are processed in the order submitted).
+        """Schedule client for execution. Must be used with 'yield' as
+        'result = yield client.schedule()'. If scheduler is executing other clients,
+        this will block until scheduler processes them (clients are processed in the
+        order submitted).
         """
 
         if self._auth is not None:
@@ -284,11 +284,11 @@ class Computation(object):
 
         def _schedule(self, task=None):
             self._pulse_task = SysTask(self._pulse_proc)
-            msg = {'req': 'schedule', 'computation': pycos.serialize(self), 'client': task}
+            msg = {'req': 'schedule', 'client': pycos.serialize(self), 'reply_task': task}
             self.scheduler.send(msg)
             self._auth = yield task.receive(timeout=MsgTimeout)
             if not isinstance(self._auth, str):
-                logger.debug('Could not send computation to scheduler %s: %s',
+                logger.debug('Could not send client to scheduler %s: %s',
                              self.scheduler, self._auth)
                 raise StopIteration(-1)
             SysTask.scheduler().atexit(10, lambda: SysTask(self.close))
@@ -306,7 +306,7 @@ class Computation(object):
                         logger.warning('Could not send file "%s" to scheduler', xf)
                         yield self.close()
                         raise StopIteration(-1)
-            msg = {'req': 'await', 'auth': self._auth, 'client': task}
+            msg = {'req': 'await', 'auth': self._auth, 'reply_task': task}
             self.scheduler.send(msg)
             resp = yield task.receive(timeout=timeout)
             if (isinstance(resp, dict) and resp.get('auth') == self._auth and
@@ -319,12 +319,12 @@ class Computation(object):
         raise StopIteration((yield Task(_schedule, self).finish()))
 
     def nodes(self):
-        """Get list of addresses of nodes initialized for this computation. Must
-        be used with 'yield' as 'yield compute.nodes()'.
+        """Get list of addresses of nodes initialized for this client. Must
+        be used with 'yield' as 'yield client.nodes()'.
         """
 
         def _nodes(self, task=None):
-            msg = {'req': 'nodes', 'auth': self._auth, 'client': task}
+            msg = {'req': 'nodes', 'auth': self._auth, 'reply_task': task}
             if (yield self.scheduler.deliver(msg, timeout=MsgTimeout)) == 1:
                 yield task.receive(MsgTimeout)
             else:
@@ -334,11 +334,11 @@ class Computation(object):
 
     def servers(self):
         """Get list of Location instances of servers initialized for this
-        computation. Must be used with 'yield' as 'yield compute.servers()'.
+        client. Must be used with 'yield' as 'yield client.servers()'.
         """
 
         def _servers(self, task=None):
-            msg = {'req': 'servers', 'auth': self._auth, 'client': task}
+            msg = {'req': 'servers', 'auth': self._auth, 'reply_task': task}
             if (yield self.scheduler.deliver(msg, timeout=MsgTimeout)) == 1:
                 yield task.receive(MsgTimeout)
             else:
@@ -347,13 +347,13 @@ class Computation(object):
         raise StopIteration((yield Task(_servers, self).finish()))
 
     def tasks(self, where):
-        """Get list of tasks at given node or server for this computation.
-        Must be used with 'yield' as 'yield compute.tasks()'.
+        """Get list of tasks at given node or server for this client.
+        Must be used with 'yield' as 'yield client.tasks()'.
 
         """
 
         def _tasks(self, task=None):
-            msg = {'req': 'tasks', 'auth': self._auth, 'client': task, 'at': where}
+            msg = {'req': 'tasks', 'auth': self._auth, 'reply_task': task, 'at': where}
             if (yield self.scheduler.deliver(msg, timeout=MsgTimeout)) == 1:
                 yield task.receive(MsgTimeout)
             else:
@@ -362,17 +362,16 @@ class Computation(object):
         raise StopIteration((yield Task(_tasks, self).finish()))
 
     def close(self, await_async=False, terminate=False, timeout=None):
-        """Close computation. Must be used with 'yield' as 'yield
-        compute.close()'.
+        """Close client. Must be used with 'yield' as 'yield client.close()'.
         """
 
         def _close(self, done, task=None):
-            msg = {'req': 'close_computation', 'auth': self._auth, 'client': task,
+            msg = {'req': 'close_client', 'auth': self._auth, 'reply_task': task,
                    'await_async': bool(await_async), 'terminate': bool(terminate)}
             self.scheduler.send(msg)
             msg = yield task.receive(timeout=timeout)
             if msg != 'closed':
-                logger.warning('%s: closing computation failed?', self._auth)
+                logger.warning('%s: closing client failed?', self._auth)
             self._auth = None
             if self._pulse_task:
                 yield self._pulse_task.send('quit')
@@ -387,7 +386,7 @@ class Computation(object):
     def run_at(self, where, gen, *args, **kwargs):
         """Must be used with 'yield' as
 
-        'rtask = yield computation.run_at(where, gen, ...)'
+        'rtask = yield client.run_at(where, gen, ...)'
 
         Run given generator function 'gen' with arguments 'args' and 'kwargs' at
         remote server 'where'.  If the request is successful, 'rtask' will be a
@@ -415,7 +414,7 @@ class Computation(object):
     def run_result_at(self, where, gen, *args, **kwargs):
         """Must be used with 'yield' as
 
-        'rtask = yield computation.run_result_at(where, gen, ...)'
+        'rtask = yield client.run_result_at(where, gen, ...)'
 
         Whereas 'run_at' and 'run' return remote task instance,
         'run_result_at' and 'run_result' wait until remote task is
@@ -435,7 +434,7 @@ class Computation(object):
     def run_async_at(self, where, gen, *args, **kwargs):
         """Must be used with 'yield' as
 
-        'rtask = yield computation.run_async_at(where, gen, ...)'
+        'rtask = yield client.run_async_at(where, gen, ...)'
 
         Run given generator function 'gen' with arguments 'args' and 'kwargs' at
         remote server 'where'.  If the request is successful, 'rtask' will be a
@@ -484,8 +483,8 @@ class Computation(object):
         raise StopIteration(results)
 
     def enable_node(self, ip_addr, *setup_args):
-        """If computation disabled nodes (with 'disabled_nodes=True' when
-        Computation is constructed), nodes are not automatically used by the
+        """If client disabled nodes (with 'disabled_nodes=True' when
+        Client is constructed), nodes are not automatically used by the
         scheduler until nodes are enabled with 'enable_node'.
 
         'ip_addr' must be either IP address or host name of the node to be
@@ -493,7 +492,7 @@ class Computation(object):
 
         'setup_args' is arguments passed to 'node_setup' function specific to
         that node. If 'node_setup' succeeds (i.e., finishes with value 0), the
-        node is used for computations.
+        node is used for clients.
         """
         if self.scheduler:
             if isinstance(ip_addr, pycos.Location):
@@ -502,15 +501,15 @@ class Computation(object):
                                  'setup_args': pycos.serialize(setup_args)})
 
     def enable_server(self, location, *setup_args):
-        """If computation disabled servers (with 'disabled_servers=True' when
-        Computation is constructed), servers are not automatically used by the
+        """If client disabled servers (with 'disabled_servers=True' when
+        Client is constructed), servers are not automatically used by the
         scheduler until they are enabled with 'enable_server'.
 
         'location' must be Location instance of the server to be enabled.
 
         'setup_args' is arguments passed to 'server_setup' function specific to
         that server. If 'server_setup' succeeds (i.e., finishes with value 0), the
-        server is used for computations.
+        server is used for clients.
         """
         if self.scheduler:
             self.scheduler.send({'req': 'enable_server', 'auth': self._auth, 'server': location,
@@ -613,7 +612,7 @@ class Computation(object):
 
         'location' can be either Location instance of any server at the node or of the node
         itself, IP address of node or None. If 'location' is None, then all nodes currently used
-        by computation and any nodes added for computation will be abandoned (when they become
+        by client and any nodes added for client will be abandoned (when they become
         zombies) as well.
 
         'flag' must be either True or False indicating whether nodes would be abandoned or not.
@@ -644,16 +643,16 @@ class Computation(object):
             msg = {'req': 'job', 'auth': self._auth,
                    'job': _DispycosJob_(request, task, name, where, cpu, code, args, kwargs)}
             if (yield self.scheduler.deliver(msg, timeout=MsgTimeout)) == 1:
-                reply = yield task.receive()
-                if isinstance(reply, Task):
+                resp = yield task.receive()
+                if isinstance(resp, Task):
                     if self.status_task:
-                        msg = DispycosTaskInfo(reply, args, kwargs, time.time())
+                        msg = DispycosTaskInfo(resp, args, kwargs, time.time())
                         self.status_task.send(DispycosStatus(Scheduler.TaskCreated, msg))
                 if not request.endswith('async'):
-                    reply = yield task.receive()
+                    resp = yield task.receive()
             else:
-                reply = None
-            raise StopIteration(reply)
+                resp = None
+            raise StopIteration(resp)
 
         raise StopIteration((yield Task(_run_req).finish()))
 
@@ -673,10 +672,10 @@ class Computation(object):
                 if msg.get('auth', None) != self._auth:
                     continue
                 if msg.get('req', None) == 'allocate':
-                    reply = msg.get('reply', None)
+                    reply_task = msg.get('reply_task', None)
                     args = msg.get('args', ())
-                    if not isinstance(reply, Task) or not args:
-                        logger.warning('Ignoring allocate request: %s', type(reply))
+                    if not isinstance(reply_task, Task) or not args:
+                        logger.warning('Ignoring allocate request: %s', type(reply_task))
                         continue
                     ip_addr = args[0]
                     try:
@@ -685,8 +684,8 @@ class Computation(object):
                         cpus = node_allocation.allocate(*args)
                     except Exception:
                         cpus = 0
-                    reply.send({'auth': self._auth, 'req': 'allocate',
-                                'ip_addr': ip_addr, 'cpus': cpus})
+                    reply_task.send({'auth': self._auth, 'req': 'allocate',
+                                     'ip_addr': ip_addr, 'cpus': cpus})
 
             elif msg == 'quit':
                 break
@@ -729,14 +728,17 @@ class Computation(object):
             setattr(self, attr, value)
 
 
+# for backward compatability
+Computation = Client
+
 class _DispycosJob_(object):
     """Internal use only.
     """
-    __slots__ = ('request', 'client', 'name', 'where', 'cpu', 'code', 'args', 'kwargs', 'done')
+    __slots__ = ('request', 'reply_task', 'name', 'where', 'cpu', 'code', 'args', 'kwargs', 'done')
 
-    def __init__(self, request, client, name, where, cpu, code, args=None, kwargs=None):
+    def __init__(self, request, reply_task, name, where, cpu, code, args=None, kwargs=None):
         self.request = request
-        self.client = client
+        self.reply_task = reply_task
         self.name = name
         self.where = where
         self.cpu = cpu
@@ -768,12 +770,12 @@ class Scheduler(object):
 
     TaskCreated = 20
     TaskAbandoned = 21
-    ComputationScheduled = 23
-    ComputationClosed = 25
+    ClientScheduled = 23
+    ClientClosed = 25
 
     __metaclass__ = pycos.Singleton
 
-    """This class is for use by Computation class (see below) only.  Other than
+    """This class is for use by Client class (see below) only.  Other than
     the status indications above, none of its attributes are to be accessed
     directly.
     """
@@ -813,9 +815,9 @@ class Scheduler(object):
             self.name = None
             self.done = pycos.Event()
 
-        def run(self, job, computation, node):
+        def run(self, job, client, node):
             def _run(self, task=None):
-                self.task.send({'req': 'run', 'auth': node.auth, 'job': job, 'client': task})
+                self.task.send({'req': 'run', 'auth': node.auth, 'job': job, 'reply_task': task})
                 rtask = yield task.receive(timeout=MsgTimeout)
                 # currently fault-tolerancy is not supported, so clear job's
                 # args to save space
@@ -841,7 +843,7 @@ class Scheduler(object):
                 raise StopIteration(rtask)
 
             rtask = yield SysTask(_run, self).finish()
-            job.client.send(rtask)
+            job.reply_task.send(rtask)
 
     def __init__(self, **kwargs):
         self._nodes = {}
@@ -851,7 +853,7 @@ class Scheduler(object):
         self._cpus_avail.clear()
         self._remote = False
 
-        self._cur_computation = None
+        self._cur_client = None
         self.__cur_client_auth = None
         self.__cur_node_allocations = []
         self.__pulse_interval = kwargs.pop('pulse_interval', MaxPulseInterval)
@@ -876,8 +878,8 @@ class Scheduler(object):
         self.pycos.dest_path = self.__dest_path
         os.chmod(self.__dest_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
 
-        self.__computation_sched_event = pycos.Event()
-        self.__computation_scheduler_task = SysTask(self.__computation_scheduler_proc)
+        self.__client_sched_event = pycos.Event()
+        self.__client_scheduler_task = SysTask(self.__client_scheduler_proc)
         self.__status_task = SysTask(self.__status_proc)
         self.__timer_task = SysTask(self.__timer_proc)
         self.__client_task = SysTask(self.__client_proc)
@@ -893,7 +895,7 @@ class Scheduler(object):
                       for server in node.servers.itervalues())
         servers = functools.reduce(operator.add, [node.servers.keys()
                                                   for node in self._nodes.itervalues()], [])
-        return {'Client': self._cur_computation._pulse_task.location if self._cur_computation else '',
+        return {'Client': self._cur_client._pulse_task.location if self._cur_client else '',
                 'Pending': pending, 'PendingCPU': pending_cpu,
                 'Nodes': self._nodes.keys(), 'Servers': servers
                 }
@@ -961,11 +963,11 @@ class Scheduler(object):
                 if job.request.endswith('async'):
                     pass
                 else:
-                    job.client.send(msg.args[1][1])
-                if self._cur_computation and self._cur_computation.status_task:
+                    job.reply_task.send(msg.args[1][1])
+                if self._cur_client and self._cur_client.status_task:
                     if len(msg.args) > 2:
                         msg.args = (msg.args[0], msg.args[1])
-                    self._cur_computation.status_task.send(msg)
+                    self._cur_client.status_task.send(msg)
 
             elif isinstance(msg, pycos.PeerStatus):
                 if msg.status == pycos.PeerStatus.Online:
@@ -994,11 +996,11 @@ class Scheduler(object):
                             node.status = Scheduler.NodeDisconnected
                             SysTask(self.__close_node, node)
 
-                    if ((not server and not node) and self._remote and self._cur_computation and
-                        self._cur_computation._pulse_task.location == msg.location):
-                        logger.warning('Client %s terminated; closing computation %s',
+                    if ((not server and not node) and self._remote and self._cur_client and
+                        self._cur_client._pulse_task.location == msg.location):
+                        logger.warning('Client %s terminated; closing client %s',
                                        msg.location, self.__cur_client_auth)
-                        SysTask(self.__close_computation)
+                        SysTask(self.__close_client)
 
             elif isinstance(msg, dict):  # message from a node's server
                 status = msg.get('status', None)
@@ -1010,9 +1012,9 @@ class Scheduler(object):
                     if node:
                         node.last_pulse = now
                         node_status = msg.get('node_status', None)
-                        if (node_status and self._cur_computation and
-                           self._cur_computation.status_task):
-                            self._cur_computation.status_task.send(node_status)
+                        if (node_status and self._cur_client and
+                           self._cur_client.status_task):
+                            self._cur_client.status_task.send(node_status)
                     else:
                         node = self._disabled_nodes.get(location.addr, None)
                         if node and node.status == Scheduler.NodeAbandoned:
@@ -1039,10 +1041,10 @@ class Scheduler(object):
                     server = Scheduler._Server(rtask, self)
                     server.status = status
                     node.disabled_servers[rtask.location] = server
-                    if (node.status == Scheduler.NodeInitialized and self._cur_computation and
-                        self._cur_computation.status_task):
+                    if (node.status == Scheduler.NodeInitialized and self._cur_client and
+                        self._cur_client.status_task):
                         info = DispycosStatus(server.status, server.task.location)
-                        self._cur_computation.status_task.send(info)
+                        self._cur_client.status_task.send(info)
 
                 elif status == Scheduler.ServerInitialized:
                     rtask = msg.get('task', None)
@@ -1073,11 +1075,11 @@ class Scheduler(object):
                     node.last_pulse = now
                     if node.status == Scheduler.NodeInitialized:
                         if not node.servers:
-                            if self._cur_computation and self._cur_computation.status_task:
+                            if self._cur_client and self._cur_client.status_task:
                                 info = DispycosNodeInfo(node.name, node.addr, node.cpus,
                                                         node.platform, node.avail_info)
                                 info = DispycosStatus(node.status, info)
-                                self._cur_computation.status_task.send(info)
+                                self._cur_client.status_task.send(info)
                             self._disabled_nodes.pop(rtask.location.addr, None)
                             self._nodes[rtask.location.addr] = node
                         node.servers[rtask.location] = server
@@ -1086,13 +1088,13 @@ class Scheduler(object):
                         self._cpus_avail.set()
                         node.cpu_avail.set()
                         node.load = float(node.cpus_used) / len(node.servers)
-                        if self._cur_computation and self._cur_computation.status_task:
-                            self._cur_computation.status_task.send(
+                        if self._cur_client and self._cur_client.status_task:
+                            self._cur_client.status_task.send(
                                 DispycosStatus(server.status, server.task.location))
                     else:
                         node.disabled_servers[rtask.location] = server
 
-                    if self._cur_computation._peers_communicate:
+                    if self._cur_client._peers_communicate:
                         server.task.send({'req': 'peers', 'auth': node.auth,
                                           'peers': list(self.__server_locations)})
                         self.__server_locations.add(server.task.location)
@@ -1149,14 +1151,14 @@ class Scheduler(object):
                 continue
             if self._remote and isinstance(node_allocate.cpus, str):
                 req = {'req': 'allocate', 'auth': self.__cur_client_auth,
-                       'alloc_id': node_allocate.cpus, 'reply': task,
+                       'alloc_id': node_allocate.cpus, 'reply_task': task,
                        'args': (node.addr, node.name, node.platform, node.cpus,
                                 node.avail_info.memory, node.avail_info.disk)}
-                self._cur_computation._pulse_task.send(req)
-                reply = yield task.recv(timeout=MsgTimeout)
-                if (isinstance(reply, dict) and reply.get('auth', None) == self.__cur_client_auth and
-                    reply.get('req', None) == 'allocate' and reply.get('ip_addr', '') == node.addr):
-                    cpus = reply.get('cpus', 0)
+                self._cur_client._pulse_task.send(req)
+                resp = yield task.recv(timeout=MsgTimeout)
+                if (isinstance(resp, dict) and resp.get('auth', None) == self.__cur_client_auth and
+                    resp.get('req', None) == 'allocate' and resp.get('ip_addr', '') == node.addr):
+                    cpus = resp.get('cpus', 0)
                 else:
                     cpus = 0
             else:
@@ -1169,7 +1171,7 @@ class Scheduler(object):
 
     def __get_node_info(self, node, task=None):
         assert node.addr in self._disabled_nodes
-        node.task.send({'req': 'dispycos_node_info', 'client': task})
+        node.task.send({'req': 'dispycos_node_info', 'reply_task': task})
         node_info = yield task.receive(timeout=MsgTimeout)
         if not node_info:
             node.status = Scheduler.NodeIgnore
@@ -1178,16 +1180,16 @@ class Scheduler(object):
         node.cpus = node_info.cpus
         node.platform = node_info.platform.lower()
         node.avail_info = node_info.avail_info
-        if self._cur_computation:
+        if self._cur_client:
             yield self.__init_node(node, task=task)
 
     def __init_node(self, node, setup_args=pycos.serialize(()), task=None):
-        computation = self._cur_computation
-        if not computation or not node.task:
+        client = self._cur_client
+        if not client or not node.task:
             raise StopIteration(-1)
         # this task may be invoked in two different paths (when a node is
-        # found right after computation is already scheduled, and when
-        # computation is scheduled right after a node is found). To prevent
+        # found right after client is already scheduled, and when
+        # client is scheduled right after a node is found). To prevent
         # concurrent execution (that may reserve / initialize same node more
         # than once), lock is used
         yield node.lock.acquire()
@@ -1204,76 +1206,75 @@ class Scheduler(object):
                 node.lock.release()
                 raise StopIteration(0)
 
-            node.task.send({'req': 'reserve', 'cpus': cpus, 'auth': computation._auth,
-                            'status_task': self.__status_task, 'client': task,
-                            'client_location': computation._pulse_task.location,
-                            'abandon_zombie': computation._abandon_zombie,
-                            'pulse_interval': computation._pulse_interval})
-            reply = yield task.receive(timeout=MsgTimeout)
-            if not isinstance(reply, dict) or reply.get('cpus', 0) <= 0:
+            node.task.send({'req': 'reserve', 'cpus': cpus, 'auth': client._auth,
+                            'status_task': self.__status_task, 'reply_task': task,
+                            'client_location': client._pulse_task.location,
+                            'abandon_zombie': client._abandon_zombie,
+                            'pulse_interval': client._pulse_interval})
+            resp = yield task.receive(timeout=MsgTimeout)
+            if not isinstance(resp, dict) or resp.get('cpus', 0) <= 0:
                 logger.debug('Reserving %s failed', node.addr)
                 self._disabled_nodes.pop(node.addr, None)
                 # node.status = Scheduler.NodeDiscoverd
                 node.lock.release()
                 yield pycos.Pycos.instance().close_peer(node.task.location)
                 raise StopIteration(-1)
-            if computation != self._cur_computation:
+            if client != self._cur_client:
                 node.status = Scheduler.NodeClosed
-                node.task.send({'req': 'release', 'auth': computation._auth, 'client': None})
+                node.task.send({'req': 'release', 'auth': client._auth, 'reply_task': None})
                 node.lock.release()
                 raise StopIteration(-1)
 
             node.status = Scheduler.NodeDiscovered
-            node.cpus = reply['cpus']
-            node.auth = reply['auth']
-            if self._cur_computation and self._cur_computation.status_task:
+            node.cpus = resp['cpus']
+            node.auth = resp['auth']
+            if self._cur_client and self._cur_client.status_task:
                 info = DispycosNodeInfo(node.name, node.addr, node.cpus, node.platform,
                                         node.avail_info)
-                self._cur_computation.status_task.send(DispycosStatus(node.status, info))
+                self._cur_client.status_task.send(DispycosStatus(node.status, info))
 
-            if self._cur_computation._disable_nodes:
+            if self._cur_client._disable_nodes:
                 node.lock.release()
                 raise StopIteration(0)
         else:
             assert node.addr in self._disabled_nodes
 
-        for name, dst, sep in computation._xfer_files:
-            reply = yield self.pycos.send_file(node.task.location, name, dir=dst, timeout=MsgTimeout,
-                                               overwrite=True)
-            if reply < 0 or computation != self._cur_computation:
-                logger.debug('Failed to transfer file %s: %s', name, reply)
+        for name, dst, sep in client._xfer_files:
+            resp = yield self.pycos.send_file(node.task.location, name, dir=dst, timeout=MsgTimeout,
+                                              overwrite=True)
+            if resp < 0 or client != self._cur_client:
+                logger.debug('Failed to transfer file %s: %s', name, resp)
                 node.status = Scheduler.NodeClosed
-                node.task.send({'req': 'release', 'auth': computation._auth, 'client': None})
+                node.task.send({'req': 'release', 'auth': client._auth, 'reply_task': None})
                 node.lock.release()
                 raise StopIteration(-1)
 
-        node.task.send({'req': 'computation', 'computation': pycos.serialize(computation),
-                        'auth': node.auth, 'setup_args': setup_args, 'client': task})
+        node.task.send({'req': 'client', 'client': pycos.serialize(client),
+                        'auth': node.auth, 'setup_args': setup_args, 'reply_task': task})
         cpus = yield task.receive(timeout=MsgTimeout)
-        if not cpus or computation != self._cur_computation:
+        if not cpus or client != self._cur_client:
             node.status = Scheduler.NodeClosed
-            node.task.send({'req': 'release', 'auth': computation._auth, 'client': None})
+            node.task.send({'req': 'release', 'auth': client._auth, 'reply_task': None})
             node.lock.release()
             raise StopIteration(-1)
 
         node.cpus = cpus
         node.status = Scheduler.NodeInitialized
         node.lock.release()
-        if computation.status_task:
+        if client.status_task:
             info = DispycosNodeInfo(node.name, node.addr, node.cpus, node.platform, node.avail_info)
-            computation.status_task.send(DispycosStatus(node.status, info))
+            client.status_task.send(DispycosStatus(node.status, info))
         for server in node.disabled_servers.values():
             if server.status == Scheduler.ServerDiscovered:
-                if computation.status_task:
+                if client.status_task:
                     info = DispycosStatus(server.status, server.task.location)
-                    self._cur_computation.status_task.send(info)
+                    self._cur_client.status_task.send(info)
             elif server.status == Scheduler.ServerInitialized:
                 node.disabled_servers.pop(server.task.location)
                 node.servers[server.task.location] = server
                 server.cpu_avail.set()
-                if computation.status_task:
-                    computation.status_task.send(DispycosStatus(server.status,
-                                                                server.task.location))
+                if client.status_task:
+                    client.status_task.send(DispycosStatus(server.status, server.task.location))
         if node.servers:
             self._disabled_nodes.pop(node.addr, None)
             self._nodes[node.addr] = node
@@ -1305,7 +1306,7 @@ class Scheduler(object):
             raise StopIteration
 
     def __reclaim_node(self, node, task=None):
-        node.task.send({'req': 'status', 'status_task': self.__status_task, 'client': task,
+        node.task.send({'req': 'status', 'status_task': self.__status_task, 'reply_task': task,
                         'auth': node.auth})
         status = yield task.recv(timeout=MsgTimeout)
         if not isinstance(status, dict):
@@ -1314,15 +1315,15 @@ class Scheduler(object):
         self._disabled_nodes.pop(node.addr, None)
         node.disabled_servers.update(node.servers)
         node.servers.clear()
-        computation = self._cur_computation
-        if computation and computation._auth == status.get('computation_auth'):
+        client = self._cur_client
+        if client and client._auth == status.get('client_auth'):
             for rtask in status.get('servers', []):
                 server = node.disabled_servers.pop(rtask.location, None)
                 if not server:
                     logger.warning('Invalid server %s ignored', rtask)
                     continue
                 # TODO: get number of CPU jobs only
-                server.task.send({'req': 'num_jobs', 'auth': computation._auth, 'client': task})
+                server.task.send({'req': 'num_jobs', 'auth': client._auth, 'reply_task': task})
                 n = yield task.receive(timeout=MsgTimeout)
                 if not isinstance(n, int):
                     continue
@@ -1358,12 +1359,12 @@ class Scheduler(object):
                 break
             now = time.time()
             if self.__cur_client_auth:
-                if (yield self._cur_computation._pulse_task.deliver('pulse')) == 1:
+                if (yield self._cur_client._pulse_task.deliver('pulse')) == 1:
                     client_pulse = now
                 if self.__zombie_period:
                     if ((now - client_pulse) > self.__zombie_period):
-                        logger.warning('Closing zombie computation %s', self.__cur_client_auth)
-                        SysTask(self.__close_computation)
+                        logger.warning('Closing zombie client %s', self.__cur_client_auth)
+                        SysTask(self.__close_client)
 
                     if (now - node_check) > self.__zombie_period:
                         node_check = now
@@ -1380,7 +1381,7 @@ class Scheduler(object):
                                 node.status = Scheduler.NodeAbandoned
                                 SysTask(self.__close_node, node)
 
-                        if not self._cur_computation._disable_nodes:
+                        if not self._cur_client._disable_nodes:
                             for node in self._disabled_nodes.itervalues():
                                 if node.task and node.status == Scheduler.NodeDiscovered:
                                     SysTask(self.__init_node, node)
@@ -1390,24 +1391,24 @@ class Scheduler(object):
                 if not self.pycos.ignore_peers:
                     self.pycos.discover_peers(port=self._node_port)
 
-    def __computation_scheduler_proc(self, task=None):
+    def __client_scheduler_proc(self, task=None):
         task.set_daemon()
         while 1:
-            if self._cur_computation:
-                self.__computation_sched_event.clear()
-                yield self.__computation_sched_event.wait()
+            if self._cur_client:
+                self.__client_sched_event.clear()
+                yield self.__client_sched_event.wait()
                 continue
 
-            self._cur_computation, client = yield task.receive()
-            self.__pulse_interval = self._cur_computation._pulse_interval
-            self.__ping_interval = self._cur_computation._ping_interval
+            self._cur_client, reply_task = yield task.receive()
+            self.__pulse_interval = self._cur_client._pulse_interval
+            self.__ping_interval = self._cur_client._ping_interval
             if not self._remote:
-                self.__zombie_period = self._cur_computation._zombie_period
+                self.__zombie_period = self._cur_client._zombie_period
 
-            self.__cur_client_auth = self._cur_computation._auth
-            self._cur_computation._auth = hashlib.sha1(os.urandom(20)).hexdigest()
-            self.__cur_node_allocations = self._cur_computation._node_allocations
-            self._cur_computation._node_allocations = []
+            self.__cur_client_auth = self._cur_client._auth
+            self._cur_client._auth = hashlib.sha1(os.urandom(20)).hexdigest()
+            self.__cur_node_allocations = self._cur_client._node_allocations
+            self._cur_client._node_allocations = []
 
             self._disabled_nodes.update(self._nodes)
             self._nodes.clear()
@@ -1418,13 +1419,12 @@ class Scheduler(object):
                 node.disabled_servers.clear()
                 node.servers.clear()
                 node.cpu_avail.clear()
-            logger.debug('Computation %s / %s scheduled', self.__cur_client_auth,
-                         self._cur_computation._auth)
+            logger.debug('Client %s / %s scheduled', self.__cur_client_auth, self._cur_client._auth)
             msg = {'resp': 'scheduled', 'auth': self.__cur_client_auth}
-            if (yield client.deliver(msg, timeout=MsgTimeout)) != 1:
+            if (yield reply_task.deliver(msg, timeout=MsgTimeout)) != 1:
                 logger.warning('client not reachable?')
                 self.__cur_client_auth = None
-                self._cur_computation = None
+                self._cur_client = None
                 continue
             for node in self.__cur_node_allocations:
                 if node.ip_rex.find('*') >= 0:
@@ -1437,13 +1437,13 @@ class Scheduler(object):
             if not self.pycos.ignore_peers:
                 self.pycos.discover_peers(port=self._node_port)
             self.__timer_task.resume()
-        self.__computation_scheduler_task = None
+        self.__client_scheduler_task = None
 
     def __submit_job(self, msg, task=None):
         task.set_daemon()
         job = msg['job']
         auth = msg.get('auth', None)
-        if (not isinstance(job, _DispycosJob_) or not isinstance(job.client, Task)):
+        if (not isinstance(job, _DispycosJob_) or not isinstance(job.reply_task, Task)):
             logger.warning('Ignoring invalid client job request: %s' % type(job))
             raise StopIteration
         cpu = job.cpu
@@ -1496,12 +1496,12 @@ class Scheduler(object):
                     self._cpu_nodes.discard(node)
                     if not self._cpu_nodes:
                         self._cpus_avail.clear()
-            yield server.run(job, self._cur_computation, node)
+            yield server.run(job, self._cur_client, node)
 
         elif isinstance(where, str):
             node = self._nodes.get(where, None)
             if not node:
-                job.client.send(None)
+                job.reply_task.send(None)
                 raise StopIteration
             while 1:
                 server = None
@@ -1532,16 +1532,16 @@ class Scheduler(object):
                     self._cpu_nodes.discard(node)
                     if not self._cpu_nodes:
                         self._cpus_avail.clear()
-            yield server.run(job, self._cur_computation, node)
+            yield server.run(job, self._cur_client, node)
 
         elif isinstance(where, pycos.Location):
             node = self._nodes.get(where.addr)
             if not node:
-                job.client.send(None)
+                job.reply_task.send(None)
                 raise StopIteration
             server = node.servers.get(where)
             if not server:
-                job.client.send(None)
+                job.reply_task.send(None)
                 raise StopIteration
             if cpu:
                 while (not node.cpu_avail.is_set() or not server.cpu_avail.is_set()):
@@ -1556,14 +1556,14 @@ class Scheduler(object):
                     self._cpu_nodes.discard(node)
                     if not self._cpu_nodes:
                         self._cpus_avail.clear()
-            yield server.run(job, self._cur_computation, node)
+            yield server.run(job, self._cur_client, node)
 
         else:
-            job.client.send(None)
+            job.reply_task.send(None)
 
     def __client_proc(self, task=None):
         task.set_daemon()
-        computations = {}
+        clients = {}
 
         while 1:
             msg = yield task.receive()
@@ -1581,9 +1581,9 @@ class Scheduler(object):
                 SysTask(self.__submit_job, msg)
                 continue
 
-            client = msg.get('client', None)
-            if not isinstance(client, pycos.Task):
-                client = None
+            reply_task = msg.get('reply_task', None)
+            if not isinstance(reply_task, pycos.Task):
+                reply_task = None
 
             if req == 'enable_server':
                 loc = msg.get('server', None)
@@ -1612,18 +1612,18 @@ class Scheduler(object):
                         node.cpu_avail.set()
                         self._cpu_nodes.add(node)
                         self._cpus_avail.set()
-                    if self._cur_computation.status_task:
+                    if self._cur_client.status_task:
                         info = DispycosStatus(Scheduler.ServerResumed, loc)
-                        self._cur_computation.status_task.send(info)
+                        self._cur_client.status_task.send(info)
                     if node.status == Scheduler.NodeSuspended:
                         self._disabled_nodes.pop(node.addr, None)
                         self._nodes[node.addr] = node
                         node.status = Scheduler.NodeInitialized
-                        if self._cur_computation.status_task:
+                        if self._cur_client.status_task:
                             info = DispycosNodeInfo(node.name, node.addr, node.cpus, node.platform,
                                                     node.avail_info)
                             info = DispycosStatus(Scheduler.NodeResumed, info)
-                            self._cur_computation.status_task.send(info)
+                            self._cur_client.status_task.send(info)
 
             elif req == 'enable_node':
                 addr = msg.get('addr', None)
@@ -1644,11 +1644,11 @@ class Scheduler(object):
                         node.cpu_avail.set()
                         self._cpu_nodes.add(node)
                         self._cpus_avail.set()
-                        if self._cur_computation.status_task:
+                        if self._cur_client.status_task:
                             info = DispycosNodeInfo(node.name, node.addr, node.cpus, node.platform,
                                                     node.avail_info)
                             info = DispycosStatus(Scheduler.NodeResumed, info)
-                            self._cur_computation.status_task.send(info)
+                            self._cur_client.status_task.send(info)
 
             elif req == 'suspend_server':
                 loc = msg.get('server', None)
@@ -1667,9 +1667,9 @@ class Scheduler(object):
                 if server.status == Scheduler.ServerInitialized:
                     server.status = Scheduler.ServerSuspended
                 server.cpu_avail.clear()
-                if self._cur_computation.status_task:
+                if self._cur_client.status_task:
                     info = DispycosStatus(server.status, loc)
-                    self._cur_computation.status_task.send(info)
+                    self._cur_client.status_task.send(info)
                 if not node.servers:
                     self._nodes.pop(node.addr)
                     self._disabled_nodes[node.addr] = node
@@ -1678,11 +1678,11 @@ class Scheduler(object):
                     self._cpu_nodes.discard(node)
                     if not self._cpu_nodes:
                         self._cpus_avail.clear()
-                    if self._cur_computation.status_task:
+                    if self._cur_client.status_task:
                         info = DispycosNodeInfo(node.name, node.addr, node.cpus, node.platform,
                                                 node.avail_info)
                         info = DispycosStatus(node.status, info)
-                        self._cur_computation.status_task.send(info)
+                        self._cur_client.status_task.send(info)
 
             elif req == 'suspend_node':
                 addr = msg.get('addr', None)
@@ -1701,11 +1701,11 @@ class Scheduler(object):
                 self._cpu_nodes.discard(node)
                 if not self._cpu_nodes:
                     self._cpus_avail.clear()
-                if self._cur_computation.status_task:
+                if self._cur_client.status_task:
                     info = DispycosNodeInfo(node.name, node.addr, node.cpus, node.platform,
                                             node.avail_info)
                     info = DispycosStatus(node.status, info)
-                    self._cur_computation.status_task.send(info)
+                    self._cur_client.status_task.send(info)
 
             elif req == 'close_server':
                 addr = msg.get('addr', None)
@@ -1732,7 +1732,7 @@ class Scheduler(object):
                     if not self._cpu_nodes:
                         self._cpus_avail.clear()
                     self._disabled_nodes[node.addr] = node
-                if node.task and self._cur_computation:
+                if node.task and self._cur_client:
                     req = {'req': 'close_server', 'addr': addr, 'auth': node.auth,
                            'terminate': msg.get('terminate', False),
                            'restart': msg.get('restart', False)}
@@ -1746,7 +1746,7 @@ class Scheduler(object):
                 if not node:
                     continue
                 self._disabled_nodes[node.addr] = node
-                if node.task and self._cur_computation:
+                if node.task and self._cur_client:
                     req = {'req': 'release', 'auth': node.auth,
                            'setup_args': msg.get('setup_args', None),
                            'terminate': msg.get('terminate', False),
@@ -1766,19 +1766,19 @@ class Scheduler(object):
                 SysTask(self.pycos.peer, loc)
 
             elif req == 'nodes':
-                if isinstance(client, Task):
+                if reply_task:
                     nodes = [node.addr for node in self._nodes.itervalues()
                              if node.status == Scheduler.NodeInitialized]
-                    client.send(nodes)
+                    reply_task.send(nodes)
 
             elif req == 'servers':
-                if isinstance(client, Task):
+                if reply_task:
                     servers = [server.task.location for node in self._nodes.itervalues()
                                if node.status == Scheduler.NodeInitialized
                                for server in node.servers.itervalues()
                                # if server.status == Scheduler.ServerInitialized
                                ]
-                    client.send(servers)
+                    reply_task.send(servers)
 
             elif req == 'tasks':
                 servers = []
@@ -1810,84 +1810,83 @@ class Scheduler(object):
 
                 for server in servers:
                     tasks.extend(server.rtasks.keys())
-                if isinstance(client, Task):
-                    client.send(tasks)
+                if reply_task:
+                    reply_task.send(tasks)
 
             elif req == 'schedule':
-                if not isinstance(client, Task):
+                if not reply_task:
                     logger.warning('Ignoring invalid client request "%s"', req)
                     continue
                 try:
-                    computation = pycos.deserialize(msg['computation'])
-                    assert isinstance(computation, Computation) or \
-                        computation.__class__.__name__ == 'Computation'
-                    assert isinstance(computation._pulse_task, Task)
-                    if computation._pulse_task.location == self.pycos.location:
-                        computation._pulse_task._id = int(computation._pulse_task._id)
-                        if computation.status_task:
-                            computation.status_task._id = int(computation.status_task._id)
-                    assert isinstance(computation._pulse_interval, (float, int))
-                    assert (MinPulseInterval <= computation._pulse_interval <= MaxPulseInterval)
+                    client = pycos.deserialize(msg['client'])
+                    assert isinstance(client, Client) or client.__class__.__name__ == 'Client'
+                    assert isinstance(client._pulse_task, Task)
+                    if client._pulse_task.location == self.pycos.location:
+                        client._pulse_task._id = int(client._pulse_task._id)
+                        if client.status_task:
+                            client.status_task._id = int(client.status_task._id)
+                    assert isinstance(client._pulse_interval, (float, int))
+                    assert (MinPulseInterval <= client._pulse_interval <= MaxPulseInterval)
                 except Exception:
-                    logger.warning('ignoring invalid computation request')
-                    client.send(None)
+                    logger.warning('ignoring invalid client request')
+                    reply_task.send(None)
                     continue
                 while 1:
-                    computation._auth = hashlib.sha1(os.urandom(20)).hexdigest()
-                    if not os.path.exists(os.path.join(self.__dest_path, computation._auth)):
+                    client._auth = hashlib.sha1(os.urandom(20)).hexdigest()
+                    if not os.path.exists(os.path.join(self.__dest_path, client._auth)):
                         break
                 try:
-                    os.mkdir(os.path.join(self.__dest_path, computation._auth))
+                    os.mkdir(os.path.join(self.__dest_path, client._auth))
                 except Exception:
                     logger.debug('Could not create "%s"',
-                                 os.path.join(self.__dest_path, computation._auth))
-                    client.send(None)
+                                 os.path.join(self.__dest_path, client._auth))
+                    reply_task.send(None)
                     continue
                 # TODO: save it on disk instead
-                computations[computation._auth] = computation
-                client.send(computation._auth)
+                clients[client._auth] = client
+                reply_task.send(client._auth)
 
             elif req == 'await':
-                if not isinstance(client, Task):
+                if not reply_task:
                     logger.warning('Ignoring invalid client request "%s"', req)
                     continue
-                computation = computations.pop(auth, None)
-                if not computation:
-                    client.send(None)
+                client = clients.pop(auth, None)
+                if not client:
+                    reply_task.send(None)
                     continue
-                if computation._pulse_task.location.addr != self.pycos.location.addr:
-                    computation._xfer_files = [(os.path.join(self.__dest_path, computation._auth,
-                                                             os.path.join(*(dst.split(sep))),
-                                                             xf.split(sep)[-1]),
-                                                os.path.join(*(dst.split(sep))), os.sep)
-                                               for xf, dst, sep in computation._xfer_files]
-                for xf, dst, sep in computation._xfer_files:
+                if client._pulse_task.location.addr != self.pycos.location.addr:
+                    client._xfer_files = [(os.path.join(self.__dest_path, client._auth,
+                                                        os.path.join(*(dst.split(sep))),
+                                                        xf.split(sep)[-1]),
+                                           os.path.join(*(dst.split(sep))), os.sep)
+                                          for xf, dst, sep in client._xfer_files]
+                for xf, dst, sep in client._xfer_files:
                     if not os.path.isfile(xf):
-                        logger.warning('File "%s" for computation %s is not valid',
-                                       xf, computation._auth)
-                        computation = None
+                        logger.warning('File "%s" for client %s is not valid',
+                                       xf, client._auth)
+                        client = None
                         break
-                if computation is None:
-                    client.send(None)
+                if client is None:
+                    reply_task.send(None)
                 else:
-                    self.__computation_scheduler_task.send((computation, client))
-                    self.__computation_sched_event.set()
+                    self.__client_scheduler_task.send((client, reply_task))
+                    self.__client_sched_event.set()
 
-            elif req == 'close_computation':
-                if not isinstance(client, Task):
+            elif req == 'close_client':
+                if not reply_task:
                     logger.warning('Ignoring invalid client request "%s"', req)
                     continue
-                SysTask(self.__close_computation, client=client,
+                SysTask(self.__close_client, reply_task=reply_task,
                         await_async=msg.get('await_async', False),
                         terminate=msg.get('terminate', False))
 
             elif req == 'abandon_zombie':
                 addr = msg.get('addr', None)
                 if not addr:
-                    if self._cur_computation:
-                        if self._cur_computation.abandon_zombie == bool(msg.get('flag', False)):
+                    if self._cur_client:
+                        if self._cur_client.abandon_zombie == bool(msg.get('flag', False)):
                             continue
-                        self._cur_computation.abandon_zombie = bool(msg.get('flag', False))
+                        self._cur_client.abandon_zombie = bool(msg.get('flag', False))
                         req = {'req': 'abandon_zombie', 'flag': bool(msg.get('flag', False))}
                         for node in self._nodes.itervalues():
                             if node.task:
@@ -1897,7 +1896,7 @@ class Scheduler(object):
                 node = self._nodes.get(addr, None)
                 if node:
                     node.abandon_zombie = msg.get('flag', False)
-                    if node.task and self._cur_computation:
+                    if node.task and self._cur_client:
                         node.task.send({'req': 'abandon_zombie', 'auth': node.auth,
                                         'flag': node.abandon_zombie})
 
@@ -1917,7 +1916,7 @@ class Scheduler(object):
         self._disabled_nodes[node.addr] = node
         node.disabled_servers.update(node.servers)
         node.servers.clear()
-        computation = self._cur_computation
+        client = self._cur_client
         if node.status == Scheduler.NodeAbandoned:
             # TODO: safe to assume servers are disconnected as well?
             for server in node.disabled_servers.itervalues():
@@ -1929,10 +1928,10 @@ class Scheduler(object):
                        for server in node.disabled_servers.itervalues() if server.task]
         for close_task in close_tasks:
             yield close_task.finish()
-        if (computation and computation.status_task):
+        if (client and client.status_task):
             status_info = DispycosNodeInfo(node.name, node.addr, node.cpus, node.platform,
                                            node.avail_info)
-            computation.status_task.send(DispycosStatus(node.status, status_info))
+            client.status_task.send(DispycosStatus(node.status, status_info))
 
         # if ((node.status == Scheduler.NodeDisconnected) or
         #     (node.status == Scheduler.NodeAbandoned and node.abandon_zombie)):
@@ -1962,7 +1961,7 @@ class Scheduler(object):
         server_task, server.task = server.task, None
         if not server_task:
             raise StopIteration(0)
-        computation = self._cur_computation
+        client = self._cur_client
         if server.status in (Scheduler.ServerInitialized, Scheduler.ServerSuspended,
                              Scheduler.ServerDiscovered):
             server_task.send({'req': 'terminate' if terminate else 'close', 'auth': node.auth})
@@ -1988,25 +1987,25 @@ class Scheduler(object):
             logger.warning('%s tasks abandoned at %s', len(server.rtasks), server_task.location)
             for rtask, job in server.rtasks.itervalues():
                 if not job.request.endswith('async'):
-                    job.client.send(None)
-                if computation.status_task:
+                    job.reply_task.send(None)
+                if client.status_task:
                     status = MonitorException(rtask, (Scheduler.TaskAbandoned, None))
-                    computation.status_task.send(status)
+                    client.status_task.send(status)
             server.rtasks.clear()
 
         server.xfer_files = []
         server.askew_results.clear()
-        if computation.status_task:
-            computation.status_task.send(DispycosStatus(server.status, server_task.location))
+        if client.status_task:
+            client.status_task.send(DispycosStatus(server.status, server_task.location))
 
         if self.__server_locations:
             self.__server_locations.discard(server_task.location)
             # TODO: inform other servers
         raise StopIteration(0)
 
-    def __close_computation(self, client=None, await_async=False, terminate=False, task=None):
+    def __close_client(self, reply_task=None, await_async=False, terminate=False, task=None):
         self.__server_locations.clear()
-        if self._cur_computation:
+        if self._cur_client:
             close_tasks = [SysTask(self.__close_node, node, await_async=await_async,
                                    terminate=terminate) for node in self._nodes.itervalues()]
             close_tasks.extend([SysTask(self.__close_node, node, await_async=await_async,
@@ -2015,25 +2014,25 @@ class Scheduler(object):
             for close_task in close_tasks:
                 yield close_task.finish()
         if self.__cur_client_auth:
-            computation_path = os.path.join(self.__dest_path, self.__cur_client_auth)
-            if os.path.isdir(computation_path):
-                shutil.rmtree(computation_path, ignore_errors=True)
-        if self._cur_computation and self._cur_computation.status_task:
-            self._cur_computation.status_task.send(DispycosStatus(Scheduler.ComputationClosed,
-                                                                  id(self._cur_computation)))
-        self.__cur_client_auth = self._cur_computation = None
-        self.__computation_sched_event.set()
-        if client:
-            client.send('closed')
+            client_path = os.path.join(self.__dest_path, self.__cur_client_auth)
+            if os.path.isdir(client_path):
+                shutil.rmtree(client_path, ignore_errors=True)
+        if self._cur_client and self._cur_client.status_task:
+            self._cur_client.status_task.send(DispycosStatus(Scheduler.ClientClosed,
+                                                             id(self._cur_client)))
+        self.__cur_client_auth = self._cur_client = None
+        self.__client_sched_event.set()
+        if reply_task:
+            reply_task.send('closed')
         raise StopIteration(0)
 
     def close(self, task=None):
-        """Close current computation and quit scheduler.
+        """Close current client and quit scheduler.
 
         Must be called with 'yield' as 'yield scheduler.close()' or as
         task.
         """
-        yield self.__close_computation(task=task)
+        yield self.__close_client(task=task)
         raise StopIteration(0)
 
 
@@ -2092,7 +2091,7 @@ if __name__ == '__main__':
                         help='interval in seconds to broadcast "ping" message to discover nodes')
     parser.add_argument('--zombie_period', dest='zombie_period', type=int,
                         default=(100 * MaxPulseInterval),
-                        help='maximum time in seconds computation is idle')
+                        help='maximum time in seconds client is idle')
     parser.add_argument('-d', '--debug', action='store_true', dest='loglevel', default=False,
                         help='if given, debug messages are printed')
     parser.add_argument('--clean', action='store_true', dest='clean', default=False,

@@ -4,7 +4,7 @@
 This file is part of pycos project. See https://pycos.sourceforge.io for details.
 
 This program can be used to start dispycos server processes so dispycos
-scheduler (see 'dispycos.py') can send computations to these server processes
+scheduler (see 'dispycos.py') can send clients to these server processes
 for executing distributed communicating proceses (tasks).
 
 See 'dispycos_*.py' files for example use cases.
@@ -18,7 +18,7 @@ __url__ = "https://pycos.sourceforge.io"
 
 def _dispycos_server_proc():
     # task
-    """Server process receives a computation and runs tasks for it.
+    """Server process receives a client and runs tasks for it.
     """
 
     import os
@@ -78,9 +78,9 @@ def _dispycos_server_proc():
         del _dispycos_config[_dispycos_var]
 
     _dispycos_busy_time.value = int(time.time())
-    logger.info('dispycos server %s started at %s; computation files will be saved in "%s"',
+    logger.info('dispycos server %s started at %s; client files will be saved in "%s"',
                 _dispycos_config['sid'], _dispycos_task.location, _dispycos_config['dest_path'])
-    _dispycos_req = _dispycos_client = _dispycos_msg = None
+    _dispycos_req = _dispycos_reply_task = _dispycos_msg = None
     _dispycos_peer_status = _dispycos_monitor_task = _dispycos_monitor_proc = _dispycos_job = None
     _dispycos_restart = False
     _dispycos_job_tasks = set()
@@ -109,7 +109,7 @@ def _dispycos_server_proc():
                             peer = yield SysTask.locate('_dispycos_server', location,
                                                         timeout=pycos.MsgTimeout)
                             if isinstance(peer, SysTask):
-                                # TODO: accept only if serving same computation?
+                                # TODO: accept only if serving same client?
                                 _dispycos_peers.add(location)
                                 # TODO: inform user tasks?
                             else:
@@ -203,7 +203,7 @@ def _dispycos_server_proc():
                                    'name': _dispycos_name, 'auth': _dispycos_auth})
 
     _dispycos_monitor_task = SysTask(_dispycos_monitor_proc)
-    logger.debug('dispycos server "%s": Computation "%s" from %s', _dispycos_name,
+    logger.debug('dispycos server "%s": Client "%s" from %s', _dispycos_name,
                  _dispycos_auth, _dispycos_scheduler_task.location)
 
     while 1:
@@ -214,13 +214,13 @@ def _dispycos_server_proc():
             continue
 
         if _dispycos_req == 'run':
-            _dispycos_client = _dispycos_msg.get('client', None)
+            _dispycos_reply_task = _dispycos_msg.get('reply_task', None)
             _dispycos_job = _dispycos_msg.get('job', None)
-            if (not isinstance(_dispycos_client, Task) or
+            if (not isinstance(_dispycos_reply_task, Task) or
                 _dispycos_auth != _dispycos_msg.get('auth', None)):
                 logger.warning('invalid run: %s', type(_dispycos_job))
-                if isinstance(_dispycos_client, Task):
-                    _dispycos_client.send(None)
+                if isinstance(_dispycos_reply_task, Task):
+                    _dispycos_reply_task.send(None)
                 continue
             try:
                 if _dispycos_job.code:
@@ -228,9 +228,9 @@ def _dispycos_server_proc():
                 _dispycos_job.args = deserialize(_dispycos_job.args)
                 _dispycos_job.kwargs = deserialize(_dispycos_job.kwargs)
             except Exception:
-                logger.debug('invalid computation to run')
+                logger.debug('invalid client to run')
                 _dispycos_var = (sys.exc_info()[0], _dispycos_job.name, traceback.format_exc())
-                _dispycos_client.send(_dispycos_var)
+                _dispycos_reply_task.send(_dispycos_var)
             else:
                 Task._pycos._lock.acquire()
                 try:
@@ -243,7 +243,7 @@ def _dispycos_server_proc():
                     _dispycos_jobs_done.clear()
                     logger.debug('task %s created at %s', _dispycos_var, _dispycos_task.location)
                     _dispycos_var.notify(_dispycos_monitor_task)
-                _dispycos_client.send(_dispycos_var)
+                _dispycos_reply_task.send(_dispycos_var)
                 Task._pycos._lock.release()
 
         elif _dispycos_req == 'close' or _dispycos_req == 'quit':
@@ -255,7 +255,7 @@ def _dispycos_server_proc():
                                                'auth': _dispycos_auth})
             while _dispycos_job_tasks:
                 logger.debug('dispycos server "%s": Waiting for %s tasks to terminate before '
-                             'closing computation', _dispycos_name, len(_dispycos_job_tasks))
+                             'closing client', _dispycos_name, len(_dispycos_job_tasks))
                 if (yield _dispycos_jobs_done.wait(timeout=5)):
                     break
                 _dispycos_var = yield _dispycos_task.recv(timeout=0)
@@ -286,7 +286,7 @@ def _dispycos_server_proc():
                       (_dispycos_name, _dispycos_task.location, os.getpid(),
                        len(_dispycos_job_tasks), _dispycos_scheduler_task.location))
             else:
-                print('  dispycos server "%s" @ %s with PID %s not used by any computation' %
+                print('  dispycos server "%s" @ %s with PID %s not used by any client' %
                       (_dispycos_name, _dispycos_task.location, os.getpid()))
 
         elif _dispycos_req == 'peers':
@@ -298,23 +298,23 @@ def _dispycos_server_proc():
         elif _dispycos_req == 'num_jobs':
             if _dispycos_msg.get('auth', None) != _dispycos_auth:
                 continue
-            _dispycos_var = _dispycos_msg.get('client', None)
+            _dispycos_var = _dispycos_msg.get('reply_task', None)
             if isinstance(_dispycos_var, pycos.Task):
                 _dispycos_var.send(len(_dispycos_job_tasks))
 
         else:
             logger.warning('invalid command "%s" ignored', _dispycos_req)
-            _dispycos_client = _dispycos_msg.get('client', None)
-            if not isinstance(_dispycos_client, Task):
+            _dispycos_reply_task = _dispycos_msg.get('reply_task', None)
+            if not isinstance(_dispycos_reply_task, Task):
                 continue
-            _dispycos_client.send(-1)
+            _dispycos_reply_task.send(-1)
 
     # kill any pending jobs
     while _dispycos_job_tasks:
         for _dispycos_var in _dispycos_job_tasks:
             _dispycos_var.terminate()
         logger.debug('dispycos server "%s": Waiting for %s tasks to terminate '
-                     'before closing computation', _dispycos_name, len(_dispycos_job_tasks))
+                     'before closing client', _dispycos_name, len(_dispycos_job_tasks))
         if (yield _dispycos_jobs_done.wait(timeout=5)):
             break
     if _dispycos_scheduler_task:
@@ -517,33 +517,33 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
             os.setreuid(suid, suid)
 
     try:
-        with open(os.path.join(_dispycos_config['dest_path'], '..', 'dispycos_computation'),
+        with open(os.path.join(_dispycos_config['dest_path'], '..', 'dispycos_client'),
                   'rb') as fd:
-            computation = pickle.load(fd)
-            assert computation['auth'] == _dispycos_config['auth']
-            setup_args = computation['setup_args']
-            computation = pycos.deserialize(computation['computation'])
-            computation._node_allocations = []
-            _dispycos_config['server_setup'] = computation._server_setup
-            _dispycos_config['disable_servers'] = computation._disable_servers
+            client = pickle.load(fd)
+            assert client['auth'] == _dispycos_config['auth']
+            setup_args = client['setup_args']
+            client = pycos.deserialize(client['client'])
+            client._node_allocations = []
+            _dispycos_config['server_setup'] = client._server_setup
+            _dispycos_config['disable_servers'] = client._disable_servers
 
         if os.name == 'nt':
-            _dispycos_config['code'] = computation._code
+            _dispycos_config['code'] = client._code
         else:
-            if computation._code:
-                exec(computation._code) in globals()
+            if client._code:
+                exec(client._code) in globals()
 
-            if computation._node_setup:
+            if client._node_setup:
                 try:
                     setup_args = pycos.deserialize(setup_args)
-                    ret = pycos.Task(globals()[computation._node_setup], *setup_args).value()
+                    ret = pycos.Task(globals()[client._node_setup], *setup_args).value()
                 except Exception:
                     pycos.logger.warning('node_setup failed for %s', _dispycos_config['auth'])
                     # print(traceback.format_exc())
                     ret = -1
                 assert ret == 0
-        computation._code = None
-        computation._node_setup = None
+        client._code = None
+        client._node_setup = None
         del setup_args
     except Exception:
         pycos.logger.debug(traceback.format_exc())
@@ -634,7 +634,7 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
             mp_q.put({'req': 'server_task', 'auth': _dispycos_config['auth'], 'task': None,
                       'iid': child.iid, 'server_id': child.sid, 'pid': None})
         lock.release()
-        # TODO: delete computation to release memory?
+        # TODO: delete client to release memory?
 
     def pipe_proc():
         for child in children:
@@ -661,7 +661,7 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
                 continue
 
             if req.get('msg') == 'quit':
-                computation._restart_servers = False
+                client._restart_servers = False
                 for child in children:
                     child.restart = False
                 mp_q.put({'req': 'quit', 'auth': _dispycos_config['auth']})
@@ -689,8 +689,8 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
                             close_procs([child])
                 else:
                     # assert req.get('restart') == False
-                    computation._restart_servers = req.get('restart', False)
-                    if not computation._restart_servers:
+                    client._restart_servers = req.get('restart', False)
+                    if not client._restart_servers:
                         for child in children:
                             child.restart = False
                     _dispycos_pipe.send({'msg': 'restart_ack', 'auth': _dispycos_config['auth']})
@@ -769,14 +769,14 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
             child.proc = None
             child.status = None
             lock.release()
-            if (child.restart or computation._restart_servers or
+            if (child.restart or client._restart_servers or
                 (msg.get('restart', False) and child.port >= 0 and (msg['status'] == 0))):
                 start_proc(child)
                 if child.restart:
                     child.restart = False
 
     spawn_closed = True
-    computation._restart_servers = False
+    client._restart_servers = False
     for child in children:
         child.restart = False
     for child in children:
@@ -807,7 +807,7 @@ def _dispycos_node():
         os.setegid(os.getgid())
         os.seteuid(os.getuid())
         os.umask(0x007)
-        pycos.logger.info('Computations will run with uid %s and gid %s' %
+        pycos.logger.info('Clients will run with uid %s and gid %s' %
                           (_dispycos_config['suid'], _dispycos_config['sgid']))
     else:
         _dispycos_config.pop('suid', None)
@@ -1250,7 +1250,7 @@ def _dispycos_node():
                         pass
                 return 0
 
-        def start_computation():
+        def start_client():
             # clear pipe
             while parent_pipe.poll(0.1):
                 parent_pipe.recv()
@@ -1262,7 +1262,7 @@ def _dispycos_node():
             _dispycos_config['auth'] = comp_state.auth
             if comp_state.interval < _dispycos_config['min_pulse_interval']:
                 comp_state.interval = _dispycos_config['min_pulse_interval']
-                pycos.logger.warning('Pulse interval for computation has been raised to %s',
+                pycos.logger.warning('Pulse interval for client has been raised to %s',
                                      comp_state.interval)
             if zombie_period:
                 _dispycos_config['pulse_interval'] = min(comp_state.interval,
@@ -1302,7 +1302,7 @@ def _dispycos_node():
                 comp_state.spawn_mpproc = None
             return cpus
 
-        def close_computation(req='close', restart=False, task=None):
+        def close_client(req='close', restart=False, task=None):
             if comp_state.cpus_reserved and comp_state.spawn_mpproc:
                 parent_pipe.send({'msg': 'close_server', 'auth': comp_state.auth, 'sid': 0,
                                   'restart': False})
@@ -1392,8 +1392,8 @@ def _dispycos_node():
                 raise StopIteration
             if restart:
                 comp_state.cpus_reserved = cpus_reserved
-                if start_computation() == 0:
-                    yield close_computation(req='close', restart=False, task=task)
+                if start_client() == 0:
+                    yield close_client(req='close', restart=False, task=task)
                 raise StopIteration
             if os.path.isdir(dispycos_path):
                 for name in os.listdir(dispycos_path):
@@ -1406,15 +1406,15 @@ def _dispycos_node():
                     except Exception:
                         pycos.logger.warning('Could not remove "%s"' % name)
 
-            f = os.path.join(dispycos_path, '..', 'dispycos_computation')
+            f = os.path.join(dispycos_path, '..', 'dispycos_client')
             try:
                 os.remove(f)
             except Exception:
-                pycos.logger.warning('Computation to remove "%s" vanished!', f)
+                pycos.logger.warning('Client to remove "%s" vanished!', f)
             pycos.Task(dispycos_scheduler.close_peer, comp_state.client_location)
             if not os.path.isdir(dispycos_path):
                 pycos.logger.warning('Apparently dispycosnode directory "%s" vanished after '
-                                     'computation from %s', dispycos_path, comp_state.scheduler)
+                                     'client from %s', dispycos_path, comp_state.scheduler)
                 try:
                     os.path.makedirs(dispycos_path)
                     if 'suid' in _dispycos_config:
@@ -1468,7 +1468,7 @@ def _dispycos_node():
                     if sent == 1:
                         last_pulse = now
                     elif comp_state.scheduler and (now - last_pulse) > (5 * comp_state.interval):
-                        pycos.logger.warning('Scheduler is not reachable; closing computation "%s"',
+                        pycos.logger.warning('Scheduler is not reachable; closing client "%s"',
                                              comp_state.auth)
                         node_task.send({'req': 'close', 'auth': node_auth})
                         pycos.Task(dispycos_scheduler.close_peer, comp_state.scheduler.location)
@@ -1476,10 +1476,10 @@ def _dispycos_node():
                     if (zombie_period and ((now - busy_time.value) > zombie_period) and
                         comp_state.scheduler):
                         if comp_state.abandon_zombie:
-                            pycos.logger.debug('Not closing zombie computation from %s',
+                            pycos.logger.debug('Not closing zombie client from %s',
                                                comp_state.scheduler.location)
                         else:
-                            pycos.logger.warning('Closing zombie computation "%s" from %s',
+                            pycos.logger.warning('Closing zombie client "%s" from %s',
                                                  comp_state.auth, comp_state.scheduler.location)
                             node_task.send({'req': 'close', 'auth': node_auth})
 
@@ -1509,8 +1509,8 @@ def _dispycos_node():
                 server_task_msg(msg)
 
             elif req == 'dispycos_node_info':
-                client = msg.get('client', None)
-                if isinstance(client, pycos.Task):
+                reply_task = msg.get('reply_task', None)
+                if isinstance(reply_task, pycos.Task):
                     if psutil:
                         info = DispycosNodeAvailInfo(task.location,
                                                      100.0 - psutil.cpu_percent(),
@@ -1521,15 +1521,15 @@ def _dispycos_node():
                         info = DispycosNodeAvailInfo(task.location, None, None, None, None)
                     info = DispycosNodeInfo(node_name, task.location.addr,
                                             len(node_servers) - 1, platform.platform(), info)
-                    client.send(info)
+                    reply_task.send(info)
 
             elif req == 'reserve':
-                # TODO: if current computation is zombie and has abandon_zombie set, release it
+                # TODO: if current client is zombie and has abandon_zombie set, release it
                 # and accept new reservation
-                client = msg.get('client', None)
+                reply_task = msg.get('reply_task', None)
                 cpus = msg.get('cpus', -1)
                 auth = msg.get('auth', None)
-                if (isinstance(client, pycos.Task) and isinstance(cpus, int) and
+                if (isinstance(reply_task, pycos.Task) and isinstance(cpus, int) and
                     isinstance(msg.get('status_task', None), pycos.Task) and auth and
                     isinstance(msg.get('client_location', None), pycos.Location)):
                     pass
@@ -1555,16 +1555,16 @@ def _dispycos_node():
                 comp_state.abandon_zombie = msg.get('abandon_zombie', False)
                 if comp_state.interval < _dispycos_config['min_pulse_interval']:
                     comp_state.interval = _dispycos_config['min_pulse_interval']
-                    pycos.logger.warning('Pulse interval for computation from %s has been '
-                                         'raised to %s', client.location, comp_state.interval)
+                    pycos.logger.warning('Pulse interval for client from %s has been '
+                                         'raised to %s', reply_task.location, comp_state.interval)
                 if zombie_period:
                     _dispycos_config['pulse_interval'] = min(comp_state.interval,
                                                              zombie_period / 3)
                 else:
                     _dispycos_config['pulse_interval'] = comp_state.interval
                 # TODO: inform scheduler about pulse interval
-                reply = {'cpus': cpus, 'auth': auth}
-                if ((yield client.deliver(reply, timeout=msg_timeout)) == 1 and cpus):
+                info = {'cpus': cpus, 'auth': auth}
+                if ((yield reply_task.deliver(info, timeout=msg_timeout)) == 1 and cpus):
                     comp_state.auth = auth
                     comp_state.cpus_reserved = cpus
                     comp_state.scheduler = msg['status_task']
@@ -1576,46 +1576,46 @@ def _dispycos_node():
                     dispycos_scheduler.ignore_peers = False
                     dispycos_scheduler.discover_peers(port=pycos.config.NetPort)
 
-            elif req == 'computation':
+            elif req == 'client':
+                reply_task = msg.get('reply_task', None)
                 client = msg.get('client', None)
-                computation = msg.get('computation', None)
                 if (comp_state.auth == msg.get('auth', None) and
-                    isinstance(client, pycos.Task) and comp_state.cpus_reserved > 0):
-                    with open(os.path.join(dispycos_path, '..', 'dispycos_computation'), 'wb') as fd:
-                        pickle.dump({'auth': comp_state.auth, 'computation': computation,
+                    isinstance(reply_task, pycos.Task) and comp_state.cpus_reserved > 0):
+                    with open(os.path.join(dispycos_path, '..', 'dispycos_client'), 'wb') as fd:
+                        pickle.dump({'auth': comp_state.auth, 'client': client,
                                      'setup_args': msg['setup_args']}, fd)
-                    cpus = start_computation()
-                    if ((yield client.deliver(cpus)) == 1) and cpus:
+                    cpus = start_client()
+                    if ((yield reply_task.deliver(cpus)) == 1) and cpus:
                         comp_state.cpus_reserved = cpus
                         timer_task.resume()
                     else:
-                        pycos.Task(close_computation)
-                del computation
+                        pycos.Task(close_client)
+                del client
 
             elif req == 'release':
                 auth = msg.get('auth', None)
                 if comp_state.auth == auth:
                     setup_args = msg.get('setup_args', None)
                     if setup_args:
-                        computation = None
+                        client = None
                         try:
-                            with open(os.path.join(dispycos_path, '..', 'dispycos_computation'),
+                            with open(os.path.join(dispycos_path, '..', 'dispycos_client'),
                                       'rb') as fd:
-                                computation = pickle.load(fd)
-                            computation['setup_args'] = setup_args
-                            with open(os.path.join(dispycos_path, '..', 'dispycos_computation'),
+                                client = pickle.load(fd)
+                            client['setup_args'] = setup_args
+                            with open(os.path.join(dispycos_path, '..', 'dispycos_client'),
                                       'wb') as fd:
-                                pickle.dump(computation, fd)
+                                pickle.dump(client, fd)
                         except Exception:
-                            pycos.logger.warning('Could not save setup_args for computation from %s',
+                            pycos.logger.warning('Could not save setup_args for client from %s',
                                                  comp_state.scheduler.location)
-                        del computation
+                        del client
                     restart = msg.get('restart', False)
                     if msg.get('terminate', False):
                         req = 'terminate'
                     else:
                         req = 'close'
-                    pycos.Task(close_computation, req, restart=restart)
+                    pycos.Task(close_client, req, restart=restart)
 
             elif req == 'close' or req == 'quit' or req == 'terminate':
                 auth = msg.get('auth', None)
@@ -1626,7 +1626,7 @@ def _dispycos_node():
                     elif req == 'quit':
                         req = 'terminate'
                     if comp_state.scheduler:
-                        pycos.Task(close_computation, req=req)
+                        pycos.Task(close_client, req=req)
                     elif req == 'quit' or req == 'terminate':
                         break
 
@@ -1638,14 +1638,14 @@ def _dispycos_node():
             elif req == 'status':
                 if (msg.get('status_task') == comp_state.scheduler and
                     msg.get('auth') == comp_state.auth):
-                    reply = {'auth': comp_state.auth,
-                             'servers': [server.task for server in node_servers
-                                         if server.id and server.task]}
+                    info = {'auth': comp_state.auth,
+                            'servers': [server.task for server in node_servers
+                                        if server.id and server.task]}
                 else:
-                    reply = None
-                client = msg.get('client', None)
-                if isinstance(client, pycos.Task):
-                    client.send(reply)
+                    info = None
+                reply_task = msg.get('reply_task', None)
+                if isinstance(reply_task, pycos.Task):
+                    reply_task.send(info)
 
             elif req == 'close_server':
                 auth = msg.get('auth', None)
@@ -1724,8 +1724,8 @@ def _dispycos_node():
                         '\nEnter\n'
                         '  "status" to get status\n'
                         '  "close" to stop accepting new jobs and\n'
-                        '          close current computation when current jobs are finished\n'
-                        '  "quit" to "close" current computation and exit dispycosnode\n'
+                        '          close current client when current jobs are finished\n'
+                        '  "quit" to "close" current client and exit dispycosnode\n'
                         '  "terminate" to kill current jobs and "quit": ')
             except (KeyboardInterrupt, EOFError):
                 if node_task.is_alive():
@@ -1738,7 +1738,7 @@ def _dispycos_node():
 
             print('')
             if cmd == 'status':
-                print('  %s computations served so far' % comp_state.served)
+                print('  %s clients served so far' % comp_state.served)
                 for server in node_servers:
                     if server.task:
                         server.task.send({'req': cmd, 'auth': comp_state.auth})
@@ -1861,7 +1861,7 @@ if __name__ == '__main__':
                         help='maximum pulse interval clients can use in number of seconds')
     parser.add_argument('--zombie_period', dest='zombie_period', default=(10 * MaxPulseInterval),
                         type=int,
-                        help='maximum number of seconds for client to not run computation')
+                        help='maximum number of seconds for client to not run tasks')
     parser.add_argument('--ping_interval', dest='ping_interval', default=0, type=int,
                         help='interval in number of seconds for node to broadcast its address')
     parser.add_argument('--daemon', action='store_true', dest='daemon', default=False,
