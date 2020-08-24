@@ -65,13 +65,13 @@ def agent_proc(client_task, task=None):
             else:
                 continue
 
-        msg = (task, low, high)
-        # drop agents that may have gone away
-        drop = [agent for agent in agents if agent.send(msg)]
-        if drop:
-            for agent in drop:
-                agents.discard(agent)
-        client_task.send(msg)
+            msg = (task, low, high)
+            # drop agents that may have gone away
+            drop = [agent for agent in agents if agent.send(msg)]
+            if drop:
+                for agent in drop:
+                    agents.discard(agent)
+            client_task.send(msg)
 
 # status messages indicating nodes, servers and remote tasks finish status are sent to this local
 # task; in this case we process only servers initialized and closed
