@@ -1592,7 +1592,7 @@ class _Peer(object):
                  'reqs', 'waiting', 'req_task', 'addrinfo', 'signature')
 
     peers = {}
-    status_task = None
+    status_tasks = set()
     _pycos = None
     _lock = threading.Lock()
     _sign_locations = {}
@@ -1619,8 +1619,13 @@ class _Peer(object):
         _Peer._lock.release()
         self.req_task = SysTask(self.req_proc)
         logger.debug('%s: found peer %s', addrinfo.location, self.location)
-        if _Peer.status_task:
-            _Peer.status_task.send(PeerStatus(location, name, PeerStatus.Online))
+        drop = []
+        for tsk in _Peer.status_tasks:
+            if tsk.send(PeerStatus(location, name, PeerStatus.Online)):
+                drop.append(tsk)
+        if drop:
+            for tsk in drop:
+                _Peer.status_tasks.discard(tsk)
 
         _Peer._pycos._lock.acquire()
         if ((location.addr, location.port) in _Peer._pycos._stream_peers or
@@ -1890,14 +1895,18 @@ class _Peer(object):
             _Peer._sign_locations.pop(peer.signature, None)
             if peer.req_task:
                 peer.req_task.terminate()
-            if _Peer.status_task:
-                _Peer.status_task.send(PeerStatus(peer.location, peer.name, PeerStatus.Offline))
+            drop = []
+            for tsk in _Peer.status_tasks:
+                if tsk.send(PeerStatus(peer.location, peer.name, PeerStatus.Offline)):
+                    drop.append(tsk)
+            if drop:
+                for tsk in drop:
+                    _Peer.status_tasks.discard(tsk)
 
     @staticmethod
     def peer_status(task):
         _Peer._lock.acquire()
         if isinstance(task, Task):
-            # if there is another status_task, add or replace?
             for peer in _Peer.peers.values():
                 try:
                     task.send(PeerStatus(peer.location, peer.name, PeerStatus.Online))
@@ -1905,9 +1914,7 @@ class _Peer(object):
                     logger.debug(traceback.format_exc())
                     break
             else:
-                _Peer.status_task = task
-        elif task is None:
-            _Peer.status_task = None
+                _Peer.status_tasks.add(task)
         else:
             logger.warning('invalid peer status task ignored')
         _Peer._lock.release()
