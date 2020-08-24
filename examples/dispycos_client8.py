@@ -34,12 +34,12 @@ def compute_task(task=None):
 
 
 # client (local) task runs computations
-def client_proc(computation, njobs, task=None):
-    # schedule computation with the scheduler; scheduler accepts one computation
-    # at a time, so if scheduler is shared, the computation is queued until it
-    # is done with already scheduled computations
-    if (yield computation.schedule()):
-        raise Exception('Could not schedule computation')
+def client_proc(client, njobs, task=None):
+    # schedule client with the scheduler; scheduler accepts one client
+    # at a time, so if scheduler is shared, the client is queued until it
+    # is done with already scheduled clients
+    if (yield client.schedule()):
+        raise Exception('Could not schedule client')
 
     # send 5 requests to remote process (compute_task)
     def send_requests(rtask, task=None):
@@ -47,7 +47,7 @@ def client_proc(computation, njobs, task=None):
         rtask.send(task)
         for i in range(5):
             # even if recipient doesn't use "yield" (such as executing long-run
-            # computation, or thread-blocking function such as 'time.sleep' as
+            # client, or thread-blocking function such as 'time.sleep' as
             # in this case), the message is accepted by another scheduler
             # (netpycos.Pycos) at the receiver and put in recipient's message
             # queue
@@ -60,12 +60,12 @@ def client_proc(computation, njobs, task=None):
         print('    %s computed result: %.4f' % (rtask.location, result))
 
     for i in range(njobs):
-        rtask = yield computation.run(compute_task)
+        rtask = yield client.run(compute_task)
         if isinstance(rtask, pycos.Task):
             print('  job %d processed by %s' % (i, rtask.location))
             pycos.Task(send_requests, rtask)
 
-    yield computation.close()
+    yield client.close()
 
 
 if __name__ == '__main__':
@@ -74,7 +74,7 @@ if __name__ == '__main__':
     # if scheduler is not already running (on a node as a program), start
     # private scheduler:
     Scheduler()
-    # package computation fragments
-    computation = Computation([compute_task])
+    # package client components
+    client = Client([compute_task])
     # run n jobs
-    pycos.Task(client_proc, computation, 10 if len(sys.argv) < 2 else int(sys.argv[1]))
+    pycos.Task(client_proc, client, 10 if len(sys.argv) < 2 else int(sys.argv[1]))

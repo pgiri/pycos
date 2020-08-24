@@ -33,12 +33,12 @@ def compute(i, n, task=None):
     raise StopIteration((i, n))
 
 
-def client_proc(computation, njobs, task=None):
-    # schedule computation with the scheduler; scheduler accepts one computation
-    # at a time, so if scheduler is shared, the computation is queued until it
-    # is done with already scheduled computations
-    if (yield computation.schedule()):
-        raise Exception('Could not schedule computation')
+def client_proc(client, njobs, task=None):
+    # schedule client with the scheduler; scheduler accepts one client
+    # at a time, so if scheduler is shared, the client is queued until it
+    # is done with already scheduled clients
+    if (yield client.schedule()):
+        raise Exception('Could not schedule client')
 
     # pair EC2 node with this client with:
     yield pycos.Pycos().peer(pycos.Location('54.204.242.185', 9706))
@@ -51,11 +51,11 @@ def client_proc(computation, njobs, task=None):
     # scheduler will use as many processes as necessary/available, running one
     # job at a server process
     args = [(i, random.uniform(3, 10)) for i in range(njobs)]
-    results = yield computation.run_results(compute, args)
+    results = yield client.run_results(compute, args)
     for result in results:
         print('job %s result: %s' % (result[0], result[1]))
 
-    yield computation.close()
+    yield client.close()
 
 
 if __name__ == '__main__':
@@ -72,6 +72,6 @@ if __name__ == '__main__':
     # if scheduler is not already running (on a node as a program),
     # start private scheduler:
     Scheduler()
-    # use 'compute' for computation jobs
-    computation = Computation([compute])
-    pycos.Task(client_proc, computation, njobs)
+    # use 'compute' for client jobs
+    client = Client([compute])
+    pycos.Task(client_proc, client, njobs)

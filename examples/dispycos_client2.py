@@ -18,12 +18,12 @@ def compute(n, task=None):
     yield task.sleep(n)
 
 
-def client_proc(computation, njobs, task=None):
-    # schedule computation with the scheduler; scheduler accepts one computation
-    # at a time, so if scheduler is shared, the computation is queued until it
-    # is done with already scheduled computations
-    if (yield computation.schedule()):
-        raise Exception('Could not schedule computation')
+def client_proc(client, njobs, task=None):
+    # schedule client with the scheduler; scheduler accepts one client
+    # at a time, so if scheduler is shared, the client is queued until it
+    # is done with already scheduled clients
+    if (yield client.schedule()):
+        raise Exception('Could not schedule client')
 
     # run jobs
     for i in range(njobs):
@@ -31,14 +31,14 @@ def client_proc(computation, njobs, task=None):
         # one computations runs at a server at any time; for mostly idle
         # computations, use 'run_async' to run more than one computation at a
         # server at the same time.
-        rtask = yield computation.run(compute, random.uniform(5, 10))
+        rtask = yield client.run(compute, random.uniform(5, 10))
         if isinstance(rtask, pycos.Task):
             print('  job %s processed by %s' % (i, rtask.location))
         else:
             print('rtask %s failed: %s' % (i, rtask))
 
-    # wait for all jobs to be done and close computation
-    yield computation.close()
+    # wait for all jobs to be done and close client
+    yield client.close()
 
 
 if __name__ == '__main__':
@@ -49,13 +49,13 @@ if __name__ == '__main__':
     Scheduler()
     # send 'compute' generator function; use MinPulseInterval so node status
     # updates are sent more frequently (instead of default 2*MinPulseInterval)
-    computation = Computation([compute], pulse_interval=pycos.dispycos.MinPulseInterval)
+    client = Client([compute], pulse_interval=pycos.dispycos.MinPulseInterval)
 
     # to illustrate relaying of status messages to multiple tasks, httpd is
-    # also used in this example; this sets computation's status_task to httpd's status_task
-    httpd = pycos.httpd.HTTPServer(computation)
-    # run 10 (or given number of) jobs
-    pycos.Task(client_proc, computation, 10 if len(sys.argv) < 2 else int(sys.argv[1])).value()
-    # shutdown httpd only after computation is closed; alternately, close it in
-    # 'client_proc' after the computation is closed.
+    # also used in this example; this sets client's status_task to httpd's status_task
+    httpd = pycos.httpd.HTTPServer(client)
+    # run 10 (or given number of) jobs and wait for client_proc to finish
+    pycos.Task(client_proc, client, 10 if len(sys.argv) < 2 else int(sys.argv[1])).value()
+    # shutdown httpd only after client is closed; alternately, close it in
+    # 'client_proc' after the client is closed.
     httpd.shutdown()

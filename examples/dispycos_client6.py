@@ -60,7 +60,7 @@ def trend_proc(task=None):
         print('trend signal at % 4d: %s / %.2f' % (trend[0], trend[1], trend[2]))
 
 
-# this task is executed on a node to prepare for computation. In this case we
+# this task is executed on a node to prepare for client. In this case we
 # want to make sure node has 'numpy' module used in rtask_avg_proc
 def node_setup(task=None):
     try:
@@ -75,19 +75,19 @@ def node_setup(task=None):
 # This task runs locally. It creates two remote tasks at two dispycosnode server
 # processes, two local tasks, one to receive trend signal from one of the remote
 # tasks, and another to send data to two remote tasks
-def client_proc(computation, task=None):
-    # schedule computation with the scheduler; scheduler accepts one computation
-    # at a time, so if scheduler is shared, the computation is queued until it
-    # is done with already scheduled computations
-    if (yield computation.schedule()):
-        raise Exception('Could not schedule computation')
+def client_proc(client, task=None):
+    # schedule client with the scheduler; scheduler accepts one client
+    # at a time, so if scheduler is shared, the client is queued until it
+    # is done with already scheduled clients
+    if (yield client.schedule()):
+        raise Exception('Could not schedule client')
 
     trend_task = pycos.Task(trend_proc)
 
     # run average and save tasks at two different servers
-    rtask_avg = yield computation.run(rtask_avg_proc, 0.4, trend_task, 10)
+    rtask_avg = yield client.run(rtask_avg_proc, 0.4, trend_task, 10)
     assert isinstance(rtask_avg, pycos.Task)
-    rtask_save = yield computation.run(rtask_save_proc)
+    rtask_save = yield client.run(rtask_save_proc)
     assert isinstance(rtask_save, pycos.Task)
 
     # if data is sent frequently (say, many times a second), enable streaming
@@ -113,7 +113,7 @@ def client_proc(computation, task=None):
     rtask_avg.send(item)
     rtask_save.send(item)
 
-    yield computation.close()
+    yield client.close()
 
 
 if __name__ == '__main__':
@@ -134,5 +134,5 @@ if __name__ == '__main__':
     # example disables Windows nodes; alternately 'server_setup' (that works for
     # Windows nodes as well) can be used instead of 'node_setup'.
     nodes = [DispycosNodeAllocate(node='*', platform='Windows', cpus=0)]
-    computation = Computation([], nodes=nodes, node_setup=node_setup)
-    pycos.Task(client_proc, computation)
+    client = Client([], nodes=nodes, node_setup=node_setup)
+    pycos.Task(client_proc, client)

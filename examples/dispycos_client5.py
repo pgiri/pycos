@@ -23,7 +23,7 @@ def rtask_proc(client, program, task=None):
     import pycos.asyncfile
 
     if program.endswith('.py'):
-        # Computation dependencies are saved in parent directory
+        # computation dependencies are saved in parent directory
         program = [sys.executable, os.path.join('..', program)]
     # start program as a subprocess (to read from and write to pipe)
     if os.name == 'nt':  # create pipe with asyncfile under Windows
@@ -62,13 +62,13 @@ def rtask_proc(client, program, task=None):
     raise StopIteration(pipe.poll())
 
 
-# client (local) task runs computations
-def client_proc(computation, program_path, n, task=None):
-    # schedule computation with the scheduler; scheduler accepts one computation
-    # at a time, so if scheduler is shared, the computation is queued until it
-    # is done with already scheduled computations
-    if (yield computation.schedule()):
-        raise Exception('Could not schedule computation')
+# client (local) task submits tasks for remote execution at dispycos servers
+def client_proc(client, program, n, task=None):
+    # schedule client with the scheduler; scheduler accepts one client
+    # at a time, so if scheduler is shared, the client is queued until it
+    # is done with already scheduled clients
+    if (yield client.schedule()):
+        raise Exception('Could not schedule client')
 
     # send 10 random numbers to remote process (rtask_proc)
     def send_input(rtask, task=None):
@@ -92,7 +92,7 @@ def client_proc(computation, program_path, n, task=None):
         # create reader and send to rtask so it can send messages to reader
         client_reader = pycos.Task(get_output, i)
         # schedule rtask on (available) remote server
-        rtask = yield computation.run(rtask_proc, client_reader, program_path)
+        rtask = yield client.run(rtask_proc, client_reader, program)
         if isinstance(rtask, pycos.Task):
             print('  job %s processed by %s' % (i, rtask.location))
             # sender sends input data to rtask
@@ -112,7 +112,7 @@ def client_proc(computation, program_path, n, task=None):
     for job_task in job_tasks:
         yield job_task.finish()
 
-    yield computation.close()
+    yield client.close()
 
 
 if __name__ == '__main__':
@@ -132,15 +132,13 @@ if __name__ == '__main__':
     # directory). However, if the file is not under current directory, then file
     # is saved in node's directory itself (without any path).
 
-    if os.path.dirname(sys.argv[0]):
-        os.chdir(os.path.dirname(sys.argv[0]))
-
-    program = 'dispycos_client5_proc.py'  # program to distribute and execute
+    # program to distribute and execute
+    program = os.path.join(os.path.dirname(sys.argv[0]), 'dispycos_client5_proc.py')
     # if scheduler is not already running (on a node as a program),
     # start private scheduler:
     Scheduler()
     # send rtask_proc and program
-    computation = Computation([rtask_proc, program])
+    client = Client([rtask_proc, program])
 
     # Or (see 'Either' above), get the path as dispycos would: If current
     # directory is a parent of program's path, get relative path to it, or just
@@ -151,4 +149,5 @@ if __name__ == '__main__':
     #     program = os.path.basename(program)
 
     # run n (defailt 5) instances of program
-    pycos.Task(client_proc, computation, program, 5 if len(sys.argv) < 2 else int(sys.argv[1]))
+    pycos.Task(client_proc, client, os.path.basename(program),
+               5 if len(sys.argv) < 2 else int(sys.argv[1]))

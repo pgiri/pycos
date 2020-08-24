@@ -30,8 +30,7 @@ class C(object):
         self.client = client
 
 
-# this generator function is sent to remote server to run
-# tasks there
+# this generator function is sent to remote server to run tasks there
 def rtask_proc(task=None):
     import os
     # receive object from client_proc task
@@ -88,24 +87,26 @@ def client_proc(job_id, data_file, rtask, task=None):
     print('    job %s output is in %s' % (obj.i, target))
 
 
-def run_jobs_proc(computation, data_files, task=None):
-    # schedule computation with the scheduler; scheduler accepts one computation
-    # at a time, so if scheduler is shared, the computation is queued until it
-    # is done with already scheduled computations
-    if (yield computation.schedule()):
-        raise Exception('Could not schedule computation')
+# local process submits computation at remote dispycos servers and corresponding
+# local task (with client_proc) to communicate with it
+def run_jobs_proc(client, data_files, task=None):
+    # schedule client with the scheduler; scheduler accepts one client
+    # at a time, so if scheduler is shared, the client is queued until it
+    # is done with already scheduled clients
+    if (yield client.schedule()):
+        raise Exception('Could not schedule client')
 
     for i in range(len(data_files)):
-        data_file = data_files[i]
+        data_file = os.path.basename(data_files[i])
         # create remote task
-        rtask = yield computation.run(rtask_proc)
+        rtask = yield client.run(rtask_proc)
         if isinstance(rtask, pycos.Task):
             # create local task to send input file and data to rtask
             pycos.Task(client_proc, i, data_file, rtask)
         else:
             print('  job %s failed: %s' % (i, rtask))
 
-    yield computation.close()
+    yield client.close()
 
 
 if __name__ == '__main__':
@@ -116,20 +117,20 @@ if __name__ == '__main__':
         assert sys.version_info.minor < 7, \
             ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
              (__file__, sys.version_info.major, sys.version_info.minor))
-    if os.path.dirname(sys.argv[0]):
-        os.chdir(os.path.dirname(sys.argv[0]))
-    data_files = glob.glob('dispycos_client*.py')
+
+    data_files = glob.glob(os.path.join(os.path.dirname(sys.argv[0]), 'dispycos_client*.py'))
     if not data_files:
         raise Exception('No data files to process')
     if len(sys.argv) > 1:
         data_files = data_files[:int(sys.argv[1])]
+    print(data_files)
 
     # if scheduler is not already running (on a node as a program), start it
     # (private scheduler):
     Scheduler()
-    # unlike in earlier examples, rtask_proc is not sent with computation (as it
+    # unlike in earlier examples, rtask_proc is not sent with client (as it
     # is not included in 'components'; instead, it is sent each time a job is
     # submitted, which is a bit inefficient
-    computation = Computation([C])
+    client = Client([C])
 
-    pycos.Task(run_jobs_proc, computation, data_files)
+    pycos.Task(run_jobs_proc, client, data_files)

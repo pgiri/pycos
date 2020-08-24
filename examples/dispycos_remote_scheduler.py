@@ -1,7 +1,7 @@
-# Run 'dispycosnode.py' program to start processes to execute computations sent
+# Run 'dispycosnode.py' program to start processes to execute tasks sent
 # by this client, along with this program.
 
-# Distributed computing example where this client sends computation ('compute'
+# Distributed computing example where this client sends computations ('compute'
 # function) to remote dispycos servers to run as remote tasks and obtain
 # results. At any time at most one computation task is scheduled at a process,
 # as the computation is supposed to be CPU heavy (although in this example they
@@ -23,13 +23,13 @@ def compute(i, n, reply, task=None):
 
 
 # client (local) task submits computations
-def client_proc(computation, task=None):
-    # schedule computation with the scheduler; if remote scheduler is not
+def client_proc(client, task=None):
+    # schedule client with the scheduler; if remote scheduler is not
     # automatically discovered (e.g., if it is on remote network, or UDP is
     # lossy), use 'peer' method to discover, e.g., with
     # yield pycos.Pycos.instance().peer(pycos.Location('hostname_or_ip_of_scheduler', 9706))
-    if (yield computation.schedule()):
-        raise Exception('Could not schedule computation')
+    if (yield client.schedule()):
+        raise Exception('Could not schedule client')
 
     # remote tasks send results to this process
     def reply_proc(task=None):
@@ -46,12 +46,12 @@ def client_proc(computation, task=None):
         if n is None:
             break
         i += 1
-        rtask = yield computation.run(compute, i, n, reply_task)
+        rtask = yield client.run(compute, i, n, reply_task)
         if isinstance(rtask, pycos.Task):
             print('  Task %s created for %s at %s' % (i, n, rtask.location))
 
-    # wait for all jobs to be done and close computation
-    yield computation.close()
+    # wait for all jobs to be done and close client
+    yield client.close()
 
 
 if __name__ == '__main__':
@@ -76,11 +76,11 @@ if __name__ == '__main__':
             return cpus - 1
 
     nodes = [NodeAllocate(node='*')]
-    computation = Computation([compute], pulse_interval=10, zombie_period=51, nodes=nodes)
-    # start httpd so computation can be monitored with a browser
-    http_server = pycos.httpd.HTTPServer(computation)
+    client = Client([compute], pulse_interval=10, zombie_period=51, nodes=nodes)
+    # start httpd so client can be monitored with a browser
+    http_server = pycos.httpd.HTTPServer(client)
 
-    client_task = pycos.Task(client_proc, computation)
+    client_task = pycos.Task(client_proc, client)
 
     print('   Enter "quit" or "exit" to end the program, or ')
     print('   Enter a number to schedule a task on one of the servers')

@@ -17,33 +17,33 @@ def rtask_proc(n, task=None):
     raise StopIteration(n)
 
 
-# Instead of using computation's 'run_result' method to get results (which is
+# Instead of using client's 'run_result' method to get results (which is
 # easier), in this example status messages from dispycos scheduler are used to
 # start remote tasks and get their results
-def status_proc(computation, njobs, task=None):
-    # set computation's status_task to receive status messages from dispycos
+def status_proc(client, njobs, task=None):
+    # set client's status_task to receive status messages from dispycos
     # scheduler (this should be done before httpd is created, in case it is
     # used).
-    computation.status_task = task
-    # schedule computation with the scheduler; scheduler accepts one computation
-    # at a time, so if scheduler is shared, the computation is queued until it
-    # is done with already scheduled computations wait for jobs to be created
+    client.status_task = task
+    # schedule client with the scheduler; scheduler accepts one client
+    # at a time, so if scheduler is shared, the client is queued until it
+    # is done with already scheduled clients wait for jobs to be created
     # and finished
-    if (yield computation.schedule()):
-        raise Exception('Failed to schedule computation')
+    if (yield client.schedule()):
+        raise Exception('Failed to schedule client')
 
     npending = njobs
 
     # in this example at most one task is submitted at a server; depending on
-    # computation / needs, many tasks can be simlutaneously submitted / running
-    # at a server (with 'computation.run_async').
+    # client / needs, many tasks can be simlutaneously submitted / running
+    # at a server (with 'client.run_async').
     while True:
         msg = yield task.receive()
         if isinstance(msg, DispycosStatus):
             # print('Status: %s / %s' % (msg.info, msg.status))
             if msg.status == Scheduler.ServerInitialized and njobs > 0:  # run a job
                 n = random.uniform(5, 10)
-                rtask = yield computation.run_at(msg.info, rtask_proc, n)
+                rtask = yield client.run_at(msg.info, rtask_proc, n)
                 if isinstance(rtask, pycos.Task):
                     print('  rtask_proc started at %s with %s' % (rtask.location, n))
                     njobs -= 1
@@ -61,12 +61,12 @@ def status_proc(computation, njobs, task=None):
                 break
             if njobs > 0:  # run another job
                 n = random.uniform(5, 10)
-                rtask = yield computation.run_at(rtask.location, rtask_proc, n)
+                rtask = yield client.run_at(rtask.location, rtask_proc, n)
                 if isinstance(rtask, pycos.Task):
                     print('  rtask_proc started at %s with %s' % (rtask.location, n))
                     njobs -= 1
 
-    yield computation.close()
+    yield client.close()
 
 
 if __name__ == '__main__':
@@ -82,5 +82,5 @@ if __name__ == '__main__':
     # (private scheduler):
     Scheduler()
     njobs = 10 if len(sys.argv) < 2 else int(sys.argv[1])
-    computation = Computation([rtask_proc])
-    pycos.Task(status_proc, computation, njobs)
+    client = Client([rtask_proc])
+    pycos.Task(status_proc, client, njobs)

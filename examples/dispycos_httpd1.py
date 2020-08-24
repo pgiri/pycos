@@ -26,8 +26,8 @@ def compute(obj, client, task=None):
     yield task.sleep(obj.n)
 
 
-def client_proc(computation, task=None):
-    if (yield computation.schedule()):
+def client_proc(client, task=None):
+    if (yield client.schedule()):
         raise Exception('schedule failed')
 
     i = 0
@@ -46,11 +46,11 @@ def client_proc(computation, task=None):
             # unlike in dispycos_client*.py, here 'run_async' is used to run as
             # many tasks as given on servers (i.e., possibly more than one task
             # on a server at any time).
-            yield computation.run_async(compute, c, task)
+            yield client.run_async(compute, c, task)
 
-    # close computation with 'await_async=True' to wait until all running async
-    # tasks to finish before closing computation
-    yield computation.close(await_async=True)
+    # close client with 'await_async=True' to wait until all running async
+    # tasks to finish before closing client
+    yield client.close(await_async=True)
 
 
 if __name__ == '__main__':
@@ -59,14 +59,13 @@ if __name__ == '__main__':
     # if scheduler is not already running (on a node as a program),
     # start it (private scheduler):
     Scheduler()
-    # send generator function and class C (as the computation uses
-    # objects of C)
+    # send generator function and class C (as the client uses objects of C)
     # use MinPulseInterval so node status updates are sent more frequently
     # (instead of default 2*MinPulseInterval)
-    computation = Computation([compute, C], pulse_interval=pycos.dispycos.MinPulseInterval)
+    client = Client([compute, C], pulse_interval=pycos.dispycos.MinPulseInterval)
     # create http server to monitor nodes, servers, tasks
-    http_server = pycos.httpd.HTTPServer(computation)
-    task = pycos.Task(client_proc, computation)
+    http_server = pycos.httpd.HTTPServer(client)
+    task = pycos.Task(client_proc, client)
     print('   Enter "quit" or "exit" to end the program, or ')
     print('   Enter a number to schedule a task on one of the servers')
     if sys.version_info.major > 2:

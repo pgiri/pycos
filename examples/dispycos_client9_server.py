@@ -22,8 +22,8 @@ from pycos.dispycos import *
 def server_available(location, data_file, task=None):
     # 'server_available' is executed locally (at client) when a server process
     # is available. 'location' is Location instance of server. When this task is
-    # executed, 'depends' of computation would've been transferred.  data_file
-    # could've been sent with the computation 'depends'; however, to illustrate
+    # executed, 'depends' of client would've been transferred.  data_file
+    # could've been sent with the client 'depends'; however, to illustrate
     # how files can be sent separately (to distribute data fragments among
     # servers), files are transferred to servers in this example
 
@@ -34,7 +34,7 @@ def server_available(location, data_file, task=None):
 
     # 'setup_server' is executed on remote server at 'location' with argument
     # data_file
-    yield computation.enable_server(location, data_file)
+    yield client.enable_server(location, data_file)
     raise StopIteration(0)
 
 
@@ -43,13 +43,13 @@ def server_available(location, data_file, task=None):
 # uses the data in memory instead of reading from file every time.
 def setup_server(data_file, task=None):  # executed on remote server
     # variables declared as 'global' will be available in tasks for read/write
-    # to all computations on a server.
+    # to all tasks on a server.
     global hashlib, data, file_name
     import os, hashlib
     file_name = data_file
     print('%s processing %s' % (task.location, data_file))
     # note that files transferred to server are in the directory where
-    # computations are executed (cf 'node_setup' in dispycos_client9_node.py)
+    # tasks are executed (cf 'node_setup' in dispycos_client9_node.py)
     with open(data_file, 'rb') as fd:
         data = fd.read()
     os.remove(data_file)  # data_file is not needed anymore
@@ -83,9 +83,9 @@ def status_proc(task=None):
                 i = 0
 
 
-def client_proc(computation, task=None):
-    if (yield computation.schedule()):
-        raise Exception('Could not schedule computation')
+def client_proc(client, task=None):
+    if (yield client.schedule()):
+        raise Exception('Could not schedule client')
 
     # execute 10 jobs (tasks) and get their results. Note that number of jobs
     # created can be more than number of server processes available; the
@@ -93,14 +93,14 @@ def client_proc(computation, task=None):
     # job at a server process
     algorithms = ['md5', 'sha1', 'sha224', 'sha256', 'sha384', 'sha512']
     args = [(algorithms[i % len(algorithms)], random.uniform(5, 10)) for i in range(15)]
-    results = yield computation.run_results(compute, args)
+    results = yield client.run_results(compute, args)
     for i, result in enumerate(results):
         if isinstance(result, tuple) and len(result) == 3:
             print('    %ssum for %s: %s' % (result[1], result[0], result[2]))
         else:
             print('  rtask failed for %s: %s' % (args[i][0], str(result)))
 
-    yield computation.close()
+    yield client.close()
 
 
 if __name__ == '__main__':
@@ -125,6 +125,6 @@ if __name__ == '__main__':
 
     # send 'compute' generator function; the client sends data files when server
     # is discovered (to illustrate how client can distribute data).
-    computation = Computation([compute], status_task=pycos.Task(status_proc),
-                              disable_servers=True, server_setup=setup_server)
-    pycos.Task(client_proc, computation)
+    client = Client([compute], status_task=pycos.Task(status_proc),
+                    disable_servers=True, server_setup=setup_server)
+    pycos.Task(client_proc, client)

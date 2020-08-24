@@ -35,12 +35,13 @@ def compute(obj, client, task=None):
     yield client.deliver(obj, timeout=5)
 
 
-def client_proc(computation, njobs, task=None):
-    # schedule computation with the scheduler; scheduler accepts one computation
-    # at a time, so if scheduler is shared, the computation is queued until it
-    # is done with already scheduled computations
-    if (yield computation.schedule()):
-        raise Exception('Could not schedule computation')
+# local task submits computation tasks at dispycos servers
+def client_proc(client, njobs, task=None):
+    # schedule client with the scheduler; scheduler accepts one client
+    # at a time, so if scheduler is shared, the client is queued until it
+    # is done with already scheduled clients
+    if (yield client.schedule()):
+        raise Exception('Could not schedule client')
 
     # create a separate task to receive results, so they can be processed
     # as soon as received
@@ -60,12 +61,12 @@ def client_proc(computation, njobs, task=None):
         # sequentially; use 'run_async' to run multiple jobs on one server
         # concurrently
         print('  request %d: %s' % (i, cobj.n))
-        rtask = yield computation.run(compute, cobj, results_task)
+        rtask = yield client.run(compute, cobj, results_task)
         if not isinstance(rtask, pycos.Task):
             print('failed to create rtask %s: %s' % (i, rtask))
 
-    # wait for all results and close computation
-    yield computation.close()
+    # wait for all results and close client
+    yield client.close()
 
 
 if __name__ == '__main__':
@@ -74,8 +75,8 @@ if __name__ == '__main__':
     # if scheduler is not already running (on a node as a program),
     # start it (private scheduler):
     Scheduler()
-    # send generator function and class C (as the computation uses
+    # send generator function and class C (as the client uses
     # objects of C)
-    computation = Computation([compute, C])
+    client = Client([compute, C])
     # run 10 (or given number of) jobs
-    pycos.Task(client_proc, computation, 10 if len(sys.argv) < 2 else int(sys.argv[1])).value()
+    pycos.Task(client_proc, client, 10 if len(sys.argv) < 2 else int(sys.argv[1])).value()

@@ -23,21 +23,21 @@ def compute(data_file, alg, n, client_task, task=None):
     client_task.send((data_file, alg, checksum.hexdigest()))
     # 'dispycos_close_server' will cause server process to terminate. The server can be restarted
     # with 'restart=True' in this call or in using 'restart_servers=True' parameter to
-    # Computation. Then a server is restarted (with new process) automatically so new computation
+    # Client. Then a server is restarted (with new process) automatically so new computation
     # can be sent to it.
     dispycos_close_server(restart=True)
 
 
 # 'server_available' is executed at client to send a data file to server that became available and
-# run computation at that server
+# run task at that server
 def server_available(location, data_file, task=None):
     if (yield pycos.Pycos().send_file(location, data_file, timeout=5, overwrite=True)) < 0:
         print('Could not send data file "%s" to %s' % (data_file, location))
         raise StopIteration(-1)
 
     pycos.logger.info('Running %s at %s' % (data_file, location))
-    reply = yield computation.run_at(location, compute, data_file, 'sha512', random.uniform(4, 5),
-                                     client_task)
+    reply = yield client.run_at(location, compute, data_file, 'sha512', random.uniform(4, 5),
+                                client_task)
     raise StopIteration(reply)
 
 
@@ -55,16 +55,16 @@ def status_proc(task=None):
                 pycos.Task(server_available, msg.info, data_files[i])
                 i += 1
 
-def client_proc(computation, task=None):
-    if (yield computation.schedule()):
-        raise Exception('Could not schedule computation')
+def client_proc(client, task=None):
+    if (yield client.schedule()):
+        raise Exception('Could not schedule client')
 
     # receive results from servers
     for i in range(len(data_files)):
         result = yield task.recv()
         print('    %ssum for %s: %s' % (result[1], result[0], result[2]))
 
-    yield computation.close()
+    yield client.close()
 
 
 if __name__ == '__main__':
@@ -86,6 +86,6 @@ if __name__ == '__main__':
 
     # servers can be restarted with 'restart_servers=True' here, or with 'restart=True' to
     # 'dispycos_close_server'
-    # computation = Computation([compute], status_task=pycos.Task(status_proc), restart_servers=True)
-    computation = Computation([compute], status_task=pycos.Task(status_proc))
-    client_task = pycos.Task(client_proc, computation)
+    # client = Client([compute], status_task=pycos.Task(status_proc), restart_servers=True)
+    client = Client([compute], status_task=pycos.Task(status_proc))
+    client_task = pycos.Task(client_proc, client)

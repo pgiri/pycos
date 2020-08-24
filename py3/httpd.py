@@ -102,9 +102,9 @@ class HTTPServer(object):
             return nodes
 
         def do_GET(self):
-            client_request = self.path[1:]
+            http_req = self.path[1:]
 
-            if client_request == 'cluster_updates':
+            if http_req == 'cluster_updates':
                 self._ctx._lock.acquire()
                 nodes = self.__class__.json_encode_nodes(self._ctx._updates)
                 self._ctx._updates.clear()
@@ -115,7 +115,7 @@ class HTTPServer(object):
                 self.wfile.write(json.dumps(nodes).encode())
                 return
 
-            elif client_request == 'cluster_status':
+            elif http_req == 'cluster_status':
                 self._ctx._lock.acquire()
                 nodes = self.__class__.json_encode_nodes(self._ctx._nodes)
                 self._ctx._lock.release()
@@ -126,7 +126,7 @@ class HTTPServer(object):
                 return
 
             else:
-                path = urlparse(client_request).path
+                path = urlparse(http_req).path
                 if not path or path == 'index.html':
                     path = 'cluster.html'
                 path = os.path.join(self.DocumentRoot, path)
@@ -159,16 +159,16 @@ class HTTPServer(object):
                 self.send_error(404)
                 return
             pycos.logger.debug('Bad GET request from %s: %s',
-                               self.client_address[0], client_request)
+                               self.client_address[0], http_req)
             self.send_error(400)
             return
 
         def do_POST(self):
             form = cgi.FieldStorage(fp=self.rfile, headers=self.headers,
                                     environ={'REQUEST_METHOD': 'POST'})
-            client_request = self.path[1:]
+            http_req = self.path[1:]
 
-            if client_request == 'server_info':
+            if http_req == 'server_info':
                 server = None
                 max_tasks = 0
                 for item in form.list:
@@ -213,7 +213,7 @@ class HTTPServer(object):
                 self.wfile.write(json.dumps(info).encode())
                 return
 
-            elif client_request == 'node_info':
+            elif http_req == 'node_info':
                 addr = None
                 for item in form.list:
                     if item.name == 'host':
@@ -254,7 +254,7 @@ class HTTPServer(object):
                 self.wfile.write(json.dumps(info).encode())
                 return
 
-            elif client_request == 'terminate_tasks':
+            elif http_req == 'terminate_tasks':
                 tasks = []
                 for item in form.list:
                     if item.name == 'task':
@@ -289,7 +289,7 @@ class HTTPServer(object):
                 self.wfile.write(json.dumps(terminated).encode())
                 return
 
-            elif client_request == 'update':
+            elif http_req == 'update':
                 for item in form.list:
                     if item.name == 'timeout':
                         try:
@@ -311,8 +311,8 @@ class HTTPServer(object):
                 self.end_headers()
                 return
 
-            elif (client_request == 'suspend_node' or client_request == 'resume_node'):
-                method = getattr(self._ctx.computation, client_request)
+            elif (http_req == 'suspend_node' or http_req == 'resume_node'):
+                method = getattr(self._ctx.client, http_req)
                 if not method:
                     return
                 nodes = []
@@ -324,8 +324,8 @@ class HTTPServer(object):
                     method(node)
                 return
 
-            elif (client_request == 'suspend_server' or client_request == 'resume_server'):
-                method = getattr(self._ctx.computation, client_request)
+            elif (http_req == 'suspend_server' or http_req == 'resume_server'):
+                method = getattr(self._ctx.client, http_req)
                 if not method:
                     return
                 servers = []
@@ -346,11 +346,11 @@ class HTTPServer(object):
 
             else:
                 pycos.logger.debug('Bad POST request from %s: %s',
-                                   self.client_address[0], client_request)
+                                   self.client_address[0], http_req)
                 self.send_error(400)
                 return
 
-    def __init__(self, computation, host='', port=8181, poll_sec=10, DocumentRoot=None,
+    def __init__(self, client, host='', port=8181, poll_sec=10, DocumentRoot=None,
                  keyfile=None, certfile=None, show_task_args=True):
         self._lock = threading.Lock()
         if not DocumentRoot:
@@ -370,20 +370,20 @@ class HTTPServer(object):
         self._httpd_thread = threading.Thread(target=self._server.serve_forever)
         self._httpd_thread.daemon = True
         self._httpd_thread.start()
-        self.computation = computation
+        self.client = client
         self.status_task = pycos.SysTask(self.status_proc)
-        if computation.status_task:
-            client_task = computation.status_task
+        if client.status_task:
+            prev_status_task = client.status_task
 
             def chain_msgs(task=None):
                 task.set_daemon()
                 while 1:
                     msg = yield task.receive()
                     self.status_task.send(msg)
-                    client_task.send(msg)
-            computation.status_task = pycos.SysTask(chain_msgs)
+                    prev_status_task.send(msg)
+            client.status_task = pycos.SysTask(chain_msgs)
         else:
-            computation.status_task = self.status_task
+            client.status_task = self.status_task
         pycos.logger.info('Started HTTP%s server at %s',
                           's' if certfile else '', str(self._server.socket.getsockname()))
 

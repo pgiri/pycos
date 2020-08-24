@@ -15,9 +15,9 @@ from pycos.dispycos import *
 def node_available(avail_info, data_file, task=None):
     # 'node_available' is executed locally (at client) when a node is
     # available. 'location' is Location instance of node. When this task is
-    # executed, 'depends' of computation would've been transferred.
+    # executed, 'depends' of client would've been transferred.
 
-    # data_file could've been sent with the computation 'depends'; however, to
+    # data_file could've been sent with the client 'depends'; however, to
     # illustrate how files can be sent separately (e.g., to transfer different
     # files to different nodes), file is transferred with 'node_available'.
 
@@ -30,7 +30,7 @@ def node_available(avail_info, data_file, task=None):
 
     # value of task (last value yield'ed or value of 'raise StopIteration') will
     # be passed to node_setup as argument(s).
-    ret = yield computation.enable_node(avail_info.location.addr, data_file)
+    ret = yield client.enable_node(avail_info.location.addr, data_file)
     raise StopIteration(ret)
 
 
@@ -43,7 +43,7 @@ def node_setup(data_file):
     global os, hashlib, data, file_name
     import os, hashlib
     # note that files transferred to node are in parent directory of cwd where
-    # each computation is run (in case such files need to be accessed in
+    # each client is run (in case such files need to be accessed in
     # computation).
     print('data_file: "%s"' % data_file)
     with open(data_file, 'rb') as fd:
@@ -82,9 +82,9 @@ def status_proc(task=None):
             i += 1
 
 
-def client_proc(computation, task=None):
-    if (yield computation.schedule()):
-        raise Exception('Could not schedule computation')
+def client_proc(client, task=None):
+    if (yield client.schedule()):
+        raise Exception('Could not schedule client')
 
     # execute 10 jobs (tasks) and get their results. Note that number of jobs
     # created can be more than number of server processes available; the
@@ -92,14 +92,14 @@ def client_proc(computation, task=None):
     # job at a server process
     algorithms = ['md5', 'sha1', 'sha224', 'sha256', 'sha384', 'sha512']
     args = [(algorithms[i % len(algorithms)], random.uniform(1, 3)) for i in range(15)]
-    results = yield computation.run_results(compute, args)
+    results = yield client.run_results(compute, args)
     for i, result in enumerate(results):
         if isinstance(result, tuple) and len(result) == 3:
             print('   %ssum for %s: %s' % (result[1], result[0], result[2]))
         else:
             print('  rtask failed for %s: %s' % (args[i][0], str(result)))
 
-    yield computation.close()
+    yield client.close()
 
 
 if __name__ == '__main__':
@@ -125,6 +125,6 @@ if __name__ == '__main__':
     # Since this example doesn't work with Windows, 'nodes' feature is used to filter out nodes
     # running Windows.
     nodes = [DispycosNodeAllocate(node='*', platform='Windows', cpus=0)]
-    computation = Computation([compute], nodes=nodes, node_setup=node_setup, disable_nodes=True,
-                              status_task=pycos.Task(status_proc))
-    pycos.Task(client_proc, computation)
+    client = Client([compute], nodes=nodes, node_setup=node_setup, disable_nodes=True,
+                    status_task=pycos.Task(status_proc))
+    pycos.Task(client_proc, client)

@@ -1,4 +1,4 @@
-# Run 'dispycosnode.py' program on one or more nodes (to start servers to execute computations
+# Run 'dispycosnode.py' program on one or more nodes (to start servers to execute tasks
 # sent by this client), and this program on local computer.
 
 # this is a simple example of multi-agent system
@@ -82,7 +82,7 @@ def status_proc(task=None):
         if isinstance(msg, DispycosStatus):
             if msg.status == Scheduler.ServerInitialized:
                 # start new agent at this server
-                agent = yield computation.run_at(msg.info, agent_proc, client_task)
+                agent = yield client.run_at(msg.info, agent_proc, client_task)
                 # there is no need to keep track of agents in this example, but done so here to
                 # show potential use
                 if isinstance(agent, pycos.Task):
@@ -95,9 +95,9 @@ def status_proc(task=None):
 
 
 # this local task submits client to dispycos scheduler, shows latest updates
-def client_proc(computation, task=None):
-    # schedule computation with the scheduler
-    if (yield computation.schedule()):
+def client_proc(client, task=None):
+    # schedule client with the scheduler
+    if (yield client.schedule()):
         raise Exception('schedule failed')
 
     update_from = None
@@ -116,7 +116,7 @@ def client_proc(computation, task=None):
         pycos.logger.info('Update from %s: %.3f / %.3f ', msg[0].location, msg[1], msg[2])
         update_from = msg[0]
 
-    yield computation.close(terminate=True)
+    yield client.close(terminate=True)
 
 
 if __name__ == '__main__':
@@ -128,9 +128,9 @@ if __name__ == '__main__':
         'status_task': pycos.Task(status_proc),
         'restart_servers': True,
         }
-    computation = Computation([agent_proc], **kwargs)
+    client = Client([agent_proc], **kwargs)
     agents = set()  # for illustration - not required in this example
-    client_task = pycos.Task(client_proc, computation)
+    client_task = pycos.Task(client_proc, client)
     print('   Enter "quit" or "exit" to end the program ')
     if sys.version_info.major > 2:
         read_input = input

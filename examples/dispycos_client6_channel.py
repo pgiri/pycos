@@ -47,7 +47,7 @@ def rtask_save_proc(channel, task=None):
     # first message is 'start' command (to make sure all recipients started)
     assert (yield task.receive()) == 'start'
     # save data in 'tickdata' where computation files are saved (this will be
-    # deleted when computation is done, so it must be copied elsewhere if
+    # deleted when client is done, so it must be copied elsewhere if
     # necessary)
     with open('tickdata', 'w') as fd:
         while True:
@@ -70,12 +70,12 @@ def trend_proc(task=None):
 # This process runs locally. It creates two remote tasks at two dispycosnode
 # server processes, two local tasks, one to receive trend signal from one
 # of the remote tasks, and another to send data to two remote tasks
-def client_proc(computation, task=None):
-    # schedule computation with the scheduler; scheduler accepts one computation
-    # at a time, so if scheduler is shared, the computation is queued until it
-    # is done with already scheduled computations
-    if (yield computation.schedule()):
-        raise Exception('Could not schedule computation')
+def client_proc(client, task=None):
+    # schedule client with the scheduler; scheduler accepts one client
+    # at a time, so if scheduler is shared, the client is queued until it
+    # is done with already scheduled clients
+    if (yield client.schedule()):
+        raise Exception('Could not schedule client')
 
     # in dispycos_client6.py, data is sent to each remote task; here, data
     # is broadcast over channel and remote tasks subscribe to it
@@ -86,9 +86,9 @@ def client_proc(computation, task=None):
 
     trend_task = pycos.Task(trend_proc)
 
-    rtask_avg = yield computation.run(rtask_avg_proc, data_channel, 0.4, trend_task, 10)
+    rtask_avg = yield client.run(rtask_avg_proc, data_channel, 0.4, trend_task, 10)
     assert isinstance(rtask_avg, pycos.Task)
-    rtask_save = yield computation.run(rtask_save_proc, data_channel)
+    rtask_save = yield client.run(rtask_save_proc, data_channel)
     assert isinstance(rtask_save, pycos.Task)
 
     # make sure both remote tasks have subscribed to channel ('deliver'
@@ -116,7 +116,7 @@ def client_proc(computation, task=None):
     item = (i, None)
     data_channel.send(item)
 
-    yield computation.close()
+    yield client.close()
     data_channel.close()
 
 
@@ -132,5 +132,5 @@ if __name__ == '__main__':
     # to be done (its location can optionally be given to 'schedule');
     # othrwise, start private scheduler:
     Scheduler()
-    computation = Computation([])
-    pycos.Task(client_proc, computation)
+    client = Client([])
+    pycos.Task(client_proc, client)
