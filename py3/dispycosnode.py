@@ -96,13 +96,9 @@ def _dispycos_server_proc():
                     _dispycos_busy_time.value = int(time.time())
             elif isinstance(status, pycos.PeerStatus):
                 if status.status == pycos.PeerStatus.Offline:
-                    try:
-                        _dispycos_peers.remove(status.location)
-                    except KeyError:
-                        if (_dispycos_scheduler_task and
-                            _dispycos_scheduler_task.location == status.location):
-                            if _dispycos_auth:
-                                _dispycos_task.send({'req': 'close', 'auth': _dispycos_auth})
+                    if (_dispycos_scheduler_task and
+                        _dispycos_scheduler_task.location == status.location):
+                        _dispycos_task.send({'req': 'close', 'auth': _dispycos_auth})
                 else:  # status.status == pycos.PeerStatus.Online
                     if (status.location not in _dispycos_peers):
                         def dispycos_peer(location, task=None):
@@ -112,7 +108,7 @@ def _dispycos_server_proc():
                                 # TODO: accept only if serving same client?
                                 _dispycos_peers.add(location)
                                 # TODO: inform user tasks?
-                            else:
+                            elif status.location not in _dispycos_peers:
                                 Task(_dispycos_scheduler.close_peer, location)
                         SysTask(dispycos_peer, status.location)
             else:
@@ -385,7 +381,7 @@ def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config):
 
     _dispycos_scheduler = pycos.Pycos.instance()
 
-    def start_proc(task=None):
+    def prologue(task=None):
         if os.name == 'nt':
             code = _dispycos_config.pop('code')
             if code:
@@ -407,7 +403,7 @@ def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config):
         _dispycos_config['node_task'] = node_task
         raise StopIteration(0)
 
-    if (pycos.SysTask(start_proc).value()) != 0:
+    if (pycos.SysTask(prologue).value()) != 0:
         _dispycos_scheduler.ignore_peers = True
         for location in _dispycos_scheduler.peers():
             pycos.Task(_dispycos_scheduler.close_peer, location)
@@ -444,8 +440,15 @@ def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config):
     _dispycos_task = None
     if not isinstance(_dispycos_status, dict):
         _dispycos_status = {'status': _dispycos_status, 'restart': False}
-    _dispycos_node_task.send({'req': 'server_task', 'auth': _dispycos_auth,
-                              'iid': _dispycos_iid, 'task': None, 'server_id': _dispycos_sid})
+
+    def epilogue(task=None):
+        _dispycos_scheduler.peer_status(None)
+        yield _dispycos_scheduler.peer(_dispycos_node_task.location)
+        yield _dispycos_node_task.deliver({'req': 'server_task', 'auth': _dispycos_auth,
+                                           'task': None, 'iid': _dispycos_iid,
+                                           'server_id': _dispycos_sid}, timeout=5)
+
+    pycos.SysTask(epilogue).value()
     _dispycos_scheduler.ignore_peers = True
     for location in _dispycos_scheduler.peers():
         pycos.Task(_dispycos_scheduler.close_peer, location)
