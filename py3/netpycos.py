@@ -1915,6 +1915,9 @@ class _Peer(object):
                     break
             else:
                 _Peer.status_tasks.add(task)
+        elif task is None:
+            _Peer.status_tasks.difference_update([tsk for tsk in _Peer.status_tasks
+                                                  if tsk._name[0] == '!'])
         else:
             logger.warning('invalid peer status task ignored')
         _Peer._lock.release()
