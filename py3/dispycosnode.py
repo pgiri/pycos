@@ -420,21 +420,20 @@ def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config):
     _dispycos_queue.put({'req': 'server_task', 'auth': _dispycos_auth, 'task': _dispycos_task,
                          'iid': _dispycos_iid, 'server_id': _dispycos_sid, 'pid': os.getpid()})
 
-    _dispycos_config = None
-    del config, _dispycos_var
-
     def sighandler(signum, frame):
         pycos.logger.debug('Server %s received signal %s', _dispycos_sid, signum)
         if _dispycos_task:
             _dispycos_task.send({'req': 'terminate', 'auth': _dispycos_auth})
-        else:
-            pycos.logger.debug('Server %s ignoring signal %s', _dispycos_sid, signum)
 
-    signal.signal(signal.SIGINT, sighandler)
+    for _dispycos_var in ['SIGINT', 'SIGQUIT', 'SIGHUP', 'SIGTERM']:
+        _dispycos_var = getattr(signal, _dispycos_var, None)
+        if _dispycos_var:
+            signal.signal(_dispycos_var, sighandler)
     if os.name == 'nt':
         signal.signal(signal.SIGBREAK, sighandler)
 
-    del sighandler
+    _dispycos_config = None
+    del config, _dispycos_var, sighandler
 
     _dispycos_status = _dispycos_task.value()
     _dispycos_task = None
@@ -642,10 +641,7 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
             pycos.logger.warning('Could not start dispycos server for %s at %s',
                                  child.sid, child.port)
             child.status = None
-            mp_q.put({'req': 'server_task', 'auth': _dispycos_config['auth'], 'task': None,
-                      'iid': child.iid, 'server_id': child.sid, 'pid': None})
         lock.release()
-        # TODO: delete client to release memory?
 
     def pipe_proc():
         for child in children:
@@ -721,11 +717,14 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
         else:
             mp_q.put({'req': 'quit', 'auth': _dispycos_config['auth']})
 
-    signal.signal(signal.SIGINT, sighandler)
+    for _dispycos_var in ['SIGINT', 'SIGQUIT', 'SIGHUP', 'SIGTERM']:
+        _dispycos_var = getattr(signal, _dispycos_var, None)
+        if _dispycos_var:
+            signal.signal(_dispycos_var, sighandler)
     if os.name == 'nt':
         signal.signal(signal.SIGBREAK, sighandler)
 
-    del sighandler
+    del _dispycos_var, sighandler
 
     while 1:
         msg = mp_q.get(block=True)
@@ -1721,7 +1720,6 @@ def _dispycos_node():
     _dispycos_config['dest_path'] = dispycos_path
     _dispycos_config['busy_time'] = busy_time
     node_task = pycos.Task(node_proc)
-    del server_config, node_ports, _dispycos_var
 
     def sighandler(signum, frame):
         pycos.logger.debug('dispycosnode (%s) received signal %s', dispycos_pid, signum)
@@ -1736,17 +1734,14 @@ def _dispycos_node():
             if os.name != 'nt' or daemon:
                 raise KeyboardInterrupt
 
-    signal.signal(signal.SIGINT, sighandler)
+    for _dispycos_var in ['SIGINT', 'SIGQUIT', 'SIGHUP', 'SIGTERM']:
+        _dispycos_var = getattr(signal, _dispycos_var, None)
+        if _dispycos_var:
+            signal.signal(_dispycos_var, sighandler)
     if os.name == 'nt':
         signal.signal(signal.SIGBREAK, sighandler)
-    if hasattr(signal, 'SIGQUIT'):
-        signal.signal(signal.SIGQUIT, sighandler)
-    if hasattr(signal, 'SIGHUP'):
-        signal.signal(signal.SIGHUP, sighandler)
-    if hasattr(signal, 'SIGTERM'):
-        signal.signal(signal.SIGTERM, sighandler)
 
-    del sighandler
+    del server_config, node_ports, _dispycos_var, sighandler
 
     if daemon:
         while 1:
