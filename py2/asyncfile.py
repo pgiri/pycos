@@ -103,13 +103,13 @@ if platform.system() == 'Windows':
 
             if stdout == subprocess.PIPE:
                 stdout_rh, stdout_wh = pipe()
-                stdout_wfd = msvcrt.open_osfhandle(stdout_wh, 0)
+                stdout_wfd = msvcrt.open_osfhandle(stdout_wh.Detach(), 0)
             else:
                 stdout_wfd = stdout
 
             if stderr == subprocess.PIPE:
                 stderr_rh, stderr_wh = pipe()
-                stderr_wfd = msvcrt.open_osfhandle(stderr_wh, 0)
+                stderr_wfd = msvcrt.open_osfhandle(stderr_wh.Detach(), 0)
             elif stderr == subprocess.STDOUT:
                 stderr_wfd = stdout_wfd
             else:
@@ -224,18 +224,19 @@ if platform.system() == 'Windows':
                     flags = os.O_APPEND
                 else:
                     flags = 0
-                self._fileno = msvcrt.open_osfhandle(self._handle, flags)
+                self._fileno = msvcrt.open_osfhandle(self._handle.Detach(), flags)
             else:
                 self._handle = path_handle
                 # pipe mode should be either 'r' or 'w'
                 flags = os.O_RDONLY if mode.startswith('r') else 0
-                self._fileno = msvcrt.open_osfhandle(self._handle, flags)
+                self._fileno = msvcrt.open_osfhandle(self._handle.Detach(), flags)
 
             self._buflist = []
             self._read_result = None
             self._write_result = None
             self._timeout = None
             self._timeout_id = None
+            self._handle = msvcrt.get_osfhandle(self._fileno)
             self._pycos = Pycos.scheduler()
             if self._pycos:
                 self._notifier = self._pycos._notifier
