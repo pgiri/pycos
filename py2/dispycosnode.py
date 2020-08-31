@@ -1705,8 +1705,7 @@ def _dispycos_node():
         if node_task.is_alive():
             node_task.send({'req': 'quit', 'auth': node_auth})
         else:
-            if os.name == 'nt' or daemon:
-                raise KeyboardInterrupt
+            raise KeyboardInterrupt
 
     for _dispycos_var in ['SIGINT', 'SIGQUIT', 'SIGHUP', 'SIGTERM']:
         _dispycos_var = getattr(signal, _dispycos_var, None)
