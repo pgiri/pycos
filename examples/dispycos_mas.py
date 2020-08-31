@@ -28,17 +28,18 @@ def agent_proc(client_task, task=None):
                 continue
             if isinstance(status, pycos.PeerStatus):
                 if status.status == pycos.PeerStatus.Online:
-                    pycos.logger.debug('%s: found agent at %s', task.location, status.location)
                     # get reference to task (with same name) at that location
-                    agent = pycos.Task.locate(task.name, timeout=3)
+                    agent = yield pycos.Task.locate('agent_proc', location=status.location,
+                                                    timeout=3)
                     if isinstance(agent, pycos.Task):
+                        pycos.logger.debug('%s: found agent at %s', task.location, agent)
                         agents.add(agent)
                 else:
-                    pycos.logger.debug('%s: agent at %s disconnected',
-                                       task.location, status.location)
                     for agent in agents:
                         if agent.location == status.location:
-                            agent.discard(agent)
+                            pycos.logger.debug('%s: agent at %s disconnected',
+                                               task.location, status.location)
+                            agents.discard(agent)
                             break
 
     pycos_scheduler = pycos.Pycos.instance()
@@ -54,6 +55,8 @@ def agent_proc(client_task, task=None):
         # computation is simulated with waiting
         msg = yield task.recv(timeout=random.uniform(2, 6))
         if msg:
+            pycos.logger.debug('%s received update from %s: %.3f / %.3f',
+                               task.location, msg[0].location, msg[1], msg[2])
             low = msg[1]
             high = msg[2]
         else:
@@ -66,12 +69,13 @@ def agent_proc(client_task, task=None):
                 continue
 
             msg = (task, low, high)
-            # drop agents that may have gone away
+            # send message to agents and drop agents that may have gone away
             drop = [agent for agent in agents if agent.send(msg)]
             if drop:
                 for agent in drop:
                     agents.discard(agent)
             client_task.send(msg)
+
 
 # status messages indicating nodes, servers and remote tasks finish status are sent to this local
 # task; in this case we process only servers initialized and closed
