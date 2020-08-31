@@ -600,9 +600,11 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
                                            child.sid, child.proc.pid, traceback.format_exc())
 
             lock.acquire()
-            if child.status and child.proc and (not child.proc.is_alive()):
-                if child.proc.exitcode:
-                    pycos.logger.warning('Server %s (process %s) reaped', child.sid, child.proc.pid)
+            proc = child.proc
+            if child.status and proc and (not proc.is_alive()):
+                proc.join(1)
+                if proc.exitcode:
+                    pycos.logger.warning('Server %s (process %s) reaped', child.sid, proc.pid)
                 child.status = None
                 child.proc = None
             lock.release()
@@ -768,11 +770,21 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
         else:
             # assert server_task is None
             lock.acquire()
+            proc = child.proc
+            if not proc or proc.pid != msg['pid'] or child.status != 'running':
+                pycos.logger.debug('Ignoring server task message %s', msg)
+                lock.release()
+                continue
+
+            proc.join(1)
+            if proc.exitcode is None:
+                lock.release()
+                continue
             child.proc = None
             child.status = None
             lock.release()
-            if (child.restart or client._restart_servers or
-                (msg.get('restart', False) and child.port >= 0 and (msg['status'] == 0))):
+            if (msg['status'] == 0 and
+                (child.restart or client._restart_servers or msg.get('restart', False))):
                 start_proc(child)
                 if child.restart:
                     child.restart = False
@@ -1693,7 +1705,7 @@ def _dispycos_node():
         if node_task.is_alive():
             node_task.send({'req': 'quit', 'auth': node_auth})
         else:
-            if os.name != 'nt' or daemon:
+            if os.name == 'nt' or daemon:
                 raise KeyboardInterrupt
 
     for _dispycos_var in ['SIGINT', 'SIGQUIT', 'SIGHUP', 'SIGTERM']:
