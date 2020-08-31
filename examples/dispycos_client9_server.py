@@ -34,7 +34,7 @@ def server_available(location, data_file, task=None):
 
     # 'setup_server' is executed on remote server at 'location' with argument
     # data_file
-    yield client.enable_server(location, data_file)
+    yield client.enable_server(location, os.path.basename(data_file))
     raise StopIteration(0)
 
 

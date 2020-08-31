@@ -35,6 +35,7 @@ def server_available(location, data_file, task=None):
         print('Could not send data file "%s" to %s' % (data_file, location))
         raise StopIteration(-1)
 
+    data_file = os.path.basename(data_file)
     pycos.logger.info('Running %s at %s' % (data_file, location))
     reply = yield client.run_at(location, compute, data_file, 'sha512', random.uniform(4, 5),
                                 client_task)

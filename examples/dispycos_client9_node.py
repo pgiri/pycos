@@ -30,7 +30,7 @@ def node_available(avail_info, data_file, task=None):
 
     # value of task (last value yield'ed or value of 'raise StopIteration') will
     # be passed to node_setup as argument(s).
-    ret = yield client.enable_node(avail_info.location.addr, data_file)
+    ret = yield client.enable_node(avail_info.location.addr, os.path.basename(data_file))
     raise StopIteration(ret)
 
 
