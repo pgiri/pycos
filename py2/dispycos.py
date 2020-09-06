@@ -135,7 +135,7 @@ class Client(object):
     """
 
     def __init__(self, components, nodes=[], status_task=None, node_setup=None, server_setup=None,
-                 disable_nodes=False, disable_servers=False, peers_communicate=False,
+                 disable_nodes=False, disable_servers=False,
                  pulse_interval=(5*MinPulseInterval), node_allocations=[],
                  ping_interval=None, restart_servers=False,
                  zombie_period=None, abandon_zombie_nodes=False):
@@ -208,7 +208,6 @@ class Client(object):
             self._server_setup = server_setup.func_name
         else:
             self._server_setup = None
-        self._peers_communicate = bool(peers_communicate)
         self._disable_nodes = bool(disable_nodes)
         self._disable_servers = bool(disable_servers)
         self._restart_servers = bool(restart_servers)
@@ -705,7 +704,7 @@ class Client(object):
         state = {}
         for attr in ['_code', '_xfer_funcs', '_xfer_files', '_auth',  'scheduler', 'status_task',
                      '_node_setup', '_server_setup', '_disable_nodes', '_disable_servers',
-                     '_peers_communicate', '_pulse_interval', '_pulse_task', '_ping_interval',
+                     '_pulse_interval', '_pulse_task', '_ping_interval',
                      '_restart_servers', '_zombie_period', '_abandon_zombie']:
             state[attr] = getattr(self, attr)
         if self._pulse_task.location == self.scheduler.location:
@@ -1093,11 +1092,6 @@ class Scheduler(object):
                                 DispycosStatus(server.status, server.task.location))
                     else:
                         node.disabled_servers[rtask.location] = server
-
-                    if self._cur_client._peers_communicate:
-                        server.task.send({'req': 'peers', 'auth': node.auth,
-                                          'peers': list(self.__server_locations)})
-                        self.__server_locations.add(server.task.location)
 
                 elif status in (Scheduler.ServerClosed, Scheduler.ServerDisconnected):
                     location = msg.get('location', None)
