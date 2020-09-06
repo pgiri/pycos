@@ -21,6 +21,5 @@ while True:
         continue
     time.sleep(n)
     print('Line %s - current time is %s' % (lineno, time.asctime()))
-    if os.name != 'nt':
-        sys.stdout.flush()  # flush so output is sent to client immediately
+    sys.stdout.flush()  # flush so output is sent to client immediately
 exit(errors)
