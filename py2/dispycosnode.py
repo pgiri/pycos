@@ -214,7 +214,7 @@ def _dispycos_server_proc():
             _dispycos_job = _dispycos_msg.get('job', None)
             if (not isinstance(_dispycos_reply_task, Task) or
                 _dispycos_auth != _dispycos_msg.get('auth', None)):
-                logger.warning('invalid run: %s', type(_dispycos_job))
+                logger.warning('invalid run: %s', type(_dispycos_reply_task))
                 if isinstance(_dispycos_reply_task, Task):
                     _dispycos_reply_task.send(None)
                 continue
@@ -553,58 +553,77 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
         exit(-1)
 
     def close_procs(child_procs):
+        lock.acquire()
+        cur_procs = {child.sid: child.proc if child.status else -1 for child in children}
+        lock.release()
         for child in child_procs:
-            if not child.proc:
-                continue
-            if child.status == 'pending':
-                for j in range(20):
-                    if child.status != 'pending':
+            for j in range(5):
+                proc = child.proc
+                if not proc or proc != cur_procs[child.sid]:
+                    break
+                try:
+                    if not proc.is_alive():
                         break
-                    time.sleep(0.2)
-                else:
-                    continue
-            if (not child.proc) or (not child.proc.is_alive()):
-                child.proc = None
-                continue
-            try:
-                if os.name == 'nt':
-                    os.kill(child.proc.pid, signal.CTRL_C_EVENT)
-                else:
-                    os.kill(child.proc.pid, signal.SIGINT)
-            except Exception:
-                # print(traceback.format_exc())
-                pass
+                    proc.join(0.4)
+                except ValueError:
+                    break
+            else:
+                try:
+                    pycos.logger.debug('terminating server %s (%s)', child.sid, proc.pid)
+                    if os.name == 'nt':
+                        os.kill(proc.pid, signal.CTRL_C_EVENT)
+                    else:
+                        proc.terminate()
+                except Exception:
+                    print(traceback.format_exc())
+                    pass
 
         for child in child_procs:
-            if child.proc and child.proc.is_alive():
-                for j in range(20):
-                    if (not child.proc) or (not child.proc.is_alive()):
+            for j in range(10):
+                proc = child.proc
+                if not proc or proc != cur_procs[child.sid]:
+                    break
+                if j == 5:
+                    try:
+                        pycos.logger.debug('killing server %s (%s)', child.sid, proc.pid)
+                        if os.name == 'nt':
+                            proc.terminate()
+                        else:
+                            if hasattr(proc, 'kill'):
+                                proc.kill()
+                            else:
+                                os.kill(proc.pid, signal.SIGKILL)
+                    except ValueError:
                         break
-                    child.proc.join(0.2)
-                    if j < 15:
-                        continue
-                    if j == 15:
-                        try:
-                            child.proc.terminate()
-                        except Exception:
-                            # print(traceback.format_exc())
-                            pass
+                    except Exception:
+                        # print(traceback.format_exc())
+                        pass
                 else:
                     try:
-                        if os.name == 'nt':
-                            os.kill(child.proc.pid, signal.SIGTERM)
-                        else:
-                            os.kill(child.proc.pid, signal.SIGKILL)
-                    except Exception:
-                        pycos.logger.debug('Could not terminate server %s (PID %s): %s',
-                                           child.sid, child.proc.pid, traceback.format_exc())
+                        if not proc.is_alive():
+                            break
+                        proc.join(0.4)
+                    except ValueError:
+                        break
 
             lock.acquire()
             proc = child.proc
-            if child.status and proc and (not proc.is_alive()):
-                proc.join(1)
-                if proc.exitcode:
-                    pycos.logger.warning('Server %s (process %s) reaped', child.sid, proc.pid)
+            if proc == cur_procs[child.sid]:
+                try:
+                    proc.join(1)
+                    assert not proc.is_alive()
+                    if hasattr(proc, 'close'):
+                        try:
+                            proc.close()
+                        except Exception:
+                            pass
+                except ValueError:
+                    pass
+                except Exception:
+                    pycos.logger.warning('Could not terminate server %s: %s',
+                                         child.sid, child.status)
+                    lock.release()
+                    continue
                 child.status = None
                 child.proc = None
             lock.release()
@@ -769,21 +788,19 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_sid_ports):
             lock.release()
         else:
             # assert server_task is None
-            lock.acquire()
             proc = child.proc
-            if not proc or proc.pid != msg['pid'] or child.status != 'running':
-                pycos.logger.debug('Ignoring server task message %s', msg)
-                lock.release()
+            try:
+                if proc and proc.pid == msg['pid'] or server.status == 'running':
+                    close_procs([child])
+                else:
+                    pycos.logger.warning('Ignoring invalid server message %s', msg)
+            except ValueError:
+                pass
+            except Exception:
+                print(traceback.format_exc())
                 continue
 
-            proc.join(1)
-            if proc.exitcode is None:
-                lock.release()
-                continue
-            child.proc = None
-            child.status = None
-            lock.release()
-            if (msg['status'] == 0 and
+            if (msg.get('status', -1) == 0 and
                 (child.restart or client._restart_servers or msg.get('restart', False))):
                 start_proc(child)
                 if child.restart:
@@ -1346,36 +1363,45 @@ def _dispycos_node():
                         if (isinstance(msg, dict) and msg.get('msg', None) == 'closed' and
                             msg.get('auth', None) == comp_state.auth):
                             proc.join(2)
-                            if not proc.is_alive():
+                            if proc == comp_state.spawn_mpproc and not proc.is_alive():
                                 comp_state.spawn_mpproc = None
                             break
                 else:
                     if comp_state.auth != cur_auth:
                         raise StopIteration
-                    if comp_state.spawn_mpproc and proc.is_alive():
+                    if proc == comp_state.spawn_mpproc and proc.is_alive():
                         try:
-                            proc.terminate()
+                            if os.name == 'nt':
+                                os.kill(proc.pid, proc_signals[0])
+                            else:
+                                proc.terminate()
                         except Exception:
                             pass
                         proc.join(2)
                         if comp_state.auth != cur_auth:
                             raise StopIteration
                         for i in range(10):
-                            if not proc.is_alive():
+                            if proc == comp_state.spawn_mpproc and not proc.is_alive():
                                 break
                             proc.join(2)
                             if comp_state.auth != cur_auth:
                                 raise StopIteration
                             if i == 9:
                                 try:
-                                    os.kill(proc.pid, proc_signals[2])
+                                    if os.name == 'nt':
+                                        proc.terminate()
+                                    else:
+                                        if hasattr(proc, 'kill'):
+                                            proc.kill()
+                                        else:
+                                            os.kill(proc.pid, proc_signals[2])
                                 except OSError:
                                     break
                                 except Exception:
                                     pass
-                    if comp_state.spawn_mpproc:
+                    if proc == comp_state.spawn_mpproc:
                         proc.join(2)
-                        if not proc.is_alive():
+                        if proc == comp_state.spawn_mpproc and not proc.is_alive():
                             comp_state.spawn_mpproc = None
 
                 # clear pipe
