@@ -1991,14 +1991,14 @@ class Scheduler(object, metaclass=pycos.Singleton):
             for rtask, job in server.rtasks.values():
                 if not job.request.endswith('async'):
                     job.reply_task.send(None)
-                if client.status_task:
+                if client and client.status_task:
                     status = MonitorException(rtask, (Scheduler.TaskAbandoned, None))
                     client.status_task.send(status)
             server.rtasks.clear()
 
         server.xfer_files = []
         server.askew_results.clear()
-        if client.status_task:
+        if client and client.status_task:
             client.status_task.send(DispycosStatus(server.status, server_task.location))
 
         if self.__server_locations:
