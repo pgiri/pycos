@@ -506,7 +506,7 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
             else:
                 raise AttributeError('Invalid attribute "%s"' % name)
 
-    children = [Struct(sid=sid, port=port, busy_time=busy_time, proc=None, status=None,
+    servers = [Struct(sid=sid, port=port, busy_time=busy_time, proc=None, status=None,
                        restart=False, iid=0)
                 for sid, port, busy_time in _dispycos_server_params]
     mp_q = multiprocessing.Queue()
@@ -560,14 +560,14 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
         _dispycos_pipe.send({'msg': 'closed', 'auth': _dispycos_config['auth']})
         exit(-1)
 
-    def close_procs(child_procs):
+    def close_servers(children):
         lock.acquire()
-        cur_procs = {child.sid: child.proc if child.status else -1 for child in children}
+        cur_procs = {server.sid: server.proc if server.status else -1 for server in servers}
         lock.release()
-        for child in child_procs:
+        for server in children:
             for j in range(5):
-                proc = child.proc
-                if not proc or proc != cur_procs[child.sid]:
+                proc = server.proc
+                if not proc or proc != cur_procs[server.sid]:
                     break
                 try:
                     if not proc.is_alive():
@@ -577,7 +577,7 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
                     break
             else:
                 try:
-                    pycos.logger.debug('terminating server %s (%s)', child.sid, proc.pid)
+                    pycos.logger.debug('terminating server %s (%s)', server.sid, proc.pid)
                     if os.name == 'nt':
                         os.kill(proc.pid, signal.CTRL_C_EVENT)
                     else:
@@ -586,14 +586,14 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
                     print(traceback.format_exc())
                     pass
 
-        for child in child_procs:
+        for server in children:
             for j in range(10):
-                proc = child.proc
-                if not proc or proc != cur_procs[child.sid]:
+                proc = server.proc
+                if not proc or proc != cur_procs[server.sid]:
                     break
                 if j == 5:
                     try:
-                        pycos.logger.debug('killing server %s (%s)', child.sid, proc.pid)
+                        pycos.logger.debug('killing server %s (%s)', server.sid, proc.pid)
                         if os.name == 'nt':
                             proc.terminate()
                         else:
@@ -615,8 +615,8 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
                         break
 
             lock.acquire()
-            proc = child.proc
-            if proc == cur_procs[child.sid]:
+            proc = server.proc
+            if proc == cur_procs[server.sid]:
                 try:
                     proc.join(1)
                     assert not proc.is_alive()
@@ -629,56 +629,56 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
                     pass
                 except Exception:
                     pycos.logger.warning('Could not terminate server %s: %s',
-                                         child.sid, child.status)
+                                         server.sid, server.status)
                     lock.release()
                     continue
-                child.status = None
-                child.proc = None
-                child.busy_time.value = 0
+                server.status = None
+                server.proc = None
+                server.busy_time.value = 0
             lock.release()
 
-    def start_proc(child):
+    def start_server(server):
         server_config = dict(_dispycos_config)
-        server_config['sid'] = child.sid
+        server_config['sid'] = server.sid
         server_config['name'] = '%s_server-%s' % (_dispycos_config['name'], server_config['sid'])
-        server_config['tcp_port'] = child.port
-        server_config['busy_time'] = child.busy_time
+        server_config['tcp_port'] = server.port
+        server_config['busy_time'] = server.busy_time
         server_config['peers'] = _dispycos_config['peers'][:]
         server_config['dest_path'] = os.path.join(_dispycos_config['dest_path'],
                                                   'dispycos_server_%s' % server_config['sid'])
         lock.acquire()
-        if child.status is not None:
-            pycos.logger.warning('Server %s already started?: %s', child.sid, child.status)
+        if server.status is not None:
+            pycos.logger.warning('Server %s already started?: %s', server.sid, server.status)
             lock.release()
             return
-        child.iid += 1
-        server_config['iid'] = child.iid
-        child.status = 'pending'
+        server.iid += 1
+        server_config['iid'] = server.iid
+        server.status = 'pending'
         proc = multiprocessing.Process(target=_dispycos_server_process, name=server_config['name'],
                                        args=(mp_q, server_config))
         if isinstance(proc, multiprocessing.Process):
             proc.start()
-            pycos.logger.debug('dispycos server %s started with PID %s', child.sid, proc.pid)
-            child.proc = proc
+            pycos.logger.debug('dispycos server %s started with PID %s', server.sid, proc.pid)
+            server.proc = proc
         else:
             pycos.logger.warning('Could not start dispycos server for %s at %s',
-                                 child.sid, child.port)
-            child.status = None
+                                 server.sid, server.port)
+            server.status = None
         lock.release()
 
     def pipe_proc():
-        for child in children:
-            start_proc(child)
+        for server in servers:
+            start_server(server)
 
-        for j in range(60):
-            if any(child.status == 'pending' for child in children):
+        for j in range(10*len(servers)):
+            if any(server.status == 'pending' for server in servers):
                 time.sleep(0.2)
             else:
                 break
 
         _dispycos_pipe.send({'msg': 'started', 'auth': _dispycos_config['auth'],
-                             'sids': [child.sid for child in children
-                                      if child.proc and child.status == 'running']})
+                             'sids': [server.sid for server in servers
+                                      if server.proc and server.status == 'running']})
 
         while 1:
             try:
@@ -692,37 +692,37 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
 
             if req.get('msg') == 'quit':
                 client._restart_servers = False
-                for child in children:
-                    child.restart = False
+                for server in servers:
+                    server.restart = False
                 mp_q.put({'req': 'quit', 'auth': _dispycos_config['auth']})
                 break
 
             elif req.get('msg') == 'close_server':
                 sid = req.get('sid', None)
                 if sid:
-                    for child in children:
-                        if child.sid == sid:
+                    for server in servers:
+                        if server.sid == sid:
                             break
                     else:
                         pycos.logger.warning('Invalid server id %s', sid)
                         continue
-                    child.restart = req.get('restart', False)
-                    if child.status is None:
-                        if child.restart:
+                    server.restart = req.get('restart', False)
+                    if server.status is None:
+                        if server.restart:
                             try:
-                                start_proc(child)
+                                start_server(server)
                             except Exception:
                                 pycos.logger.warning('Could not restart server %s', sid)
                                 pycos.logger.warning(traceback.format_exc())
                     else:
-                        if child.status == 'running' and req.get('terminate', False):
-                            close_procs([child])
+                        if server.status == 'running' and req.get('terminate', False):
+                            close_servers([server])
                 else:
                     # assert req.get('restart') == False
                     client._restart_servers = req.get('restart', False)
                     if not client._restart_servers:
-                        for child in children:
-                            child.restart = False
+                        for server in servers:
+                            server.restart = False
                     _dispycos_pipe.send({'msg': 'restart_ack', 'auth': _dispycos_config['auth']})
 
             else:
@@ -773,35 +773,35 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
             pycos.logger.warning('Ignoring invalid server msg: %s != %s',
                                  auth, _dispycos_config['auth'])
             continue
-        for child in children:
-            if child.sid == server_id:
+        for server in servers:
+            if server.sid == server_id:
                 break
         else:
             pycos.logger.debug('Ignoring server task information for %s', server_id)
             continue
-        if child.iid != iid:
+        if server.iid != iid:
             pycos.logger.warning('Invalid instance id for server %s: %s / %s!',
-                                 server_id, child.iid, iid)
+                                 server_id, server.iid, iid)
             continue
 
         if server_task:
             lock.acquire()
-            if child.proc and child.proc.pid == msg.get('pid'):
-                if child.status == 'pending':
-                    child.status = 'running'
+            if server.proc and server.proc.pid == msg.get('pid'):
+                if server.status == 'pending':
+                    server.status = 'running'
                 else:
                     pycos.logger.warning('Invalid status %s for server %s',
-                                         child.status, child.sid)
+                                         server.status, server.sid)
             else:
                 pycos.logger.warning('Invalid PID for server %s: %s', server_id, msg.get('pid'))
-                child.status = 'running'
+                server.status = 'running'
             lock.release()
         else:
             # assert server_task is None
-            proc = child.proc
+            proc = server.proc
             try:
                 if proc and proc.pid == msg['pid'] or server.status == 'running':
-                    close_procs([child])
+                    close_servers([server])
                 else:
                     pycos.logger.warning('Ignoring invalid server message %s', msg)
             except ValueError:
@@ -811,22 +811,22 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
                 continue
 
             if (msg.get('status', -1) == 0 and
-                (child.restart or client._restart_servers or msg.get('restart', False))):
-                start_proc(child)
-                if child.restart:
-                    child.restart = False
+                (server.restart or client._restart_servers or msg.get('restart', False))):
+                start_server(server)
+                if server.restart:
+                    server.restart = False
 
     spawn_closed = True
     client._restart_servers = False
-    for child in children:
-        child.restart = False
-    for child in children:
-        if child.proc:
+    for server in servers:
+        server.restart = False
+    for server in servers:
+        if server.proc:
             try:
-                child.proc.join(2)
+                server.proc.join(2)
             except Exception:
                 pass
-    close_procs(children)
+    close_servers(servers)
     mp_q.close()
     _dispycos_pipe.send({'msg': 'closed', 'auth': _dispycos_config['auth']})
     exit(0)
