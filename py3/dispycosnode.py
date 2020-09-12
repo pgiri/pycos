@@ -86,15 +86,18 @@ def _dispycos_server_proc():
     _dispycos_job_tasks = set()
     _dispycos_jobs_done = pycos.Event()
 
-    def _dispycos_peer_status(task=None):
+    def _dispycos_timer_proc(task=None):
         task.set_daemon()
         pulse_interval = _dispycos_config['pulse_interval']
         while 1:
-            status = yield task.receive(timeout=pulse_interval)
-            if not status:
-                if _dispycos_job_tasks:
-                    _dispycos_busy_time.value = int(time.time())
-                continue
+            yield task.sleep(pulse_interval)
+            if _dispycos_job_tasks:
+                _dispycos_busy_time.value = int(time.time())
+
+    def _dispycos_peer_status(task=None):
+        task.set_daemon()
+        while 1:
+            status = yield task.receive()
             if not isinstance(status, pycos.PeerStatus):
                 logger.warning('Invalid peer status %s ignored', type(status))
                 continue
@@ -198,6 +201,7 @@ def _dispycos_server_proc():
     _dispycos_scheduler_task.send({'status': Scheduler.ServerInitialized, 'task': _dispycos_task,
                                    'name': _dispycos_name, 'auth': _dispycos_auth})
 
+    _dispycos_timer_task = Task(_dispycos_timer_proc)
     _dispycos_monitor_task = SysTask(_dispycos_monitor_proc)
     logger.debug('dispycos server "%s": Client "%s" from %s', _dispycos_name,
                  _dispycos_auth, _dispycos_scheduler_task.location)
