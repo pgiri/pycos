@@ -310,13 +310,10 @@ def _dispycos_server_proc():
             _dispycos_reply_task.send(-1)
 
     # kill any pending jobs
-    while _dispycos_job_tasks:
-        for _dispycos_var in _dispycos_job_tasks:
-            _dispycos_var.terminate()
-        logger.debug('dispycos server "%s": Waiting for %s tasks to terminate '
-                     'before closing client', _dispycos_name, len(_dispycos_job_tasks))
-        if (yield _dispycos_jobs_done.wait(timeout=5)):
-            break
+    for _dispycos_var in _dispycos_job_tasks:
+        _dispycos_var.terminate()
+    logger.debug('dispycos server "%s": %s tasks terminated',
+                 _dispycos_name, len(_dispycos_job_tasks))
     if _dispycos_scheduler_task:
         _dispycos_scheduler_task.send({'status': Scheduler.ServerDisconnected,
                                        'location': _dispycos_task.location,
@@ -452,7 +449,10 @@ def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config):
     _dispycos_scheduler.ignore_peers = True
     for location in _dispycos_scheduler.peers():
         pycos.Task(_dispycos_scheduler.close_peer, location)
-    _dispycos_scheduler.finish()
+    if pycos.Task.scheduler().join(timeout=2):
+        _dispycos_scheduler.finish()
+    else:
+        pycos.logger.debug('pycos for server %s seems to be not responding', _dispycos_sid)
     _dispycos_queue.put({'req': 'server_task', 'auth': _dispycos_auth, 'task': None,
                          'server_id': _dispycos_sid, 'iid': _dispycos_iid, 'pid': os.getpid(),
                          'status': _dispycos_status.get('status', -1),

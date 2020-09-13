@@ -58,7 +58,7 @@ __maintainer__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __license__ = "Apache 2.0"
 __url__ = "https://pycos.sourceforge.io"
 __status__ = "Production"
-__version__ = "4.9.0"
+__version__ = "4.9.1"
 
 __all__ = ['Task', 'Pycos', 'Lock', 'RLock', 'Event', 'Condition', 'Semaphore',
            'AsyncSocket', 'HotSwapException', 'MonitorException', 'Location', 'Channel',
@@ -3918,7 +3918,7 @@ class Pycos(object, metaclass=Singleton):
         """
         self._exit(False, True)
 
-    def join(self, show_running=False):
+    def join(self, show_running=False, timeout=None):
         """Wait for currently scheduled tasks to finish. Pycos continues to
         execute, so new tasks can be added if necessary.
         """
@@ -3928,7 +3928,11 @@ class Pycos(object, metaclass=Singleton):
                 logger.info('waiting for %s/%s%s', task._name, task._id,
                             ' (daemon)' if task._daemon else '')
             self._lock.release()
-        self._complete.wait()
+        self._complete.wait(timeout)
+        if self._complete.is_set():
+            return True
+        else:
+            return False
 
     def atexit(self, priority, func, *fargs, **fkwargs):
         """Function 'func' will be called after the scheduler has
