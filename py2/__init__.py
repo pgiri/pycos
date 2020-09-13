@@ -3876,6 +3876,11 @@ class Pycos(object):
         else:
             return False
 
+    def is_alive(self):
+        """Returns whether scheduler thread is alive.
+        """
+        return self._scheduler.is_alive()
+
     def atexit(self, priority, func, *fargs, **fkwargs):
         """Function 'func' will be called after the scheduler has
         terminated. 'priority' indicates the order in which all queued functions

@@ -89,9 +89,10 @@ def _dispycos_server_proc():
     def _dispycos_timer_proc(task=None):
         task.set_daemon()
         pulse_interval = _dispycos_config['pulse_interval']
+        task_scheduler = Task.scheduler()
         while 1:
             yield task.sleep(pulse_interval)
-            if _dispycos_job_tasks:
+            if _dispycos_job_tasks and task_scheduler.is_alive():
                 _dispycos_busy_time.value = int(time.time())
 
     def _dispycos_peer_status(task=None):
@@ -201,7 +202,7 @@ def _dispycos_server_proc():
     _dispycos_scheduler_task.send({'status': Scheduler.ServerInitialized, 'task': _dispycos_task,
                                    'name': _dispycos_name, 'auth': _dispycos_auth})
 
-    _dispycos_timer_task = Task(_dispycos_timer_proc)
+    _dispycos_timer_task = SysTask(_dispycos_timer_proc)
     _dispycos_monitor_task = SysTask(_dispycos_monitor_proc)
     logger.debug('dispycos server "%s": Client "%s" from %s', _dispycos_name,
                  _dispycos_auth, _dispycos_scheduler_task.location)
