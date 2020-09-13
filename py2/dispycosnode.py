@@ -703,6 +703,10 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
                     else:
                         pycos.logger.warning('Invalid server id %s', sid)
                         continue
+                    if server.iid != req.get('iid', None):
+                        pycos.logger.warning('Closing server %s ignored: iid %s / %s',
+                                             server.sid, server.iid, req.get('iid', None))
+                        continue
                     server.restart = req.get('restart', False)
                     if server.status is None:
                         if server.restart:
@@ -1166,17 +1170,29 @@ def _dispycos_node():
         _dispycos_config['node_location'] = pycos.serialize(task.location)
 
         def close_server(server, terminate=False, restart=False, task=None):
+            iid = server.iid
             parent_pipe.send({'msg': 'close_server', 'auth': comp_state.auth,
-                              'sid': server.id, 'terminate': False, 'restart': restart})
-            if not server.task:
-                raise StopIteration
-            if (yield server.task.deliver({'req': 'terminate' if terminate else 'quit',
-                                           'auth': comp_state.auth})) != 1:
+                              'sid': server.id, 'iid': iid, 'terminate': False, 'restart': restart})
+            if (server.task and
+                (yield server.task.deliver({'req': 'terminate' if terminate else 'quit',
+                                            'iid': iid, 'auth': comp_state.auth})) == 1):
+                if not terminate:
+                    raise StopIteration
+                wait = 15
+            else:
+                terminate = True
+                wait = 5
+            yield server.done.wait(timeout=wait)
+            if server.done.is_set():
+                terminate = True
+                yield task.sleep(5)
+            if terminate:
                 parent_pipe.send({'msg': 'close_server', 'auth': comp_state.auth,
-                                  'sid': server.id, 'terminate': bool(terminate),
-                                  'restart': False})
-                server.task = None
-                server.done.set()
+                                  'sid': server.id, 'iid': iid,
+                                  'terminate': True, 'restart': bool(restart)})
+                if server.iid == iid:
+                    server.task = None
+                    server.done.set()
 
         def service_available():
             now = time.time()
