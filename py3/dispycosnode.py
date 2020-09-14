@@ -105,7 +105,8 @@ def _dispycos_server_proc():
             if status.status == pycos.PeerStatus.Offline:
                 if (_dispycos_scheduler_task and
                     _dispycos_scheduler_task.location == status.location):
-                    _dispycos_task.send({'req': 'close', 'auth': _dispycos_auth})
+                    _dispycos_task.send({'req': 'close', 'iid': _dispycos_config['iid'],
+                                         'auth': _dispycos_auth})
             else:  # status.status == pycos.PeerStatus.Online
                 if (status.location not in _dispycos_peers):
                     def dispycos_peer(location, task=None):
@@ -142,7 +143,7 @@ def _dispycos_server_proc():
 
         def wrapped(terminate=False, restart=False):
             task.send({'req': 'terminate' if terminate else 'quit', 'restart': bool(restart),
-                       'auth': auth})
+                       'iid': _dispycos_config['iid'], 'auth': auth})
         return wrapped
 
     globals()['dispycos_close_server'] = _dispycos_quit_wrapper()
@@ -183,6 +184,10 @@ def _dispycos_server_proc():
                     _dispycos_var = pycos.deserialize(_dispycos_msg['setup_args'])
                     break
                 elif _dispycos_req == 'terminate' or _dispycos_req == 'quit':
+                    if _dispycos_msg.get('iid', None) != _dispycos_config['iid']:
+                        # TODO: ignore this req?
+                        logger.warning('Invalid iid for %s: %s / %s', _dispycos_req,
+                                       _dispycos_msg.get('iid', None), _dispycos_config['iid'])
                     if _dispycos_scheduler_task:
                         _dispycos_scheduler_task.send({'status': Scheduler.ServerClosed,
                                                        'location': _dispycos_task.location,
@@ -248,7 +253,10 @@ def _dispycos_server_proc():
                 Task._pycos._lock.release()
 
         elif _dispycos_req == 'close' or _dispycos_req == 'quit':
-            if _dispycos_msg.get('auth', None) != _dispycos_auth:
+            if (_dispycos_msg.get('auth', None) != _dispycos_auth or
+                _dispycos_msg.get('iid', None) != _dispycos_config['iid']):
+                pycos.logger.debug('Invalid iid for %s: %s / %s', _dispycos_req,
+                                   _dispycos_msg.get('iid', None), _dispycos_config['iid'])
                 continue
             if _dispycos_scheduler_task:
                 _dispycos_scheduler_task.send({'status': Scheduler.ServerClosed,
@@ -262,14 +270,18 @@ def _dispycos_server_proc():
                 _dispycos_var = yield _dispycos_task.recv(timeout=0)
                 if (isinstance(_dispycos_var, dict) and
                     (_dispycos_var.get('req', None) == 'terminate') and
-                    (_dispycos_var.get('auth', None) == _dispycos_auth)):
+                    (_dispycos_var.get('auth', None) == _dispycos_auth) and
+                    (_dispycos_var.get('iid', None) == _dispycos_config['iid'])):
                     break
             if _dispycos_msg.get('restart', False):
                 _dispycos_restart = True
             break
 
         elif _dispycos_req == 'terminate':
-            if _dispycos_msg.get('auth', None) != _dispycos_auth:
+            if ((_dispycos_msg.get('auth', None) != _dispycos_auth) or
+                (_dispycos_msg.get('iid', None) != _dispycos_config['iid'])):
+                pycos.logger.debug('Invalid iid for %s: %s / %s', _dispycos_req,
+                                   _dispycos_msg.get('iid', None), _dispycos_config['iid'])
                 continue
             if _dispycos_scheduler_task:
                 _dispycos_scheduler_task.send({'status': Scheduler.ServerClosed,
@@ -1107,7 +1119,7 @@ def _dispycos_node():
     for _dispycos_id in range(0, num_cpus + 1):
         _dispycos_var = os.path.join(dispycos_path, '..', 'server-%d.pkl' % _dispycos_id)
         node_servers[_dispycos_id] = Struct(
-            id=_dispycos_id, iid=1, task=None, name='%s_server-%s' % (node_name, _dispycos_id),
+            id=_dispycos_id, iid=0, task=None, name='%s_server-%s' % (node_name, _dispycos_id),
             port=node_ports[_dispycos_id], restart=False, pid_file=_dispycos_var, done=pycos.Event(),
             busy_time=multiprocessing.Value('I', 0) if _dispycos_id > 0 else None
         )
@@ -1293,17 +1305,28 @@ def _dispycos_node():
                 if not isinstance(server_task, pycos.SysTask):
                     pycos.logger.warning('Invalid task: %s', type(server_task))
                     return -1
-                if server.task and server.task != server_task:
-                    if iid != server.iid:
-                        pycos.logger.warning('Updating server %s instance ID from %s to %s',
-                                             server_id, server.iid, iid)
+                if server.task:
+                    if server.task != server_task:
+                        if iid <= server.iid:
+                            pycos.logger.warning('Server %s instance ID is invalid 1: %s / %s',
+                                                 server_id, server.iid, iid)
+                            return -1
+                    else:
+                        if iid != server.iid:
+                            pycos.logger.warning('Server %s instance ID is invalid 2: %s / %s',
+                                                 server_id, server.iid, iid)
+                            return -1
+                if iid <= server.iid:
+                    pycos.logger.warning('Server %s instance ID is invalid 3: %s / %s | %s / %s',
+                                         server_id, server.iid, iid, server_task, server.task)
+                    return -1
                 if not comp_state.cpus_reserved:
-                    server_task.send({'req': 'terminate', 'auth': comp_state.auth})
+                    server_task.send({'req': 'terminate', 'iid': iid, 'auth': comp_state.auth})
                     return 0
                 server.task = server_task
                 server.iid = iid
                 server.done.clear()
-                server_task.send({'auth': comp_state.auth, 'node_task': node_task})
+                server_task.send({'auth': comp_state.auth, 'iid': iid, 'node_task': node_task})
                 pid = msg.get('pid', None)
                 with open(server.pid_file, 'wb') as fd:
                     pickle.dump({'pid': pid, 'ppid': comp_state.spawn_mpproc.pid}, fd)
@@ -1312,9 +1335,9 @@ def _dispycos_node():
                 if server.iid != iid:
                     pycos.logger.warning('Invalid server %s instance ID %s / %s!',
                                          server_id, server.iid, iid)
+                    return -1
                 server.task = None
                 server.done.set()
-                server.iid += 1
                 if os.path.exists(server.pid_file):
                     try:
                         os.remove(server.pid_file)
@@ -1355,6 +1378,7 @@ def _dispycos_node():
             if not servers:
                 return 0
             for server in servers:
+                server.iid = 0
                 server.busy_time.value = int(time.time())
             args = (child_pipe, _dispycos_config,
                     [(server.id, server.port, server.busy_time) for server in servers])
@@ -1374,7 +1398,6 @@ def _dispycos_node():
                             continue
                         server = node_servers[i]
                         server.done.clear()
-                        server.iid = 1
                     cpus = len(msg['sids'])
                 else:
                     cpus = 0
@@ -1847,7 +1870,7 @@ def _dispycos_node():
                 print('  %s clients served so far' % comp_state.served)
                 for server in node_servers:
                     if server.task:
-                        server.task.send({'req': cmd, 'auth': comp_state.auth})
+                        server.task.send({'req': cmd, 'iid': server.iid, 'auth': comp_state.auth})
                     elif server.id:
                         print('  dispycos server "%s" is not currently used' % server.name)
             elif cmd in ('close', 'quit', 'terminate'):

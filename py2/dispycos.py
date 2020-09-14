@@ -1953,12 +1953,13 @@ class Scheduler(object):
                     node.load = 0.0
 
         server_task, server.task = server.task, None
-        if not server_task:
+        if not server_task or not node.task:
             raise StopIteration(0)
         client = self._cur_client
         if server.status in (Scheduler.ServerInitialized, Scheduler.ServerSuspended,
                              Scheduler.ServerDiscovered):
-            server_task.send({'req': 'terminate' if terminate else 'close', 'auth': node.auth})
+            node.task.send({'req': 'close_server', 'terminate': terminate,
+                            'addr': server_task.location, 'auth': node.auth})
             server.status = Scheduler.ServerClosed
             if server.rtasks:
                 if (not server.cpu_avail.is_set()):
