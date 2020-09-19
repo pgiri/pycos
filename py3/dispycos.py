@@ -1253,7 +1253,8 @@ class Scheduler(object, metaclass=pycos.Singleton):
                 raise StopIteration(-1)
 
         node.task.send({'req': 'client', 'client': pycos.serialize(client),
-                        'auth': node.auth, 'setup_args': setup_args, 'reply_task': task})
+                        'auth': node.auth, 'setup_args': setup_args,
+                        'restart_servers': client._restart_servers, 'reply_task': task})
         cpus = yield task.receive(timeout=MsgTimeout)
         if not cpus or client != self._cur_client:
             node.status = Scheduler.NodeClosed
