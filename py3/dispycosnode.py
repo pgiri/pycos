@@ -1121,7 +1121,7 @@ def _dispycos_node():
         node_servers[_dispycos_id] = Struct(
             id=_dispycos_id, iid=0, task=None, name='%s_server-%s' % (node_name, _dispycos_id),
             port=node_ports[_dispycos_id], restart=False, pid_file=_dispycos_var, done=pycos.Event(),
-            busy_time=multiprocessing.Value('I', 0) if _dispycos_id > 0 else None
+            busy_time=multiprocessing.Value('I', 0)
         )
     node_servers[0].name = None
 
@@ -1199,8 +1199,7 @@ def _dispycos_node():
         disk_path = dispycos_scheduler.dest_path
         _dispycos_config['node_location'] = pycos.serialize(task.location)
 
-        def close_server(server, terminate=False, restart=False, task=None):
-            iid = server.iid
+        def close_server(server, iid, terminate=False, restart=False, task=None):
             parent_pipe.send({'msg': 'close_server', 'auth': comp_state.auth,
                               'sid': server.id, 'iid': iid, 'terminate': False, 'restart': restart})
             if (server.task and
@@ -1208,21 +1207,29 @@ def _dispycos_node():
                                             'iid': iid, 'auth': comp_state.auth})) == 1):
                 if not terminate:
                     raise StopIteration
-                wait = 15
+                for j in range(10):
+                    if server.done.is_set() or server.iid != iid:
+                        break
+                    yield server.done.wait(timeout=0.5)
+                else:
+                    terminate = True
             else:
                 terminate = True
-                wait = 5
-            yield server.done.wait(timeout=wait)
-            if server.done.is_set():
-                terminate = True
-                yield task.sleep(5)
+
             if terminate:
-                parent_pipe.send({'msg': 'close_server', 'auth': comp_state.auth,
-                                  'sid': server.id, 'iid': iid,
-                                  'terminate': True, 'restart': bool(restart)})
-                if server.iid == iid:
-                    server.task = None
-                    server.done.set()
+                if server.busy_time.value:
+                    parent_pipe.send({'msg': 'close_server', 'auth': comp_state.auth,
+                                      'sid': server.id, 'iid': iid,
+                                      'terminate': True, 'restart': bool(restart)})
+                for j in range(20):
+                    if server.busy_time.value == 0:
+                        if server.iid == iid:
+                            server.task = None
+                            server.done.set()
+                        break
+                    elif server.iid != iid or server.done.is_set():
+                        break
+                    yield server.done.wait(timeout=0.5)
 
         def service_available():
             now = time.time()
@@ -1251,7 +1258,7 @@ def _dispycos_node():
                     yield task.sleep(service_times.stop - now)
                     for server in node_servers:
                         if server.task:
-                            pycos.Task(close_server, server)
+                            pycos.Task(close_server, server, server.iid)
 
                 dispycos_scheduler.ignore_peers = True
                 if service_times.end:
@@ -1259,7 +1266,7 @@ def _dispycos_node():
                     yield task.sleep(service_times.end - now)
                     for server in node_servers:
                         if server.task:
-                            pycos.Task(close_server, server, terminate=True)
+                            pycos.Task(close_server, server, server.iid, terminate=True)
 
                     for peer in dispycos_scheduler.peers():
                         pycos.Task(dispycos_scheduler.close_peer, peer)
@@ -1418,7 +1425,7 @@ def _dispycos_node():
                         pass
             for server in node_servers:
                 if server.task:
-                    pycos.Task(close_server, server, terminate=(req == 'terminate'))
+                    pycos.Task(close_server, server, server.iid, terminate=(req == 'terminate'))
             if not comp_state.cpus_reserved:
                 raise StopIteration
             cpus_reserved, comp_state.cpus_reserved = comp_state.cpus_reserved, 0
@@ -1614,10 +1621,10 @@ def _dispycos_node():
                                 if (server.busy_time.value and
                                     ((now - server.busy_time.value) < (2 * zombie_period))):
                                     pycos.logger.debug('server %s inactive!', server.id)
-                                    pycos.Task(close_server, server)
+                                    pycos.Task(close_server, server, server.iid)
                                 else:
                                     pycos.logger.debug('server %s died!', server.id)
-                                    pycos.Task(close_server, server, terminate=True)
+                                    pycos.Task(close_server, server, server.iid, terminate=True)
 
                 if ping_interval and (now - last_ping) > ping_interval and service_available():
                     dispycos_scheduler.discover_peers(port=pycos.config.NetPort)
@@ -1794,7 +1801,8 @@ def _dispycos_node():
                         server = None
                     if server:
                         if server.task:
-                            pycos.Task(close_server, server, terminate=msg.get('terminate', False),
+                            pycos.Task(close_server, server, server.iid,
+                                       terminate=msg.get('terminate', False),
                                        restart=msg.get('restart', False))
 
             elif req == 'abandon_zombie':
