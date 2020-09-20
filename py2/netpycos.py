@@ -619,7 +619,7 @@ class Pycos(pycos.Pycos):
     def host_ipaddr(host):
         try:
             info = socket.getaddrinfo(host, None)[0]
-        except:
+        except Exception:
             return None
         ip_addr = info[4][0]
         if info[0] == socket.AF_INET6:
@@ -1299,7 +1299,27 @@ class Pycos(pycos.Pycos):
                     yield conn.send_msg(serialize(-1))
                     break
                 yield conn.send_msg(serialize({'version': __version__, 'name': self._name}))
-                if req.kwargs['signature'] not in _Peer._sign_locations:
+                _Peer._lock.acquire()
+                peer = _Peer.peers.get((req.kwargs['from'].addr, req.kwargs['from'].port), None)
+                if peer:
+                    if req.kwargs['signature'] not in _Peer._sign_locations:
+                        _Peer._sign_locations[req.kwargs['signature']] = req.kwargs['from']
+                        peer.signature = req.kwargs['signature']
+                        peer.auth = hashlib.sha1((req.kwargs['signature'] +
+                                                  _Peer._pycos._secret).encode()).hexdigest()
+                    _Peer._lock.release()
+                    pycos.logger.info('%s: rediscovered peer %s',
+                                      addrinfo.location, req.kwargs['from'])
+                    msg = PeerStatus(req.kwargs['from'], req.kwargs['name'], PeerStatus.Online)
+                    drop = []
+                    for tsk in _Peer.status_tasks:
+                        if tsk.send(msg):
+                            drop.append(tsk)
+                    if drop:
+                        for tsk in drop:
+                            _Peer.status_tasks.discard(tsk)
+                else:
+                    _Peer._lock.release()
                     _Peer(req.kwargs['name'], req.kwargs['from'], req.kwargs['signature'],
                           self._keyfile, self._certfile, addrinfo)
 
@@ -1607,7 +1627,6 @@ class _Peer(object):
         self.certfile = certfile
         self.stream = False
         self.conn = None
-        self.reqs = collections.deque()
         self.waiting = False
         self.addrinfo = addrinfo
         _Peer._lock.acquire()
@@ -1618,16 +1637,18 @@ class _Peer(object):
         _Peer.peers[(location.addr, location.port)] = self
         _Peer._sign_locations[signature] = location
         _Peer._lock.release()
+        self.reqs = collections.deque()
         self.req_task = SysTask(self.req_proc)
-        logger.debug('%s: found peer %s', addrinfo.location, self.location)
+
+        logger.debug('%s: found peer %s', addrinfo.location, location)
+        msg = PeerStatus(location, name, PeerStatus.Online)
         drop = []
         for tsk in _Peer.status_tasks:
-            if tsk.send(PeerStatus(location, name, PeerStatus.Online)):
+            if tsk.send(msg):
                 drop.append(tsk)
         if drop:
             for tsk in drop:
                 _Peer.status_tasks.discard(tsk)
-
         _Peer._pycos._lock.acquire()
         if ((location.addr, location.port) in _Peer._pycos._stream_peers or
             (location.addr, 0) in _Peer._pycos._stream_peers):
@@ -1896,9 +1917,10 @@ class _Peer(object):
             _Peer._sign_locations.pop(peer.signature, None)
             if peer.req_task:
                 peer.req_task.terminate()
+            msg = PeerStatus(peer.location, peer.name, PeerStatus.Offline)
             drop = []
             for tsk in _Peer.status_tasks:
-                if tsk.send(PeerStatus(peer.location, peer.name, PeerStatus.Offline)):
+                if tsk.send(msg):
                     drop.append(tsk)
             if drop:
                 for tsk in drop:
