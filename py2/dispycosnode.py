@@ -568,11 +568,14 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
         exit(-1)
 
     def close_servers(children):
+        children = [server for server in children if server.pid > 0]
+        if not children:
+            return
         for server in children:
             server.pid = 0
         for server in children:
             for j in range(5):
-                if not server.pid:
+                if not server.status:
                     break
                 proc = server.proc
                 try:
@@ -586,7 +589,7 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
                         print(traceback.format_exc())
                     break
             else:
-                if server.pid:
+                if server.status:
                     proc = server.proc
                     try:
                         pycos.logger.debug('terminating server %s (%s)', server.sid, proc.pid)
@@ -596,12 +599,11 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
                             proc.terminate()
                     except Exception:
                         if proc:
-                            print(traceback.format_exc())
-                            print('status: %s / %s' % (server.status, server.pid))
+                            pycos.logger.debug(traceback.format_exc())
 
         for server in children:
             for j in range(10):
-                if not server.pid:
+                if not server.status:
                     break
                 proc = server.proc
                 if j == 5:
