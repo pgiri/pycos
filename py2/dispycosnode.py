@@ -1542,7 +1542,7 @@ def _dispycos_node():
 
         def timer_proc(task=None):
             task.set_daemon()
-            last_pulse = last_ping = time.time()
+            last_pulse = last_ping = last_zombie = time.time()
             while 1:
                 yield task.sleep(comp_state.interval)
                 now = time.time()
@@ -1563,7 +1563,9 @@ def _dispycos_node():
                         node_task.send({'req': 'close', 'auth': node_auth})
                         pycos.Task(dispycos_scheduler.close_peer, comp_state.scheduler.location)
 
-                    if (zombie_period and comp_state.scheduler):
+                    if (zombie_period and ((now - last_zombie) > zombie_period) and
+                        comp_state.scheduler):
+                        last_zombie = now
                         if (comp_state.abandon_zombie and
                             (all(server.task and (now - server.busy_time.value) > zombie_period)
                              for server in node_servers)):
