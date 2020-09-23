@@ -571,20 +571,20 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
         exit(-1)
 
     def close_servers(children):
-        children = [server for server in children if server.pid > 0]
-        if not children:
-            return
+        # children = [server for server in children if server.pid > 0]
+        # if not children:
+        #     return
+        # for server in children:
+        #     server.pid = 0
         for server in children:
-            server.pid = 0
-        for server in children:
-            for j in range(5):
+            for j in range(10):
                 if not server.status:
                     break
                 proc = server.proc
                 try:
                     if not proc or not proc.is_alive():
                         break
-                    proc.join(0.4)
+                    proc.join(0.2)
                 except ValueError:
                     break
                 except Exception:
@@ -628,7 +628,7 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
                     try:
                         if not proc.is_alive():
                             break
-                        proc.join(0.4)
+                        proc.join(0.2)
                     except ValueError:
                         break
 
@@ -717,10 +717,11 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
                 else:
                     pycos.logger.warning('Invalid server id %s', sid)
                     continue
-                if server.status is not None:
+                if server.status is None:
+                    start_server(server)
+                else:
                     pycos.logger.warning('Server %s is already running: %s', sid, server.status)
                     continue
-                start_server(server)
 
             elif req.get('msg') == 'close_server':
                 sid = req.get('sid', None)
@@ -745,7 +746,7 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
 
             elif req.get('msg') == 'quit':
                 mp_q.put({'req': 'quit', 'auth': _dispycos_config['auth']})
-                break
+                # break
 
             else:
                 pycos.logger.warning('spawn: ignoring invalid request')
@@ -783,7 +784,9 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
             server_task = msg['task']
         except Exception:
             if msg.get('req') == 'quit' and msg.get('auth') == _dispycos_config['auth']:
-                break
+                close_servers(servers)
+                if all(server.status is None for server in servers):
+                    break
             else:
                 pycos.logger.debug('Ignoring invalid message')
             continue
@@ -808,44 +811,21 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
                                  server_id, server.pid, pid)
             lock.release()
             continue
-        proc_pid = -1
-        try:
-            if server.proc:
-                proc_pid = server.proc.pid
-        except ValueError:
-            pass
         if server_task:
-            if proc_pid == msg.get('pid'):
-                if server.status == 'pending':
-                    server.status = 'running'
-                else:
-                    pycos.logger.warning('Invalid status %s for server %s',
-                                         server.status, server.sid)
+            if server.status == 'pending':
+                server.status = 'running'
             else:
-                pycos.logger.warning('Invalid pid for server %s: %s / %s',
-                                     server_id, proc_pid, msg.get('pid'))
-                # server.status = 'running'
+                pycos.logger.warning('Invalid status %s for server %s', server.status, server.sid)
             lock.release()
         else:
             lock.release()
             # assert server_task is None
-            try:
-                if proc_pid == msg['pid'] and server.status == 'running':
-                    close_servers([server])
-                else:
-                    pycos.logger.warning('Ignoring invalid server message %s', msg)
-            except Exception:
-                print(traceback.format_exc())
-                continue
+            if server.status == 'running':
+                close_servers([server])
+            else:
+                pycos.logger.warning('Invalid status %s for server %s', server.status, server.sid)
 
     spawn_closed = True
-    for server in servers:
-        if server.proc:
-            try:
-                server.proc.join(2)
-            except Exception:
-                pass
-    close_servers(servers)
     mp_q.close()
     _dispycos_pipe.send({'msg': 'closed', 'auth': _dispycos_config['auth']})
     exit(0)
@@ -1135,20 +1115,21 @@ def _dispycos_node():
         if os.path.isfile(node_servers[0].pid_file):
             with open(node_servers[0].pid_file, 'rb') as fd:
                 pid_info = pickle.load(fd)
-                if kill_proc(pid_info['pid'], pid_info['ppid'], kill=False):
-                    for _dispycos_var in range(20):
-                        if not os.path.isfile(node_servers[0].pid_file):
-                            break
-                        time.sleep(0.2)
+                for (pid, ppid) in [(pid_info['spid'], pid_info['pid']),
+                                    (pid_info['pid'], pid_info['ppid'])]:
+                    if kill_proc(pid, ppid, kill=False):
+                        for _dispycos_var in range(20):
+                            if not os.path.isfile(node_servers[0].pid_file):
+                                break
+                            time.sleep(0.2)
+                        else:
+                            kill_proc(pid, ppid, kill=True)
                     else:
-                        kill_proc(pid_info['spid'], pid_info['pid'], kill=True)
-                        kill_proc(pid_info['pid'], pid_info['ppid'], kill=True)
-                else:
-                    if os.path.isfile(node_servers[0].pid_file):
-                        try:
-                            os.remove(node_servers[0].pid_file)
-                        except Exception:
-                            pass
+                        if os.path.isfile(node_servers[0].pid_file):
+                            try:
+                                os.remove(node_servers[0].pid_file)
+                            except Exception:
+                                pass
 
     if os.path.exists(node_servers[0].pid_file):
         print('\n    Another dispycosnode seems to be running;\n'
@@ -1492,14 +1473,8 @@ def _dispycos_node():
                                     pass
                             comp_state.spawn_mpproc = None
 
-                # clear pipe
-                while parent_pipe.poll(0.1):
-                    parent_pipe.recv()
-                while child_pipe.poll(0.1):
-                    child_pipe.recv()
             if comp_state.auth != cur_auth:
                 raise StopIteration
-
             for server in node_servers:
                 if not server.id:
                     continue
@@ -1518,6 +1493,14 @@ def _dispycos_node():
                         break
             if comp_state.auth != cur_auth:
                 raise StopIteration
+            if not comp_state.spawn_mpproc:
+                with open(node_servers[0].pid_file, 'wb') as fd:
+                    pickle.dump({'pid': dispycos_pid, 'ppid': dispycos_ppid, 'spid': -1}, fd)
+            # clear pipe
+            while parent_pipe.poll(0.1):
+                parent_pipe.recv()
+            while child_pipe.poll(0.1):
+                child_pipe.recv()
             if restart:
                 comp_state.cpus_reserved = cpus_reserved
                 if start_client() == 0:
@@ -1891,7 +1874,7 @@ def _dispycos_node():
     for peer in dispycos_scheduler.peers():
         pycos.Task(dispycos_scheduler.close_peer, peer)
 
-    if os.path.isfile(node_servers[0].pid_file):
+    if os.path.isfile(node_servers[0].pid_file) and not comp_state.spawn_mpproc:
         try:
             os.remove(node_servers[0].pid_file)
         except Exception:
