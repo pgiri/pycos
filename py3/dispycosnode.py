@@ -92,7 +92,13 @@ def _dispycos_server_proc():
         task_scheduler = Task.scheduler()
         while 1:
             yield task.sleep(pulse_interval)
-            if _dispycos_job_tasks and task_scheduler.is_alive():
+            if not task_scheduler.is_alive():
+                pycos.logger.debug('pycos scheduler at "%s" seems dead; closing server',
+                                   _dispycos_name)
+                _dispycos_task.send({'req': 'terminate', 'pid': _dispycos_config['pid'],
+                                     'auth': _dispycos_auth})
+                break
+            if _dispycos_job_tasks:
                 _dispycos_busy_time.value = int(time.time())
 
     def _dispycos_peer_status(task=None):
@@ -269,6 +275,10 @@ def _dispycos_server_proc():
                                               'location': _dispycos_task.location,
                                                'auth': _dispycos_auth})
             while _dispycos_job_tasks:
+                if not pycos.Task.scheduler().is_alive():
+                    logger.warning('dispycos server "%s": pycos scheduler seems to be dead!',
+                                   _dispycos_name)
+                    break
                 logger.debug('dispycos server "%s": Waiting for %s tasks to terminate before '
                              'closing client', _dispycos_name, len(_dispycos_job_tasks))
                 if (yield _dispycos_jobs_done.wait(timeout=5)):
@@ -469,7 +479,7 @@ def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config):
     pycos.SysTask(epilogue).value()
     _dispycos_scheduler.ignore_peers = True
     for location in _dispycos_scheduler.peers():
-        pycos.Task(_dispycos_scheduler.close_peer, location)
+        pycos.SysTask(_dispycos_scheduler.close_peer, location)
     if pycos.Task.scheduler().join(timeout=2):
         _dispycos_scheduler.finish()
     else:
