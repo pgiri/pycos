@@ -1109,7 +1109,7 @@ def _dispycos_node():
         node_servers[_dispycos_id] = Struct(
             id=_dispycos_id, pid=0, task=None, name='%s_server-%s' % (node_name, _dispycos_id),
             port=node_ports[_dispycos_id], restart=False, pid_file=_dispycos_var, done=pycos.Event(),
-            busy_time=multiprocessing.Value('I', 0)
+            busy_time=multiprocessing.RawValue('L', 0)
         )
     node_servers[0].name = None
 
