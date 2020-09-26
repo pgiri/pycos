@@ -137,17 +137,23 @@ def _dispycos_server_proc():
             else:
                 logger.warning('invalid message to monitor ignored: %s', type(msg))
 
-    def _dispycos_quit_wrapper():
-        task = _dispycos_task
-        auth = _dispycos_auth
+    def _dispycos_close_server(terminate=False, restart=False):
+        _dispycos_task.send({'req': 'terminate' if terminate else 'close',
+                             'auth': _dispycos_auth, 'pid': _dispycos_config['pid'],
+                             'restart': bool(restart)})
 
-        def wrapped(terminate=False, restart=False):
-            task.send({'req': 'terminate' if terminate else 'quit', 'restart': bool(restart),
-                       'pid': _dispycos_config['pid'], 'auth': auth})
-        return wrapped
+    def _dispycos_close_node(terminate=False):
+        _dispycos_scheduler.peer_status(None)
 
-    globals()['dispycos_close_server'] = _dispycos_quit_wrapper()
-    del _dispycos_quit_wrapper
+        def node_peer():
+            yield _dispycos_scheduler.peer(_dispycos_node_task.location)
+            yield _dispycos_node_task.deliver({'req': 'release', 'terminate': terminate,
+                                               'auth': _dispycos_auth})
+        SysTask(node_peer)
+
+    globals()['dispycos_close_server'] = _dispycos_close_server
+    globals()['dispycos_close_node'] = _dispycos_close_node
+    del _dispycos_close_server, _dispycos_close_node
 
     _dispycos_var = deserialize(_dispycos_config['scheduler_location'])
     if (yield _dispycos_scheduler.peer(_dispycos_var)):
