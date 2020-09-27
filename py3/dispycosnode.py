@@ -133,6 +133,7 @@ def _dispycos_server_proc():
             if isinstance(msg, MonitorException):
                 logger.debug('task %s done at %s', msg.args[0], task.location)
                 _dispycos_job_tasks.discard(msg.args[0])
+                _dispycos_busy_time.value = int(time.time())
                 if not _dispycos_job_tasks:
                     _dispycos_jobs_done.set()
                 try:
@@ -219,7 +220,7 @@ def _dispycos_server_proc():
     _dispycos_scheduler_task.send({'status': Scheduler.ServerInitialized, 'task': _dispycos_task,
                                    'name': _dispycos_name, 'auth': _dispycos_auth})
 
-    _dispycos_timer_task = SysTask(_dispycos_timer_proc)
+    SysTask(_dispycos_timer_proc)
     _dispycos_monitor_task = SysTask(_dispycos_monitor_proc)
     logger.debug('dispycos server "%s": Client "%s" from %s', _dispycos_name,
                  _dispycos_auth, _dispycos_scheduler_task.location)
@@ -261,6 +262,7 @@ def _dispycos_server_proc():
                     _dispycos_jobs_done.clear()
                     logger.debug('task %s created at %s', _dispycos_var, _dispycos_task.location)
                     _dispycos_var.notify(_dispycos_monitor_task)
+                    _dispycos_busy_time.value = int(time.time())
                 _dispycos_reply_task.send(_dispycos_var)
                 Task._pycos._lock.release()
 
@@ -483,7 +485,7 @@ def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config):
     if pycos.Task.scheduler().join(timeout=2):
         _dispycos_scheduler.finish()
     else:
-        pycos.logger.debug('pycos for server %s seems to be not responding', _dispycos_sid)
+        pycos.logger.debug('dispycos task server %s seems to be dead!', _dispycos_sid)
     _dispycos_queue.put({'req': 'server_task', 'auth': _dispycos_auth, 'task': None,
                          'server_id': _dispycos_sid, 'pid': _dispycos_pid,
                          'status': _dispycos_status.get('status', -1)})
