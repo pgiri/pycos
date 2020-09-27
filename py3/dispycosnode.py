@@ -1135,19 +1135,23 @@ def _dispycos_node():
                 pid_info = pickle.load(fd)
                 for (pid, ppid) in [(pid_info['spid'], pid_info['pid']),
                                     (pid_info['pid'], pid_info['ppid'])]:
-                    if kill_proc(pid, ppid, kill=False):
-                        for _dispycos_var in range(20):
+                    _dispycos_var = kill_proc(pid, ppid, kill=False)
+                    if _dispycos_var:
+                        for _dispycos_id in range(20):
                             if not os.path.isfile(node_servers[0].pid_file):
+                                _dispycos_var = 0
                                 break
                             time.sleep(0.2)
                         else:
-                            kill_proc(pid, ppid, kill=True)
-                    else:
-                        if os.path.isfile(node_servers[0].pid_file):
-                            try:
-                                os.remove(node_servers[0].pid_file)
-                            except Exception:
-                                pass
+                            _dispycos_var = kill_proc(pid, ppid, kill=True)
+
+                    if (pid == pid_info['pid'] and os.path.exists(node_servers[0].pid_file) and
+                        _dispycos_var == 0):
+                        try:
+                            os.remove(node_servers[0].pid_file)
+                        except Exception:
+                            pycos.logger.debug(traceback.format_exc())
+                            pass
 
     if os.path.exists(node_servers[0].pid_file):
         print('\n    Another dispycosnode seems to be running;\n'
@@ -1160,9 +1164,6 @@ def _dispycos_node():
         dispycos_ppid = os.getppid()
     else:
         dispycos_ppid = 1
-    with open(node_servers[0].pid_file, 'wb') as fd:
-        # TODO: store and check crate_time with psutil
-        pickle.dump({'pid': dispycos_pid, 'ppid': dispycos_ppid, 'spid': -1}, fd)
 
     server_config = {}
     for _dispycos_var in ['udp_port', 'tcp_port', 'node', 'ext_ip_addr', 'name',
@@ -1186,6 +1187,9 @@ def _dispycos_node():
     os.chmod(os.path.join(dispycos_path, '..'), stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR |
              stat.S_IXGRP)
     os.chdir(dispycos_path)
+    with open(node_servers[0].pid_file, 'wb') as fd:
+        # TODO: store and check crate_time with psutil
+        pickle.dump({'pid': dispycos_pid, 'ppid': dispycos_ppid, 'spid': -1}, fd)
 
     del _dispycos_id
     parent_pipe, child_pipe = multiprocessing.Pipe(duplex=True)
