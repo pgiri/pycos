@@ -53,7 +53,6 @@ def _dispycos_server_proc():
     _dispycos_busy_time = _dispycos_config.pop('busy_time')
     pycos.netpycos.MsgTimeout = pycos.MsgTimeout = _dispycos_config.pop('msg_timeout')
 
-    _dispycos_task.register('_dispycos_server')
     if ((yield _dispycos_node_task.deliver({'req': 'server_task',  'auth': _dispycos_auth,
                                             'pid': _dispycos_config['pid'], 'task': _dispycos_task,
                                             'server_id': _dispycos_config['sid']},
@@ -162,6 +161,7 @@ def _dispycos_server_proc():
     globals()['dispycos_close_node'] = _dispycos_close_node
     del _dispycos_close_server, _dispycos_close_node
 
+    _dispycos_task.register('_dispycos_server')
     _dispycos_var = deserialize(_dispycos_config['scheduler_location'])
     if (yield _dispycos_scheduler.peer(_dispycos_var)):
         logger.warning('%s could not communicate with scheduler', _dispycos_task.location)
