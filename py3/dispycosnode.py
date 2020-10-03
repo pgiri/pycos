@@ -180,7 +180,8 @@ def _dispycos_server_proc():
 
     _dispycos_scheduler.peer_status(SysTask(_dispycos_peer_status))
     _dispycos_scheduler_task.send({'status': Scheduler.ServerDiscovered, 'task': _dispycos_task,
-                                   'name': _dispycos_name, 'auth': _dispycos_auth})
+                                   'name': _dispycos_name, 'auth': _dispycos_auth,
+                                   'pid': _dispycos_config['pid']})
     for _dispycos_var in _dispycos_config.pop('peers', []):
         Task(_dispycos_scheduler.peer, deserialize(_dispycos_var))
 
@@ -204,7 +205,8 @@ def _dispycos_server_proc():
                     if _dispycos_scheduler_task:
                         _dispycos_scheduler_task.send({'status': Scheduler.ServerClosed,
                                                        'location': _dispycos_task.location,
-                                                       'auth': _dispycos_auth})
+                                                       'auth': _dispycos_auth,
+                                                       'pid': _dispycos_config['pid']})
                     raise StopIteration(0)
                 else:
                     logger.warning('Ignoring invalid request to run server setup')
@@ -218,12 +220,13 @@ def _dispycos_server_proc():
             raise StopIteration(_dispycos_var)
         _dispycos_config['server_setup'] = None
     _dispycos_scheduler_task.send({'status': Scheduler.ServerInitialized, 'task': _dispycos_task,
-                                   'name': _dispycos_name, 'auth': _dispycos_auth})
+                                   'name': _dispycos_name, 'auth': _dispycos_auth,
+                                   'pid': _dispycos_config['pid']})
 
     SysTask(_dispycos_timer_proc)
     _dispycos_monitor_task = SysTask(_dispycos_monitor_proc)
-    logger.debug('dispycos server "%s": Client "%s" from %s', _dispycos_name,
-                 _dispycos_auth, _dispycos_scheduler_task.location)
+    logger.debug('dispycos server "%s", PID: %s: Client "%s" from %s', _dispycos_name,
+                 _dispycos_config['pid'], _dispycos_auth, _dispycos_scheduler_task.location)
 
     while 1:
         _dispycos_msg = yield _dispycos_task.receive()
@@ -275,7 +278,7 @@ def _dispycos_server_proc():
             if _dispycos_scheduler_task:
                 _dispycos_scheduler_task.send({'status': Scheduler.ServerClosed,
                                               'location': _dispycos_task.location,
-                                               'auth': _dispycos_auth})
+                                               'auth': _dispycos_auth, 'pid': _dispycos_config['pid']})
             while _dispycos_job_tasks:
                 if not pycos.Task.scheduler().is_alive():
                     logger.warning('dispycos server "%s": pycos scheduler seems to be dead!',
@@ -304,7 +307,7 @@ def _dispycos_server_proc():
             if _dispycos_scheduler_task:
                 _dispycos_scheduler_task.send({'status': Scheduler.ServerClosed,
                                                'location': _dispycos_task.location,
-                                               'auth': _dispycos_auth})
+                                               'auth': _dispycos_auth, 'pid': _dispycos_config['pid']})
             if _dispycos_msg.get('restart', False):
                 _dispycos_restart = True
             break
@@ -346,8 +349,9 @@ def _dispycos_server_proc():
     logger.debug('dispycos server "%s": %s tasks terminated',
                  _dispycos_name, len(_dispycos_job_tasks))
     if _dispycos_scheduler_task:
-        _dispycos_scheduler_task.send({'status': Scheduler.ServerDisconnected,
-                                       'location': _dispycos_task.location, 'auth': _dispycos_auth})
+        _dispycos_msg = {'status': Scheduler.ServerDisconnected, 'location': _dispycos_task.location,
+                         'auth': _dispycos_auth, 'pid': _dispycos_config['pid']}
+        _dispycos_scheduler_task.send(_dispycos_msg)
 
     os.chdir(os.path.join(_dispycos_config['dest_path'], '..'))
     try:
@@ -1802,7 +1806,7 @@ def _dispycos_node():
                             break
                     else:
                         server = None
-                    if server:
+                    if server and msg.get('pid', None) == server.pid:
                         server.restart = msg.get('restart', False)
                         if server.pid:
                             pycos.Task(close_server, server, server.pid,

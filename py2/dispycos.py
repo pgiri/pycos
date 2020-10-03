@@ -812,6 +812,7 @@ class Scheduler(object):
             self.cpu_avail.clear()
             self.scheduler = scheduler
             self.name = None
+            self.pid = None
             self.done = pycos.Event()
 
         def run(self, job, client, node):
@@ -987,7 +988,7 @@ class Scheduler(object):
 
                         if server:
                             server.status = Scheduler.ServerDisconnected
-                            SysTask(self.__close_server, server, node)
+                            SysTask(self.__close_server, server, server.pid, node)
                         elif node.task and node.task.location == msg.location:
                             # TODO: inform scheduler / client
                             if self._nodes.pop(node.addr, None):
@@ -1029,16 +1030,18 @@ class Scheduler(object):
                     if not node or (node.status != Scheduler.NodeInitialized and
                                     node.status != Scheduler.NodeDiscovered and
                                     node.status != Scheduler.NodeSuspended):
-                        logger.warning('Node is not valid for server %s', rtask.location)
+                        logger.warning('Node is not valid for server %s: %s', rtask.location,
+                                       node.status if node else None)
                         continue
                     if node.auth != msg.get('auth', None):
                         logger.warning('Ignoring status %s from server %s', status, rtask.location)
                         continue
                     server = node.servers.get(rtask.location, None)
-                    if server:
+                    if server and server.pid == msg.get('pid', None):
                         continue
                     server = Scheduler._Server(rtask, self)
                     server.status = status
+                    server.pid = msg.get('pid', None)
                     node.disabled_servers[rtask.location] = server
                     if (node.status == Scheduler.NodeInitialized and self._cur_client and
                         self._cur_client.status_task):
@@ -1055,13 +1058,14 @@ class Scheduler(object):
                     if not node or (node.status != Scheduler.NodeInitialized and
                                     node.status != Scheduler.NodeDiscovered and
                                     node.status != Scheduler.NodeSuspended):
-                        logger.warning('Node is not valid for server %s', rtask.location)
+                        logger.warning('Node is not valid for server %s: %s', rtask.location,
+                                       node.status if node else None)
                         continue
                     if node.auth != msg.get('auth', None):
                         logger.warning('Ignoring status %s from server %s', status, rtask.location)
                         continue
                     server = node.disabled_servers.pop(rtask.location, None)
-                    if server:
+                    if server and server.pid == msg.get('pid', None):
                         # if (server.status != Scheduler.ServerDiscovered and
                         #     server.status != Scheduler.ServerSuspended):
                         #     continue
@@ -1071,6 +1075,7 @@ class Scheduler(object):
 
                     server.name = msg.get('name')
                     server.status = status
+                    server.pid = msg.get('pid', None)
                     node.last_pulse = now
                     if node.status == Scheduler.NodeInitialized:
                         if not node.servers:
@@ -1113,7 +1118,7 @@ class Scheduler(object):
                         if not server:
                             continue
                     server.status = status
-                    SysTask(self.__close_server, server, node)
+                    SysTask(self.__close_server, server, server.pid, node)
 
                 elif status == Scheduler.NodeClosed:
                     location = msg.get('location', None)
@@ -1918,7 +1923,7 @@ class Scheduler(object):
                 if server.task:
                     server.status = Scheduler.ServerAbandoned
 
-        close_tasks = [SysTask(self.__close_server, server, node, await_async=await_async,
+        close_tasks = [SysTask(self.__close_server, server, server.pid, node, await_async=await_async,
                                terminate=terminate)
                        for server in node.disabled_servers.itervalues() if server.task]
         for close_task in close_tasks:
@@ -1936,7 +1941,9 @@ class Scheduler(object):
         if node.task and node.status not in [Scheduler.NodeAbandoned, Scheduler.NodeDisconnected]:
             node.task.send({'req': 'release', 'auth': node.auth})
 
-    def __close_server(self, server, node, await_async=False, terminate=False, task=None):
+    def __close_server(self, server, pid, node, await_async=False, terminate=False, task=None):
+        if server.pid != pid:
+            raise StopIteration(0)
         if (server.status == Scheduler.ServerDisconnected or
             server.status == Scheduler.ServerAbandoned):
             server.done.set()
@@ -1960,7 +1967,7 @@ class Scheduler(object):
         if server.status in (Scheduler.ServerInitialized, Scheduler.ServerSuspended,
                              Scheduler.ServerDiscovered):
             node.task.send({'req': 'close_server', 'terminate': terminate,
-                            'addr': server_task.location, 'auth': node.auth})
+                            'addr': server_task.location, 'auth': node.auth, 'pid': pid})
             server.status = Scheduler.ServerClosed
             if server.rtasks:
                 if (not server.cpu_avail.is_set()):
