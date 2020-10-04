@@ -84,6 +84,7 @@ def _dispycos_server_proc():
     _dispycos_restart = False
     _dispycos_job_tasks = set()
     _dispycos_jobs_done = pycos.Event()
+    _dispycos_jobs_done.set()
 
     def _dispycos_timer_proc(task=None):
         task.set_daemon()
