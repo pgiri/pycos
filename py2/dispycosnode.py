@@ -1203,6 +1203,13 @@ def _dispycos_node():
                 
             parent_pipe.send({'msg': 'close_server', 'auth': comp_state.auth, 'sid': server.id,
                               'pid': pid, 'status': 0, 'terminate': True})
+            # TODO: wait for server to be terminated?
+            if server.task:
+                if comp_state.scheduler:
+                    msg = {'status': Scheduler.ServerDisconnected, 'auth': comp_state.auth,
+                           'location': server.task.location, 'pid': pid}
+                    comp_state.scheduler.send(msg)
+                yield dispycos_scheduler.close_peer(server.task.location, timeout=2)
             msg = {'req': 'server_task', 'auth': comp_state.auth, 'server_id': server.id,
                    'task': None, 'pid': pid, 'restart': restart}
             server_task_msg(msg)

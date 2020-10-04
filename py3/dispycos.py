@@ -1121,11 +1121,17 @@ class Scheduler(object, metaclass=pycos.Singleton):
                         continue
                     server = node.servers.pop(location, None)
                     if server:
+                        if server.pid != msg.get('pid', None):
+                            logger.warning('Ignoring status %s from server %s: invalid PID: %s / %s',
+                                           status, location, server.pid, msg.get('pid', None))
                         node.disabled_servers[location] = server
                     else:
                         server = node.disabled_servers.get(location, None)
                         if not server:
                             continue
+                        if server.pid != msg.get('pid', None):
+                            logger.warning('Ignoring status %s from server %s: invalid PID: %s / %s',
+                                           status, location, server.pid, msg.get('pid', None))
                     server.status = status
                     SysTask(self.__close_server, server, server.pid, node)
 
