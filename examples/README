@@ -85,8 +85,8 @@ framework for distributed and parallel computing.
   may run as many servers as there are processors on that node), which is then
   read in memory on that server for in-memory processing at server level.
 
-* dispycos_client_restart_servers.py shows how to (close and) restart servers
-  to start computations with a pristine (global) state.
+* dispycos_client10.py shows how to close and restart servers to start computations with a
+  pristine (global) state.
 
 * dispycos_cloud_computing.py shows configuration for cloud computing using EC2
   nodes as servers and client on local computer.
@@ -98,6 +98,9 @@ framework for distributed and parallel computing.
   process messages from dispycos scheduler (in this case just to print when a
   remote task is finished) while also using httpd module (which chains messages
   from dispycos scheduler to client's 'status_proc').
+
+* dispycos_mas.py is a simple example of multi-agent system where computations (agents) discover
+  each other, communicate with each other etc..
 
 * dispycos_remote_scheduler.py uses remote (shared) scheduler (instead of
   starting scheduler itself). It also uses customized (subclassed)
