@@ -1395,6 +1395,8 @@ def _dispycos_node():
             else:
                 _dispycos_config['pulse_interval'] = comp_state.interval
 
+            if not os.path.isdir(dispycos_path):
+                os.path.makedirs(dispycos_path)
             servers = [server for server in node_servers if server.id and not server.task]
             servers = servers[:comp_state.cpus_reserved]
             if not servers:
@@ -1527,6 +1529,8 @@ def _dispycos_node():
                         break
             if comp_state.auth != cur_auth:
                 raise StopIteration
+            if not os.path.isdir(dispycos_path):
+                os.path.makedirs(dispycos_path)
             if not comp_state.spawn_mpproc:
                 with open(node_servers[0].pid_file, 'wb') as fd:
                     pickle.dump({'pid': dispycos_pid, 'ppid': dispycos_ppid, 'spid': -1}, fd)
