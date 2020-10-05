@@ -30,6 +30,7 @@ def compute(data_file, reply_task, task=None):
         yield task.sleep(random.uniform(2, 5))  # to simulate computing in this example
         reply_task.send((data_file, alg, csum))
     reply_task.send(None)  # send 'None' to indicate this file is done
+    os.remove(data_file)
     # 'dispycos_close_server' will cause server process to terminate. The server can be restarted
     # with 'restart=True' in this call or in using 'restart_servers=True' parameter to Client, as
     # done below. Then a server is restarted (with new process) automatically so new server
