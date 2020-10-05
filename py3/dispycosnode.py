@@ -1389,12 +1389,6 @@ def _dispycos_node():
                 comp_state.interval = _dispycos_config['min_pulse_interval']
                 pycos.logger.warning('Pulse interval for client has been raised to %s',
                                      comp_state.interval)
-            if zombie_period:
-                _dispycos_config['pulse_interval'] = min(comp_state.interval,
-                                                         zombie_period / 3)
-            else:
-                _dispycos_config['pulse_interval'] = comp_state.interval
-
             if not os.path.isdir(dispycos_path):
                 os.path.makedirs(dispycos_path)
             servers = [server for server in node_servers if server.id and not server.task]
@@ -1720,7 +1714,7 @@ def _dispycos_node():
                                          'raised to %s', reply_task.location, comp_state.interval)
                 if zombie_period:
                     _dispycos_config['pulse_interval'] = min(comp_state.interval,
-                                                             zombie_period / 3)
+                                                             int(zombie_period / 3))
                 else:
                     _dispycos_config['pulse_interval'] = comp_state.interval
                 # TODO: inform scheduler about pulse interval
