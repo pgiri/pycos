@@ -1926,7 +1926,7 @@ class Scheduler(object):
         if node.status == Scheduler.NodeAbandoned:
             # TODO: safe to assume servers are disconnected as well?
             for server in node.disabled_servers.itervalues():
-                if server.task:
+                if server.status < Scheduler.ServerDisconnected:
                     server.status = Scheduler.ServerAbandoned
 
         close_tasks = [SysTask(self.__close_server, server, server.pid, node, await_async=await_async,
@@ -1950,21 +1950,24 @@ class Scheduler(object):
     def __close_server(self, server, pid, node, await_async=False, terminate=False, task=None):
         if server.pid != pid:
             raise StopIteration(0)
-        if (server.status == Scheduler.ServerDisconnected or
-            server.status == Scheduler.ServerAbandoned):
+        if not server.cpu_avail.is_set():
+            server.cpu_avail.set()
+            node.cpus_used -= 1
+            if node.cpus_used == len(node.servers):
+                self._cpu_nodes.discard(node)
+                if not self._cpu_nodes:
+                    self._cpus_avail.clear()
+                node.cpu_avail.clear()
+
+        if server.status == Scheduler.ServerClosed:
+            raise StopIteration(0)
+
+        if not server.done.is_set():
             server.done.set()
-            if not server.cpu_avail.is_set():
-                server.cpu_avail.set()
-                node.cpus_used -= 1
-                if node.cpus_used == len(node.servers):
-                    self._cpu_nodes.discard(node)
-                    if not self._cpu_nodes:
-                        self._cpus_avail.clear()
-                    node.cpu_avail.clear()
-                if node.servers:
-                    node.load = float(node.cpus_used) / len(node.servers)
-                else:
-                    node.load = 0.0
+            if node.servers:
+                node.load = float(node.cpus_used) / len(node.servers)
+            else:
+                node.load = 0.0
 
         server_task, server.task = server.task, None
         if not server_task or not node.task:
