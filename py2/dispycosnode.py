@@ -582,6 +582,8 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
                     # print(traceback.format_exc())
                     ret = -1
                 assert ret == 0
+                if not os.path.isdir(dispycos_path):
+                    os.path.makedirs(dispycos_path)
         client._code = None
         client._node_setup = None
         del setup_args
@@ -1200,19 +1202,78 @@ def _dispycos_node():
                 yield server.done.wait(timeout=7)
                 if server.done.is_set():
                     raise StopIteration
-                
+
             parent_pipe.send({'msg': 'close_server', 'auth': comp_state.auth, 'sid': server.id,
                               'pid': pid, 'status': 0, 'terminate': True})
-            # TODO: wait for server to be terminated?
-            if server.task:
-                if comp_state.scheduler:
-                    msg = {'status': Scheduler.ServerDisconnected, 'auth': comp_state.auth,
-                           'location': server.task.location, 'pid': pid}
-                    comp_state.scheduler.send(msg)
-                yield dispycos_scheduler.close_peer(server.task.location, timeout=2)
+            if not server.task:
+                raise StopIteration
+            if comp_state.scheduler:
+                msg = {'status': Scheduler.ServerDisconnected, 'auth': comp_state.auth,
+                       'location': server.task.location, 'pid': pid}
+                comp_state.scheduler.send(msg)
+            yield dispycos_scheduler.close_peer(server.task.location, timeout=2)
             msg = {'req': 'server_task', 'auth': comp_state.auth, 'server_id': server.id,
                    'task': None, 'pid': pid, 'restart': restart}
             server_task_msg(msg)
+
+        def close_spawn_proc():
+            proc = comp_state.spawn_mpproc
+            cur_auth = comp_state.auth
+            if not proc:
+                return 0
+            if not proc.is_alive():
+                comp_state.spawn_mpproc = None
+                return 0
+            parent_pipe.send({'msg': 'quit', 'auth': comp_state.auth})
+            for j in range(5):
+                if parent_pipe.poll(2):
+                    if comp_state.auth != cur_auth:
+                        return 0
+                    msg = parent_pipe.recv()
+                    if (isinstance(msg, dict) and msg.get('msg', None) == 'closed' and
+                        msg.get('auth', None) == comp_state.auth):
+                        proc.join(2)
+                        if proc == comp_state.spawn_mpproc and not proc.is_alive():
+                            comp_state.spawn_mpproc = None
+                            return 0
+            if comp_state.auth != cur_auth:
+                return 0
+            if proc == comp_state.spawn_mpproc and proc.is_alive():
+                try:
+                    if os.name == 'nt':
+                        os.kill(proc.pid, proc_signals[0])
+                    else:
+                        proc.terminate()
+                except Exception:
+                    pass
+                proc.join(2)
+                if comp_state.auth != cur_auth:
+                    return 0
+                for i in range(10):
+                    if proc == comp_state.spawn_mpproc and not proc.is_alive():
+                        break
+                    proc.join(2)
+                    if comp_state.auth != cur_auth:
+                        return 0
+                    if i == 9:
+                        try:
+                            if os.name == 'nt':
+                                proc.terminate()
+                            else:
+                                if hasattr(proc, 'kill'):
+                                    proc.kill()
+                                else:
+                                    os.kill(proc.pid, proc_signals[2])
+                        except OSError:
+                            break
+                        except Exception:
+                            pass
+            if proc == comp_state.spawn_mpproc:
+                proc.join(2)
+                if proc == comp_state.spawn_mpproc and not proc.is_alive():
+                    comp_state.spawn_mpproc = None
+                    return 0
+            return -1
 
         def service_available():
             now = time.time()
@@ -1351,11 +1412,15 @@ def _dispycos_node():
                 return 0
 
         def start_client():
+            if comp_state.spawn_mpproc:
+                close_spawn_proc()
             # clear pipe
             while parent_pipe.poll(0.1):
                 parent_pipe.recv()
             while child_pipe.poll(0.1):
                 child_pipe.recv()
+            if not os.path.isdir(dispycos_path):
+                os.path.makedirs(dispycos_path)
             _dispycos_config['scheduler_location'] = pycos.serialize(comp_state.scheduler.location)
             _dispycos_config['client_location'] = pycos.serialize(comp_state.client_location)
             _dispycos_config['auth'] = comp_state.auth
@@ -1363,8 +1428,6 @@ def _dispycos_node():
                 comp_state.interval = _dispycos_config['min_pulse_interval']
                 pycos.logger.warning('Pulse interval for client has been raised to %s',
                                      comp_state.interval)
-            if not os.path.isdir(dispycos_path):
-                os.path.makedirs(dispycos_path)
             servers = [server for server in node_servers if server.id and not server.task]
             servers = servers[:comp_state.cpus_reserved]
             if not servers:
@@ -1409,64 +1472,10 @@ def _dispycos_node():
             if not comp_state.cpus_reserved:
                 raise StopIteration
             cpus_reserved, comp_state.cpus_reserved = comp_state.cpus_reserved, 0
-            cur_auth = comp_state.auth
             for server in node_servers:
                 if server.task:
                     yield server.done.wait()
-            if comp_state.spawn_mpproc and comp_state.spawn_mpproc.is_alive():
-                proc = comp_state.spawn_mpproc
-                parent_pipe.send({'msg': 'quit', 'auth': comp_state.auth})
-                for i in range(5):
-                    if parent_pipe.poll(2):
-                        if comp_state.auth != cur_auth:
-                            raise StopIteration
-                        msg = parent_pipe.recv()
-                        if (isinstance(msg, dict) and msg.get('msg', None) == 'closed' and
-                            msg.get('auth', None) == comp_state.auth):
-                            proc.join(2)
-                            if proc == comp_state.spawn_mpproc and not proc.is_alive():
-                                comp_state.spawn_mpproc = None
-                            break
-                else:
-                    if comp_state.auth != cur_auth:
-                        raise StopIteration
-                    if proc == comp_state.spawn_mpproc and proc.is_alive():
-                        try:
-                            if os.name == 'nt':
-                                os.kill(proc.pid, proc_signals[0])
-                            else:
-                                proc.terminate()
-                        except Exception:
-                            pass
-                        proc.join(2)
-                        if comp_state.auth != cur_auth:
-                            raise StopIteration
-                        for i in range(10):
-                            if proc == comp_state.spawn_mpproc and not proc.is_alive():
-                                break
-                            proc.join(2)
-                            if comp_state.auth != cur_auth:
-                                raise StopIteration
-                            if i == 9:
-                                try:
-                                    if os.name == 'nt':
-                                        proc.terminate()
-                                    else:
-                                        if hasattr(proc, 'kill'):
-                                            proc.kill()
-                                        else:
-                                            os.kill(proc.pid, proc_signals[2])
-                                except OSError:
-                                    break
-                                except Exception:
-                                    pass
-                    if proc == comp_state.spawn_mpproc:
-                        proc.join(2)
-                        if proc == comp_state.spawn_mpproc and not proc.is_alive():
-                            comp_state.spawn_mpproc = None
-
-            if comp_state.auth != cur_auth:
-                raise StopIteration
+            close_spawn_proc()
             for server in node_servers:
                 if not server.id:
                     continue
@@ -1474,8 +1483,6 @@ def _dispycos_node():
                     if server.task:
                         yield task.sleep(0.2)
                     else:
-                        if comp_state.auth != cur_auth:
-                            raise StopIteration
                         path = os.path.join(dispycos_path, 'dispycos_server_%s' % server.id)
                         if os.path.isdir(path):
                             try:
@@ -1483,18 +1490,17 @@ def _dispycos_node():
                             except Exception:
                                 pycos.logger.warning('Could not remove "%s"', path)
                         break
-            if comp_state.auth != cur_auth:
-                raise StopIteration
-            if not os.path.isdir(dispycos_path):
-                os.path.makedirs(dispycos_path)
-            if not comp_state.spawn_mpproc:
-                with open(node_servers[0].pid_file, 'wb') as fd:
-                    pickle.dump({'pid': dispycos_pid, 'ppid': dispycos_ppid, 'spid': -1}, fd)
+
             # clear pipe
             while parent_pipe.poll(0.1):
                 parent_pipe.recv()
             while child_pipe.poll(0.1):
                 child_pipe.recv()
+            if not os.path.isdir(dispycos_path):
+                os.path.makedirs(dispycos_path)
+            if not comp_state.spawn_mpproc:
+                with open(node_servers[0].pid_file, 'wb') as fd:
+                    pickle.dump({'pid': dispycos_pid, 'ppid': dispycos_ppid, 'spid': -1}, fd)
             if restart:
                 comp_state.cpus_reserved = cpus_reserved
                 if start_client() == 0:
