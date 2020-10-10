@@ -582,8 +582,8 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
                     # print(traceback.format_exc())
                     ret = -1
                 assert ret == 0
-                if not os.path.isdir(dispycos_path):
-                    os.path.makedirs(dispycos_path)
+                if not os.path.isdir(_dispycos_config['dest_path']):
+                    os.path.makedirs(_dispycos_config['dest_path'])
         client._code = None
         client._node_setup = None
         del setup_args
@@ -614,17 +614,23 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
                         print(traceback.format_exc())
                     break
             else:
-                if server.status:
-                    proc = server.proc
-                    try:
-                        pycos.logger.debug('terminating server %s (%s)', server.sid, proc.pid)
-                        if os.name == 'nt':
-                            os.kill(proc.pid, signal.CTRL_C_EVENT)
-                        else:
-                            proc.terminate()
-                    except Exception:
-                        if proc:
-                            pycos.logger.debug(traceback.format_exc())
+                if not server.status:
+                    continue
+                proc = server.proc
+                try:
+                    if not proc or not proc.is_alive():
+                        continue
+                    pycos.logger.debug('terminating server %s (%s)', server.sid, proc.pid)
+                    if os.name == 'nt':
+                        os.kill(proc.pid, signal.CTRL_C_EVENT)
+                    else:
+                        proc.terminate()
+                except ValueError:
+                    pycos.logger.debug(traceback.format_exc())
+                    pass
+                except Exception:
+                    if proc:
+                        pycos.logger.debug(traceback.format_exc())
 
         for server in children:
             for j in range(10):
@@ -633,6 +639,8 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
                 proc = server.proc
                 if j == 5:
                     try:
+                        if not proc or not proc.is_alive():
+                            break
                         pycos.logger.debug('killing server %s (%s)', server.sid, proc.pid)
                         if os.name == 'nt':
                             proc.terminate()
