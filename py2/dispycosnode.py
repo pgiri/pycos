@@ -600,8 +600,6 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
         #     server.pid = 0
         for server in children:
             for j in range(10):
-                if not server.status:
-                    break
                 proc = server.proc
                 try:
                     if not proc or not proc.is_alive():
@@ -614,8 +612,6 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
                         print(traceback.format_exc())
                     break
             else:
-                if not server.status:
-                    continue
                 proc = server.proc
                 try:
                     if not proc or not proc.is_alive():
@@ -634,9 +630,13 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
 
         for server in children:
             for j in range(10):
-                if not server.status:
-                    break
                 proc = server.proc
+                try:
+                    if not proc or not proc.is_alive():
+                        break
+                    proc.join(0.2)
+                except ValueError:
+                    break
                 if j == 5:
                     try:
                         if not proc or not proc.is_alive():
@@ -654,17 +654,10 @@ def _dispycos_spawn(_dispycos_pipe, _dispycos_config, _dispycos_server_params):
                     except Exception:
                         # print(traceback.format_exc())
                         pass
-                else:
-                    try:
-                        if not proc.is_alive():
-                            break
-                        proc.join(0.2)
-                    except ValueError:
-                        break
 
             lock.acquire()
-            if server.status:
-                proc = server.proc
+            proc = server.proc
+            if proc:
                 try:
                     proc.join(1)
                     assert not proc.is_alive()
