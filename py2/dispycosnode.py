@@ -1200,6 +1200,8 @@ def _dispycos_node():
                 raise StopIteration
             if (yield server.task.deliver({'req': 'terminate' if terminate else 'quit',
                                            'pid': pid, 'auth': comp_state.auth})) == 1:
+                if not terminate:
+                    raise StopIteration
                 yield server.done.wait(timeout=7)
                 if server.done.is_set():
                     raise StopIteration
