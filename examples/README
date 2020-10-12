@@ -115,6 +115,12 @@ framework for distributed and parallel computing.
   the function being replaced, any unprocessed messages in the task are
   processed with new functionality.
 
+* pico_client_rti.py and pico_service_rti.py use RTI feature and message passing to show how a
+  tiny (pico size) service can be implemented.
+
+* pico_client_task.py and pico_service_task.py are variation of RTI version above
+  using (remote) tasks and message passing.
+
 * pipe_csum.py uses asynchronous pipes to write data to and read data from a
   system program (that computes checksum of data).
 
