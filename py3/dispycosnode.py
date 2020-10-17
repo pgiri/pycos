@@ -2050,25 +2050,13 @@ if __name__ == '__main__':
         cfg = configparser.ConfigParser()
         cfg.read(_dispycos_var)
         cfg = dict(cfg.items('DEFAULT'))
-        cfg['cpus'] = int(cfg['cpus'])
-        cfg['port'] = int(cfg['port'])
-        cfg['serve'] = int(cfg['serve'])
-        cfg['msg_timeout'] = int(cfg['msg_timeout'])
-        cfg['min_pulse_interval'] = int(cfg['min_pulse_interval'])
-        cfg['max_pulse_interval'] = int(cfg['max_pulse_interval'])
-        cfg['zombie_period'] = int(cfg['zombie_period'])
-        cfg['ping_interval'] = int(cfg['ping_interval'])
-        cfg['daemon'] = cfg['daemon'] == 'True'
-        cfg['clean'] = cfg['clean'] == 'True'
-        # cfg['discover_peers'] = cfg['discover_peers'] == 'True'
-        cfg['loglevel'] = cfg['loglevel'] == 'True'
-        cfg['node_ports'] = [_dispycos_var.strip()[1:-1] for _dispycos_var in
-                             cfg['node_ports'][1:-1].split(',')]
-        cfg['node_ports'] = [_dispycos_var for _dispycos_var in cfg['node_ports'] if _dispycos_var]
-        cfg['ipv4_udp_multicast'] = cfg['ipv4_udp_multicast'] == 'True'
-        cfg['peers'] = [_dispycos_var.strip()[1:-1] for _dispycos_var in
-                        cfg['peers'][1:-1].split(',')]
-        cfg['peers'] = [_dispycos_var for _dispycos_var in cfg['peers'] if _dispycos_var]
+        for key in cfg:
+            if key in ('node_ports', 'peers'):
+                cfg[key] = [value.strip()[1:-1] for value in cfg[key][1:-1].split(',')]
+                cfg[key] = [_dispycos_var for _dispycos_var in cfg[key] if _dispycos_var]
+            else:
+                if cfg[key]:
+                    cfg[key] = eval(cfg[key])
         for key, value in _dispycos_config.items():
             if _dispycos_config[key] != parser.get_default(key) or key not in cfg:
                 cfg[key] = _dispycos_config[key]
