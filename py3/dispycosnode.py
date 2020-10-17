@@ -139,10 +139,10 @@ def _dispycos_server_proc():
                 try:
                     pycos.serialize(msg.args[1][1])
                 except Exception as exc:
-                    msg.args = (msg.args[0], (type(exc), traceback.format_exc()))
+                    msg.args = (msg.args[0],
+                                (type(exc), ('Serialization of task result failed: %s' % exc)))
 
-                if msg.args[1][0] != StopIteration:
-                    assert isinstance(msg.args[1][1], str)
+                if msg.args[1][0] != StopIteration and isinstance(msg.args[1][1], str):
                     exc = ('Task %s running at %s raised exception %s:\n%s' %
                            (msg.args[0].name, task.location, msg.args[1][0], msg.args[1][1]))
                     msg.args = (msg.args[0], (msg.args[1][0], exc))
@@ -257,8 +257,9 @@ def _dispycos_server_proc():
                 _dispycos_job.args = deserialize(_dispycos_job.args)
                 _dispycos_job.kwargs = deserialize(_dispycos_job.kwargs)
             except Exception:
-                logger.debug('invalid client to run')
-                _dispycos_var = (sys.exc_info()[0], _dispycos_job.name, traceback.format_exc())
+                _dispycos_var = sys.exc_info()
+                _dispycos_var = MonitorException(
+                    _dispycos_var[0], (_dispycos_var[1], 'Invalid job code or arguments'))
                 _dispycos_reply_task.send(_dispycos_var)
             else:
                 Task._pycos._lock.acquire()
@@ -266,7 +267,9 @@ def _dispycos_server_proc():
                     _dispycos_var = Task(globals()[_dispycos_job.name],
                                          *(_dispycos_job.args), **(_dispycos_job.kwargs))
                 except Exception:
-                    _dispycos_var = (sys.exc_info()[0], _dispycos_job.name, traceback.format_exc())
+                    _dispycos_var = sys.exc_info()
+                    _dispycos_var = MonitorException(
+                        _dispycos_var[0], (_dispycos_var[1], 'Invalid task invocation'))
                 else:
                     _dispycos_job_tasks.add(_dispycos_var)
                     _dispycos_jobs_done.clear()
