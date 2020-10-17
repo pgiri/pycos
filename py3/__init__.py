@@ -58,7 +58,7 @@ __maintainer__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __license__ = "Apache 2.0"
 __url__ = "https://pycos.sourceforge.io"
 __status__ = "Production"
-__version__ = "4.9.1"
+__version__ = "4.9.2"
 
 __all__ = ['Task', 'Pycos', 'Lock', 'RLock', 'Event', 'Condition', 'Semaphore',
            'AsyncSocket', 'HotSwapException', 'MonitorException', 'Location', 'Channel',
@@ -3736,52 +3736,44 @@ class Pycos(object, metaclass=Singleton):
                         elif task._state == Pycos._Running:
                             task._state = Pycos._Scheduled
                     else:
-                        if task._exceptions and task._exceptions[-1][0] != GeneratorExit:
-                            exc = task._exceptions[0]
-                            # assert isinstance(exc, tuple)
-                            if len(exc) == 2:
-                                exc = ''.join(traceback.format_exception_only(*exc))
+                        if task._exceptions:
+                            if task._exceptions[-1][0] == GeneratorExit:
+                                task._exceptions = []
                             else:
-                                exc = ''.join(traceback.format_exception(*exc))
-                            logger.warning('uncaught exception in %s:\n%s', task, exc)
-                            try:
-                                task._generator.close()
-                            except Exception:
-                                logger.warning('closing %s raised exception: %s',
-                                               task._name, traceback.format_exc())
+                                exc = task._exceptions[0]
+                                if len(exc) == 2 or not exc[2]:
+                                    exc_trace = ''.join(traceback.format_exception_only(*exc[:2]))
+                                else:
+                                    exc_trace = ''.join(traceback.format_exception(exc[0], exc[1],
+                                                                                   exc[2].tb_next))
+                                logger.warning('uncaught exception in %s:\n%s', task, exc_trace)
+                                try:
+                                    task._generator.close()
+                                except Exception:
+                                    logger.warning('closing %s raised exception: %s',
+                                                   task._name, traceback.format_exc())
 
                         # delete this task
                         # if task._state not in (Pycos._Scheduled, Pycos._Running):
                         #     logger.warning('task "%s" is in state: %s', task._name, task._state)
                         monitors = list(task._monitors)
                         for monitor in monitors:
-                            if monitor._location:
-                                # remote monitor; prepare serializable data
-                                if task._exceptions:
-                                    exc = task._exceptions[0][:2]
-                                    try:
-                                        serialize(exc[1])
-                                    except pickle.PicklingError:
-                                        # send only the type
-                                        exc = (exc[0], type(exc[1].args[0]))
-                                    exc = MonitorException(task, exc)
-                                else:
+                            if task._exceptions:
+                                exc = task._exceptions[0]
+                                exc = MonitorException(task, (exc[0], exc_trace))
+                            else:
+                                if monitor._location:
                                     exc = task._value
                                     try:
                                         serialize(exc)
                                     except pickle.PicklingError:
-                                        exc = type(exc)
+                                        exc = traceback.format_exc()
                                     exc = MonitorException(task, (StopIteration, exc))
-                                monitor.send(exc)
-                            else:
-                                if task._exceptions:
-                                    exc = MonitorException(task, task._exceptions[0])
                                 else:
                                     exc = MonitorException(task, (StopIteration, task._value))
-                                if monitor.send(exc):
-                                    logger.warning('monitor for %s/%s is not valid!',
-                                                   task._name, task._id)
-                                    task._monitors.discard(monitor)
+                            if monitor.send(exc):
+                                logger.warning('monitor for %s is not valid!', task.name)
+                                task._monitors.discard(monitor)
 
                         task._msgs.clear()
                         task._monitors.clear()
