@@ -138,8 +138,14 @@ def _dispycos_server_proc():
                     _dispycos_jobs_done.set()
                 try:
                     pycos.serialize(msg.args[1][1])
-                except Exception:
-                    msg.args = (msg.args[0], (msg.args[1][0], type(msg.args[1][1])))
+                except Exception as exc:
+                    msg.args = (msg.args[0], (type(exc), traceback.format_exc()))
+
+                if msg.args[1][0] != StopIteration:
+                    assert isinstance(msg.args[1][1], str)
+                    exc = ('Task %s running at %s raised exception %s:\n%s' %
+                           (msg.args[0].name, task.location, msg.args[1][0], msg.args[1][1]))
+                    msg.args = (msg.args[0], (msg.args[1][0], exc))
                 _dispycos_scheduler_task.send(msg)
             else:
                 logger.warning('invalid message to monitor ignored: %s', type(msg))

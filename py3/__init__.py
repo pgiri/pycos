@@ -3762,15 +3762,13 @@ class Pycos(object, metaclass=Singleton):
                                 exc = task._exceptions[0]
                                 exc = MonitorException(task, (exc[0], exc_trace))
                             else:
+                                exc = (StopIteration, task._value)
                                 if monitor._location:
-                                    exc = task._value
                                     try:
-                                        serialize(exc)
-                                    except pickle.PicklingError:
-                                        exc = traceback.format_exc()
-                                    exc = MonitorException(task, (StopIteration, exc))
-                                else:
-                                    exc = MonitorException(task, (StopIteration, task._value))
+                                        serialize(task._value)
+                                    except Exception as exc:
+                                        exc = (type(exc), traceback.format_exc())
+                                exc = MonitorException(task, exc)
                             if monitor.send(exc):
                                 logger.warning('monitor for %s is not valid!', task.name)
                                 task._monitors.discard(monitor)
