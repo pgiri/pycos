@@ -93,12 +93,13 @@ class Singleton(type):
     _memo = {}
 
     def __call__(cls, *args, **kwargs):
-        if cls not in Singleton._memo:
-            Singleton._memo[cls] = super(Singleton, cls).__call__(*args, **kwargs)
-        return Singleton._memo[cls]
+        c = Singleton._memo.get(cls, None)
+        if not c:
+            c = Singleton._memo[cls] = super(Singleton, cls).__call__(*args, **kwargs)
+        return c
 
     @classmethod
-    def empty(_, cls):
+    def discard(_, cls):
         """
         Forget singleton instance.
         """
@@ -3904,7 +3905,7 @@ class Pycos(object, metaclass=Singleton):
         logger.shutdown()
         if reset:
             Task._pycos = Channel._pycos = None
-            Singleton.empty(self.__class__)
+            Singleton.discard(self.__class__)
 
     def finish(self):
         """Wait until all non-daemon tasks finish and then shutdown the
