@@ -1254,7 +1254,8 @@ class Scheduler(object):
                         'auth': node.auth, 'setup_args': setup_args,
                         'restart_servers': client._restart_servers, 'reply_task': task})
         cpus = yield task.receive(timeout=MsgTimeout)
-        if not cpus or client != self._cur_client:
+        if not isinstance(cpus, int) or cpus <= 0 or client != self._cur_client:
+            pycos.logger.debug('Node %s setup failed: %s', node.addr, cpus)
             node.status = Scheduler.NodeClosed
             node.task.send({'req': 'release', 'auth': client._auth, 'reply_task': None})
             node.lock.release()
