@@ -2719,6 +2719,19 @@ class Task(object):
                                (self._name, self._id, type(self._complete)))
         raise StopIteration(value)
 
+    def __call__(self):
+        """Get 'value' of this task. If called from a task, it should be used with 'yield' as
+        'value = yield task()'; if called from a thred, e.g., 'main', it should be used
+        without 'yield' as 'value = task()'.
+        """
+        caller = Pycos.cur_task()
+        if caller:
+            value = yield self.finish()
+            raise StopIteration(value)
+        else:
+            value = self.value()
+            return value
+
     def terminate(self):
         """Terminate task.
 
