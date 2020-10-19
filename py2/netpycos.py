@@ -299,7 +299,7 @@ class Pycos(pycos.Pycos):
             Pycos._pycos._exit(await_non_daemons, False)
             super(self.__class__, self)._exit(await_non_daemons, True)
             SysTask._pycos = RTI._pycos = _Peer._pycos = None
-            Singleton.empty(self.__class__)
+            Singleton.discard(self.__class__)
             Pycos._pycos = None
 
     def finish(self):
