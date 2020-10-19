@@ -1761,7 +1761,7 @@ def _dispycos_node():
 
             elif req == 'release':
                 auth = msg.get('auth', None)
-                if comp_state.auth == auth:
+                if auth and (auth == comp_state.auth or auth == node_auth):
                     setup_args = msg.get('setup_args', None)
                     if setup_args:
                         client = None
@@ -1786,7 +1786,7 @@ def _dispycos_node():
 
             elif req == 'close' or req == 'quit' or req == 'terminate':
                 auth = msg.get('auth', None)
-                if auth == node_auth:
+                if auth and (auth == comp_state.auth or auth == node_auth):
                     if _dispycos_config['serve']:
                         if req != 'close':
                             _dispycos_config['serve'] = 0
