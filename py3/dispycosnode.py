@@ -1847,6 +1847,12 @@ def _dispycos_node():
                 pycos.logger.warning('Invalid message %s ignored',
                                      str(msg) if isinstance(msg, dict) else '')
 
+        if os.path.isfile(node_servers[0].pid_file) and not client_info.spawn_mpproc:
+            try:
+                os.remove(node_servers[0].pid_file)
+            except Exception:
+                pycos.logger.debug(traceback.format_exc())
+                pass
         if os.name == 'nt':
             os.kill(dispycos_pid, signal.CTRL_C_EVENT)
         else:
@@ -1863,8 +1869,9 @@ def _dispycos_node():
                 parent_pipe.send({'msg': 'quit', 'auth': client_info.auth})
             except Exception:
                 pass
-        if node_task.is_alive():
-            node_task.send({'req': 'quit', 'auth': node_auth})
+        if os.path.isfile(node_servers[0].pid_file):
+            if node_task.send({'req': 'quit', 'auth': node_auth}):
+                raise KeyboardInterrupt
         else:
             raise KeyboardInterrupt
 
@@ -1897,7 +1904,7 @@ def _dispycos_node():
                         '          close current client when current jobs are finished\n'
                         '  "quit" to "close" current client and exit dispycosnode\n'
                         '  "terminate" to kill current jobs and "quit": ')
-            except (KeyboardInterrupt, EOFError):
+            except (KeyboardInterrupt, EOFError, IOError):
                 if node_task.is_alive():
                     node_task.send({'req': 'quit', 'auth': node_auth})
                 break
@@ -1926,12 +1933,6 @@ def _dispycos_node():
     for peer in dispycos_scheduler.peers():
         pycos.Task(dispycos_scheduler.close_peer, peer)
 
-    if os.path.isfile(node_servers[0].pid_file) and not client_info.spawn_mpproc:
-        try:
-            os.remove(node_servers[0].pid_file)
-        except Exception:
-            pycos.logger.debug(traceback.format_exc())
-            pass
     # if 'suid' in _dispycos_config:
     #     os.setegid(_dispycos_config['sgid'])
     #     os.seteuid(_dispycos_config['suid'])
