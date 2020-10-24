@@ -264,6 +264,8 @@ class Pycos(pycos.Pycos):
         self._signature = self._signature.hexdigest()
         self._auth_code = hashlib.sha1((self._signature + secret).encode()).hexdigest()
         pycos.Task._sign = pycos.Channel._sign = SysTask._sign = RTI._sign = self._signature
+        if os.name != 'nt' and '__mp_main__' not in sys.modules:
+            sys.modules['__mp_main__'] = sys.modules['__main__']
         if discover_peers:
             self.discover_peers()
 
