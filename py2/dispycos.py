@@ -212,7 +212,8 @@ class Client(object):
         self._disable_servers = bool(disable_servers)
         self._restart_servers = bool(restart_servers)
         self._abandon_zombie = bool(abandon_zombie_nodes)
-        self._rtasks = {}
+        self.__rtasks = {}
+        self.__askew_tasks = {}
 
         depends = set()
         cwd = os.getcwd()
@@ -361,13 +362,13 @@ class Client(object):
 
         raise StopIteration((yield Task(_tasks, self).finish()))
 
-    def close(self, await_async=False, terminate=False, timeout=None):
+    def close(self, await_io=False, terminate=False, timeout=None):
         """Close client. Must be used with 'yield' as 'yield client.close()'.
         """
 
         def _close(self, done, task=None):
             msg = {'req': 'close_client', 'auth': self._auth, 'reply_task': task,
-                   'await_async': bool(await_async), 'terminate': bool(terminate)}
+                   'await_io': bool(await_io), 'terminate': bool(terminate)}
             self.scheduler.send(msg)
             msg = yield task.receive(timeout=timeout)
             if msg != 'closed':
@@ -383,10 +384,10 @@ class Client(object):
             SysTask(_close, self, done)
             yield done.wait()
 
-    def run_at(self, where, gen, *args, **kwargs):
+    def rtask_at(self, where, gen, *args, **kwargs):
         """Must be used with 'yield' as
 
-        'rtask = yield client.run_at(where, gen, ...)'
+        'rtask = yield client.rtask_at(where, gen, ...)'
 
         Run given generator function 'gen' with arguments 'args' and 'kwargs' at
         remote server 'where'.  If the request is successful, 'rtask' will be a
@@ -403,46 +404,25 @@ class Client(object):
         'gen' must be generator function, as it is used to run task at
         remote location.
         """
-        raise StopIteration((yield self._run_request('run_async', where, 1, gen, *args, **kwargs)))
+        raise StopIteration((yield self._rtask_req(where, 1, gen, *args, **kwargs)))
 
-    def run(self, gen, *args, **kwargs):
-        """Run CPU bound task at any remote server; see 'run_at'
-        above.
+    def rtask(self, gen, *args, **kwargs):
+        """Run CPU bound task at any remote server; see 'rtask_at' above.
         """
-        raise StopIteration((yield self._run_request('run_async', None, 1, gen, *args, **kwargs)))
+        raise StopIteration((yield self._rtask_req(None, 1, gen, *args, **kwargs)))
 
-    def run_result_at(self, where, gen, *args, **kwargs):
+    def io_rtask_at(self, where, gen, *args, **kwargs):
         """Must be used with 'yield' as
 
-        'rtask = yield client.run_result_at(where, gen, ...)'
-
-        Whereas 'run_at' and 'run' return remote task instance,
-        'run_result_at' and 'run_result' wait until remote task is
-        finished and return the result of that remote task (i.e., either
-        the value of 'StopIteration' or the last value 'yield'ed).
-
-        'where', 'gen', 'args', 'kwargs' are as explained in 'run_at'.
-        """
-        raise StopIteration((yield self._run_request('run_result', where, 1, gen, *args, **kwargs)))
-
-    def run_result(self, gen, *args, **kwargs):
-        """Run CPU bound task at any remote server and return result of
-        that task; see 'run_result_at' above.
-        """
-        raise StopIteration((yield self._run_request('run_result', None, 1, gen, *args, **kwargs)))
-
-    def run_async_at(self, where, gen, *args, **kwargs):
-        """Must be used with 'yield' as
-
-        'rtask = yield client.run_async_at(where, gen, ...)'
+        'rtask = yield client.io_rtask_at(where, gen, ...)'
 
         Run given generator function 'gen' with arguments 'args' and 'kwargs' at
         remote server 'where'.  If the request is successful, 'rtask' will be a
         (remote) task; check result with 'isinstance(rtask,
         pycos.Task)'. The generator is supposed to be (mostly) I/O bound and
-        not consume CPU time. Unlike other 'run' variants, tasks created
-        with 'async' are not "tracked" by scheduler (see online documentation for
-        more details).
+        not consume CPU time. The scheduler will schedule unlimited number of these
+        I/O tasks at a server, whereas at most one CPU bound task is scheduled at
+        any time.
 
         If 'where' is a string, it is assumed to be IP address of a node, in
         which case the task is scheduled at that node on a server at that
@@ -452,35 +432,17 @@ class Client(object):
         'gen' must be generator function, as it is used to run task at
         remote location.
         """
-        raise StopIteration((yield self._run_request('run_async', where, 0, gen, *args, **kwargs)))
+        raise StopIteration((yield self._rtask_req(where, 0, gen, *args, **kwargs)))
 
-    def run_async(self, gen, *args, **kwargs):
-        """Run I/O bound task at any server; see 'run_async_at'
-        above.
+    def io_rtask(self, gen, *args, **kwargs):
+        """Run I/O bound task at any server; see 'io_rtask_at' above.
         """
-        raise StopIteration((yield self._run_request('run_async', None, 0, gen, *args, **kwargs)))
+        raise StopIteration((yield self._rtask_req(None, 0, gen, *args, **kwargs)))
 
-    def run_results(self, gen, iter):
-        """Must be used with 'yield', as for example,
-        'results = yield scheduler.map_results(generator, list_of_tuples)'.
-
-        Execute generator 'gen' with arguments from given iterable. The return
-        value is list of results that correspond to executing 'gen' with
-        arguments in iterable in the same order.
-        """
-        tasks = []
-        append_task = tasks.append
-        for params in iter:
-            if not isinstance(params, tuple):
-                if hasattr(params, '__iter__'):
-                    params = tuple(params)
-                else:
-                    params = (params,)
-            append_task(Task(self.run_result, gen, *params))
-        results = [None] * len(tasks)
-        for i, task in enumerate(tasks):
-            results[i] = yield task.finish()
-        raise StopIteration(results)
+    run_at = rtask_at
+    run = rtask
+    run_async_at = io_rtask_at
+    run_async = io_rtask
 
     def enable_node(self, ip_addr, *setup_args):
         """If client disabled nodes (with 'disabled_nodes=True' when
@@ -623,7 +585,7 @@ class Client(object):
             self.scheduler.send({'req': 'abandon_zombie', 'auth': self._auth, 'addr': location,
                                  'flag': bool(flag)})
 
-    def _run_request(self, request, where, cpu, gen, *args, **kwargs):
+    def _rtask_req(self, where, cpu, gen, *args, **kwargs):
         """Internal use only.
         """
         if isinstance(gen, str):
@@ -634,28 +596,45 @@ class Client(object):
         if name in self._xfer_funcs:
             code = None
         else:
-            # if not inspect.isgeneratorfunction(gen):
-            #     logger.warning('"%s" is not a valid generator function', name)
-            #     raise StopIteration([])
+            if not inspect.isgeneratorfunction(gen):
+                logger.warning('"%s" is not a valid generator function', name)
+                raise StopIteration(None)
+
             code = inspect.getsource(gen).lstrip()
 
-        def _run_req(task=None):
-            msg = {'req': 'job', 'auth': self._auth,
-                   'job': _DispycosJob_(request, task, name, where, cpu, code, args, kwargs)}
+        def _job_req(task=None):
+            msg = {'req': 'job', 'auth': self._auth, 'reply_task': task,
+                   'job': _DispycosJob_(name, where, cpu, code, args, kwargs)}
             if (yield self.scheduler.deliver(msg, timeout=MsgTimeout)) == 1:
-                resp = yield task.receive()
-                if isinstance(resp, Task):
-                    self._rtasks[resp] = resp
-                    if self.status_task:
-                        msg = DispycosTaskInfo(resp, args, kwargs, time.time())
-                        self.status_task.send(DispycosStatus(Scheduler.TaskCreated, msg))
-                if not request.endswith('async'):
-                    resp = yield task.receive()
+                rtask = yield task.receive()
+                if isinstance(rtask, Task):
+                    if self.__askew_tasks:
+                        askew = self.__askew_tasks.pop(rtask, None)
+                    else:
+                        askew = None
+                    if askew:
+                        if askew._value[0] == StopIteration:
+                            pycos.logger.debug('rtask %s done', rtask)
+                            rtask._value = askew._value[1]
+                        else:
+                            pycos.logger.warning('rtask %s failed: %s with %s',
+                                                 rtask, askew._value[0], askew._value[1])
+                        rtask._complete.set()
+                        if self.status_task:
+                            self.status_task.send(MonitorException(rtask, askew._value))
+                    else:
+                        setattr(rtask, '_value', None)
+                        setattr(rtask, '_complete', pycos.Event())
+                        rtask._complete.clear()
+                        self.__rtasks[rtask] = rtask
+                        if self.status_task:
+                            msg = DispycosTaskInfo(rtask, args, kwargs, time.time())
+                            self.status_task.send(DispycosStatus(Scheduler.TaskCreated, msg))
             else:
-                resp = None
-            raise StopIteration(resp)
+                rtask = None
+            raise StopIteration(rtask)
 
-        raise StopIteration((yield Task(_run_req).finish()))
+        raise StopIteration((yield Task(_job_req).finish()))
 
     def _pulse_proc(self, task=None):
         """For internal use only.
@@ -672,19 +651,35 @@ class Client(object):
             elif isinstance(msg, dict):
                 if msg.get('auth', None) != self._auth:
                     continue
+                last_pulse = time.time()
                 req = msg.get('req', None)
-                if req == 'result':
+
+                if isinstance(req, DispycosStatus):
                     # TODO: process in Scheduler if not shared
-                    exc = msg.get('exc', None)
-                    if isinstance(exc, MonitorException):
-                        rtask = self._rtasks.pop(exc.args[0], None)
+                    if (req.status == Scheduler.TaskFinished or
+                        req.status == Scheduler.TaskAbandoned):
+                        if not isinstance(req.info, MonitorException):
+                            pycos.logger.debug('invalid task finished message: %s', type(req.info))
+                            continue
+                        rtask = self.__rtasks.pop(req.info.args[0], None)
                         if rtask:
-                            if exc.args[1][0] == StopIteration:
+                            if req.info.args[1][0] == StopIteration:
                                 pycos.logger.debug('rtask %s done', rtask)
+                                rtask._value = req.info.args[1][1]
                             else:
                                 pycos.logger.warning('rtask %s failed: %s with %s',
-                                                     rtask, exc.args[1][0], exc.args[1][1])
-                        self.status_task.send(exc)
+                                                     rtask, req.info.args[1][0], req.info.args[1][1])
+                            rtask._complete.set()
+                            if self.status_task:
+                                self.status_task.send(req.info)
+                        else:
+                            rtask = req.info.args[0]
+                            setattr(rtask, '_value', req.info.args[1])
+                            setattr(rtask, '_complete', pycos.Event())
+                            rtask._complete.clear()
+                            self.__askew_tasks[rtask] = rtask
+                    else:
+                        pycos.logger.debug('invalid task finished status: %s', req.status)
 
                 elif req == 'msg':
                     pycos.logger.info(msg.get('msg'))
@@ -705,6 +700,9 @@ class Client(object):
                     reply_task.send({'auth': self._auth, 'req': 'allocate',
                                      'ip_addr': ip_addr, 'cpus': cpus})
 
+                else:
+                    pycos.logger.debug('Ignoring message: %s', type(msg))
+
             elif msg == 'quit':
                 break
 
@@ -716,8 +714,6 @@ class Client(object):
 
             else:
                 logger.debug('ignoring invalid pulse message')
-
-        self._pulse_task = None
 
     def __getstate__(self):
         state = {}
@@ -753,11 +749,9 @@ Computation = Client
 class _DispycosJob_(object):
     """Internal use only.
     """
-    __slots__ = ('request', 'reply_task', 'name', 'where', 'cpu', 'code', 'args', 'kwargs', 'done')
+    __slots__ = ('name', 'where', 'cpu', 'code', 'args', 'kwargs', 'done')
 
-    def __init__(self, request, reply_task, name, where, cpu, code, args=None, kwargs=None):
-        self.request = request
-        self.reply_task = reply_task
+    def __init__(self, name, where, cpu, code, args=None, kwargs=None):
         self.name = name
         self.where = where
         self.cpu = cpu
@@ -787,10 +781,13 @@ class Scheduler(object):
     ServerDisconnected = 17
     ServerAbandoned = 18
 
-    TaskCreated = 21
-    TaskAbandoned = 22
-    ClientScheduled = 23
-    ClientClosed = 24
+    TaskStarted = 21
+    TaskFinished = 22
+    TaskAbandoned = 23
+    TaskCreated = TaskStarted
+
+    ClientScheduled = 31
+    ClientClosed = 32
 
     __metaclass__ = pycos.Singleton
 
@@ -835,7 +832,7 @@ class Scheduler(object):
             self.pid = None
             self.done = pycos.Event()
 
-        def run(self, job, client, node):
+        def run(self, job, reply_task, node):
             def _run(self, task=None):
                 self.task.send({'req': 'run', 'auth': node.auth, 'job': job, 'reply_task': task})
                 rtask = yield task.receive(timeout=MsgTimeout)
@@ -844,13 +841,12 @@ class Scheduler(object):
                 job.args = job.kwargs = None
                 if isinstance(rtask, Task):
                     # TODO: keep func too for fault-tolerance
-                    self.rtasks[rtask] = (rtask, job)
+                    self.rtasks[rtask] = job
                     if self.askew_results:
                         msg = self.askew_results.pop(rtask, None)
                         if msg:
                             self.scheduler.__status_task.send(msg)
                 else:
-                    logger.debug('failed to create rtask: %s', rtask)
                     if job.cpu:
                         self.cpu_avail.set()
                         if (self.status == Scheduler.ServerInitialized and
@@ -863,7 +859,7 @@ class Scheduler(object):
                 raise StopIteration(rtask)
 
             rtask = yield SysTask(_run, self).finish()
-            job.reply_task.send(rtask)
+            reply_task.send(rtask)
 
     def __init__(self, **kwargs):
         self._nodes = {}
@@ -956,8 +952,8 @@ class Scheduler(object):
                         logger.warning('server "%s" is invalid', rtask.location)
                         continue
                 node.last_pulse = now
-                info = server.rtasks.pop(rtask, None)
-                if not info:
+                job = server.rtasks.pop(rtask, None)
+                if not job:
                     # Due to 'yield' used to create rtask, scheduler may not
                     # have updated self._rtasks before the task's
                     # MonitorException is received, so put it in
@@ -965,8 +961,7 @@ class Scheduler(object):
                     # when it receives rtask
                     server.askew_results[rtask] = msg
                     continue
-                # assert isinstance(info[1], _DispycosJob_)
-                job = info[1]
+                # assert isinstance(job, _DispycosJob_)
                 if job.cpu:
                     server.cpu_avail.set()
                     if (server.status == Scheduler.ServerInitialized and
@@ -976,15 +971,9 @@ class Scheduler(object):
                         self._cpus_avail.set()
                         node.cpus_used -= 1
                         node.load = float(node.cpus_used) / len(node.servers)
-                if job.request.endswith('async'):
-                    pass
-                else:
-                    job.reply_task.send(msg.args[1][1])
                 if self.__client:
-                    if len(msg.args) > 2:
-                        msg.args = (msg.args[0], msg.args[1])
-                    self.__client._pulse_task.send({'req': 'result', 'exc': msg,
-                                                    'auth': self.__client_auth})
+                    status = DispycosStatus(Scheduler.TaskFinished, msg)
+                    self.__client._pulse_task.send({'req': status, 'auth': self.__client_auth})
 
             elif isinstance(msg, pycos.PeerStatus):
                 if msg.status == pycos.PeerStatus.Online:
@@ -1342,7 +1331,7 @@ class Scheduler(object):
         self._disabled_nodes.pop(node.addr, None)
         node.disabled_servers.update(node.servers)
         node.servers.clear()
-        if client and client._auth == status.get('client_auth'):
+        if client == self.__client and client._auth == status.get('client_auth'):
             for rtask in status.get('servers', []):
                 server = node.disabled_servers.pop(rtask.location, None)
                 if not server:
@@ -1467,7 +1456,8 @@ class Scheduler(object):
         task.set_daemon()
         job = msg['job']
         auth = msg.get('auth', None)
-        if (not isinstance(job, _DispycosJob_) or not isinstance(job.reply_task, Task)):
+        reply_task = msg.get('reply_task', None)
+        if (not isinstance(job, _DispycosJob_) or not isinstance(reply_task, Task)):
             logger.warning('Ignoring invalid client job request: %s' % type(job))
             raise StopIteration
         cpu = job.cpu
@@ -1520,12 +1510,12 @@ class Scheduler(object):
                     self._cpu_nodes.discard(node)
                     if not self._cpu_nodes:
                         self._cpus_avail.clear()
-            yield server.run(job, self.__client, node)
+            yield server.run(job, reply_task, node)
 
         elif isinstance(where, str):
             node = self._nodes.get(where, None)
             if not node:
-                job.reply_task.send(None)
+                reply_task.send(None)
                 raise StopIteration
             while 1:
                 server = None
@@ -1556,16 +1546,16 @@ class Scheduler(object):
                     self._cpu_nodes.discard(node)
                     if not self._cpu_nodes:
                         self._cpus_avail.clear()
-            yield server.run(job, self.__client, node)
+            yield server.run(job, reply_task, node)
 
         elif isinstance(where, pycos.Location):
             node = self._nodes.get(where.addr)
             if not node:
-                job.reply_task.send(None)
+                reply_task.send(None)
                 raise StopIteration
             server = node.servers.get(where)
             if not server:
-                job.reply_task.send(None)
+                reply_task.send(None)
                 raise StopIteration
             if cpu:
                 while (not node.cpu_avail.is_set() or not server.cpu_avail.is_set()):
@@ -1580,10 +1570,10 @@ class Scheduler(object):
                     self._cpu_nodes.discard(node)
                     if not self._cpu_nodes:
                         self._cpus_avail.clear()
-            yield server.run(job, self.__client, node)
+            yield server.run(job, reply_task, node)
 
         else:
-            job.reply_task.send(None)
+            reply_task.send(None)
 
     def __client_proc(self, task=None):
         task.set_daemon()
@@ -1901,8 +1891,7 @@ class Scheduler(object):
                     logger.warning('Ignoring invalid client request "%s"', req)
                     continue
                 SysTask(self.__close_client, reply_task=reply_task,
-                        await_async=msg.get('await_async', False),
-                        terminate=msg.get('terminate', False))
+                        await_io=msg.get('await_io', False), terminate=msg.get('terminate', False))
 
             elif req == 'abandon_zombie':
                 addr = msg.get('addr', None)
@@ -1927,7 +1916,7 @@ class Scheduler(object):
             else:
                 logger.warning('Ignoring invalid client request "%s"', req)
 
-    def __close_node(self, node, await_async=False, terminate=False, task=None):
+    def __close_node(self, node, await_io=False, terminate=False, task=None):
         if not node.task:
             logger.debug('Closing node %s ignored: %s', node.addr, node.status)
             raise StopIteration(-1)
@@ -1949,7 +1938,7 @@ class Scheduler(object):
         servers.extend(node.disabled_servers.values())
         for server in servers:
             if server.task:
-                SysTask(self.__close_server, server, server.pid, node, await_async=await_async,
+                SysTask(self.__close_server, server, server.pid, node, await_io=await_io,
                         terminate=terminate)
         for server in servers:
             if server.task:
@@ -1967,7 +1956,7 @@ class Scheduler(object):
         if node.task and node.status < Scheduler.NodeClosed:
             node.task.send({'req': 'release', 'auth': node.auth})
 
-    def __close_server(self, server, pid, node, await_async=False, terminate=False, task=None):
+    def __close_server(self, server, pid, node, await_io=False, terminate=False, task=None):
         if server.pid != pid:
             raise StopIteration(0)
         server_task, server.task = server.task, None
@@ -1986,7 +1975,7 @@ class Scheduler(object):
                     logger.info('Waiting for %s remote tasks at %s to finish',
                                 len(server.rtasks), server_task.location)
                     yield server.cpu_avail.wait(timeout=MsgTimeout if terminate else None)
-            if await_async:
+            if await_io:
                 while server.rtasks:
                     logger.info('Waiting for %s remote tasks at %s to finish',
                                 len(server.rtasks), server_task.location)
@@ -2002,11 +1991,10 @@ class Scheduler(object):
         if server.rtasks:
             logger.warning('%s tasks abandoned at %s', len(server.rtasks), server_task.location)
             for rtask, job in server.rtasks.itervalues():
-                if not job.request.endswith('async'):
-                    job.reply_task.send(None)
-                if client and client.status_task:
-                    status = MonitorException(rtask, (Scheduler.TaskAbandoned, None))
-                    client.status_task.send(status)
+                if client:
+                    status = DispycosStatus(Scheduler.TaskAbandoned,
+                                            MonitorException(rtask, (Scheduler.TaskAbandoned, None)))
+                    client._pulse_task.send({'req': status, 'auth': self.__client_auth})
             server.rtasks.clear()
 
         server.xfer_files = []
@@ -2031,11 +2019,11 @@ class Scheduler(object):
                 node.load = 0.0
         raise StopIteration(0)
 
-    def __close_client(self, reply_task=None, await_async=False, terminate=False, task=None):
+    def __close_client(self, reply_task=None, await_io=False, terminate=False, task=None):
         if self.__client:
-            close_tasks = [SysTask(self.__close_node, node, await_async=await_async,
+            close_tasks = [SysTask(self.__close_node, node, await_io=await_io,
                                    terminate=terminate) for node in self._nodes.itervalues()]
-            close_tasks.extend([SysTask(self.__close_node, node, await_async=await_async,
+            close_tasks.extend([SysTask(self.__close_node, node, await_io=await_io,
                                         terminate=terminate)
                                 for node in self._disabled_nodes.itervalues()])
             for close_task in close_tasks:
