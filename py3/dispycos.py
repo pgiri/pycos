@@ -1998,7 +1998,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
 
         if server.rtasks:
             logger.warning('%s tasks abandoned at %s', len(server.rtasks), server_task.location)
-            for rtask, job in server.rtasks.values():
+            for rtask, job in server.rtasks.items():
                 if client:
                     status = DispycosStatus(Scheduler.TaskAbandoned,
                                             MonitorException(rtask, (Scheduler.TaskAbandoned, None)))
