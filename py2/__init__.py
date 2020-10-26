@@ -2659,6 +2659,8 @@ class Task(object):
                                (self._name, self._id, type(self._complete)))
         raise StopIteration(value)
 
+    __call__ = finish
+
     def terminate(self):
         """Terminate task.
 
