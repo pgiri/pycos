@@ -132,7 +132,10 @@ def _dispycos_server_proc():
             msg = yield task.receive()
             if isinstance(msg, MonitorException):
                 logger.debug('task %s done at %s', msg.args[0], task.location)
-                _dispycos_job_tasks.discard(msg.args[0])
+                try:
+                    _dispycos_job_tasks.remove(msg.args[0])
+                except KeyError:
+                    msg.args = (msg.args[0], (Scheduler.TaskTerminated, None))
                 _dispycos_busy_time.value = int(time.time())
                 if not _dispycos_job_tasks:
                     _dispycos_jobs_done.set()
@@ -142,7 +145,8 @@ def _dispycos_server_proc():
                     msg.args = (msg.args[0],
                                 (type(exc), ('Serialization of task result failed: %s' % exc)))
 
-                if msg.args[1][0] != StopIteration and isinstance(msg.args[1][1], str):
+                if (msg.args[1][0] != StopIteration and msg.args[1] != Scheduler.TaskTerminated and
+                    isinstance(msg.args[1][1], str)):
                     exc = ('Task %s running at %s raised exception %s:\n%s' %
                            (msg.args[0].name, task.location, msg.args[1][0], msg.args[1][1]))
                     msg.args = (msg.args[0], (msg.args[1][0], exc))
@@ -356,6 +360,7 @@ def _dispycos_server_proc():
     # kill any pending jobs
     for _dispycos_var in _dispycos_job_tasks:
         _dispycos_var.terminate()
+    _dispycos_job_tasks.clear()
     logger.debug('dispycos server "%s": %s tasks terminated',
                  _dispycos_name, len(_dispycos_job_tasks))
     if _dispycos_scheduler_task:
@@ -1214,10 +1219,10 @@ def _dispycos_node():
                 if server.done.is_set():
                     raise StopIteration
 
+            if not client_info.spawn_q or not server.task:
+                raise StopIteration
             client_info.spawn_q.put({'msg': 'close_server', 'auth': client_info.auth,
                                      'sid': server.id, 'pid': pid, 'status': 0, 'terminate': True})
-            if not server.task:
-                raise StopIteration
             if client_info.scheduler:
                 msg = {'status': Scheduler.ServerDisconnected, 'auth': client_info.auth,
                        'location': server.task.location, 'pid': pid}
@@ -1816,7 +1821,7 @@ def _dispycos_node():
                 pycos.logger.warning('Invalid message %s ignored',
                                      str(msg) if isinstance(msg, dict) else '')
 
-        if os.path.isfile(node_servers[0].pid_file) and not client_info.spawn_mpproc:
+        if os.path.isfile(node_servers[0].pid_file) and not client_info.spawn_q:
             try:
                 os.remove(node_servers[0].pid_file)
             except Exception:
