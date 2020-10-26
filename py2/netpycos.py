@@ -8,6 +8,7 @@ import socket
 import inspect
 import traceback
 import os
+import sys
 import stat
 import hashlib
 import collections
