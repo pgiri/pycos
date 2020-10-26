@@ -626,6 +626,10 @@ class Client(object):
                         if askew._value[0] == StopIteration:
                             pycos.logger.debug('rtask %s done', rtask)
                             rtask._value = askew._value[1]
+                        elif req.info.args[1][0] == Scheduler.TaskTerminated:
+                            pycos.logger.warning('rtask %s terminated', rtask)
+                        elif req.info.args[1][0] == Scheduler.TaskAbandoned:
+                            pycos.logger.warning('rtask %s abandoned', rtask)
                         else:
                             pycos.logger.warning('rtask %s failed: %s with %s',
                                                  rtask, askew._value[0], askew._value[1])
@@ -667,6 +671,7 @@ class Client(object):
                 if isinstance(req, DispycosStatus):
                     # TODO: process in Scheduler if not shared
                     if (req.status == Scheduler.TaskFinished or
+                        req.status == Scheduler.TaskTerminated or
                         req.status == Scheduler.TaskAbandoned):
                         if not isinstance(req.info, MonitorException):
                             pycos.logger.debug('invalid task finished message: %s', type(req.info))
@@ -676,6 +681,10 @@ class Client(object):
                             if req.info.args[1][0] == StopIteration:
                                 pycos.logger.debug('rtask %s done', rtask)
                                 rtask._value = req.info.args[1][1]
+                            elif req.info.args[1][0] == Scheduler.TaskTerminated:
+                                pycos.logger.warning('rtask %s terminated', rtask)
+                            elif req.info.args[1][0] == Scheduler.TaskAbandoned:
+                                pycos.logger.warning('rtask %s abandoned', rtask)
                             else:
                                 pycos.logger.warning('rtask %s failed: %s with %s',
                                                      rtask, req.info.args[1][0], req.info.args[1][1])
@@ -794,6 +803,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
     TaskStarted = 21
     TaskFinished = 22
     TaskAbandoned = 23
+    TaskTerminated = 24
     TaskCreated = TaskStarted
 
     ClientScheduled = 31
@@ -980,7 +990,10 @@ class Scheduler(object, metaclass=pycos.Singleton):
                         node.cpus_used -= 1
                         node.load = float(node.cpus_used) / len(node.servers)
                 if self.__client:
-                    status = DispycosStatus(Scheduler.TaskFinished, msg)
+                    if msg.args[1][0] == Scheduler.TaskTerminated:
+                        status = DispycosStatus(msg.args[1][0], msg)
+                    else:
+                        status = DispycosStatus(Scheduler.TaskFinished, msg)
                     self.__client._pulse_task.send({'req': status, 'auth': self.__client_auth})
 
             elif isinstance(msg, pycos.PeerStatus):
@@ -1967,6 +1980,13 @@ class Scheduler(object, metaclass=pycos.Singleton):
     def __close_server(self, server, pid, node, await_io=False, terminate=False, task=None):
         if server.pid != pid:
             raise StopIteration(0)
+        if server.status == Scheduler.ServerDisconnected:
+            for _ in range(10):
+                if not server.rtasks:
+                    break
+                yield task.sleep(0.2)
+            server.cpu_avail.set()
+            server.done.set()
         server_task, server.task = server.task, None
         if not server_task or not node.task:
             raise StopIteration(0)
@@ -1978,6 +1998,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
             node.task.send({'req': 'close_server', 'terminate': terminate, 'pid': pid,
                             'addr': server_task.location, 'auth': node.auth})
             server.status = Scheduler.ServerClosed
+        if server.status == Scheduler.ServerClosed:
             if server.rtasks:
                 if (not server.cpu_avail.is_set()):
                     logger.info('Waiting for %s remote tasks at %s to finish',
