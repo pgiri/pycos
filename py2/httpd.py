@@ -14,7 +14,7 @@ import re
 import traceback
 
 import pycos
-from pycos.dispycos import DispycosStatus, DispycosNodeAvailInfo
+from pycos.dispycos import DispycosStatus, DispycosNodeAvailInfo, Scheduler
 import pycos.dispycos as dispycos
 
 if sys.version_info.major > 2:
@@ -46,19 +46,19 @@ else:
 
 class HTTPServer(object):
 
-    NodeStatus = {dispycos.Scheduler.NodeDiscovered: 'Discovered',
-                  dispycos.Scheduler.NodeInitialized: 'Initialized',
-                  dispycos.Scheduler.NodeClosed: 'Closed',
-                  dispycos.Scheduler.NodeIgnore: 'Ignore',
-                  dispycos.Scheduler.NodeDisconnected: 'Disconnected',
-                  dispycos.Scheduler.NodeSuspended: 'Suspended',
-                  dispycos.Scheduler.NodeResumed: 'Initialized'}
-    ServerStatus = {dispycos.Scheduler.ServerDiscovered: 'Discovered',
-                    dispycos.Scheduler.ServerInitialized: 'Initialized',
-                    dispycos.Scheduler.ServerClosed: 'Closed',
-                    dispycos.Scheduler.ServerDisconnected: 'Disconnected',
-                    dispycos.Scheduler.ServerSuspended: 'Suspended',
-                    dispycos.Scheduler.ServerResumed: 'Initialized'}
+    NodeStatus = {Scheduler.NodeDiscovered: 'Discovered',
+                  Scheduler.NodeInitialized: 'Initialized',
+                  Scheduler.NodeClosed: 'Closed',
+                  Scheduler.NodeIgnore: 'Ignore',
+                  Scheduler.NodeDisconnected: 'Disconnected',
+                  Scheduler.NodeSuspended: 'Suspended',
+                  Scheduler.NodeResumed: 'Initialized'}
+    ServerStatus = {Scheduler.ServerDiscovered: 'Discovered',
+                    Scheduler.ServerInitialized: 'Initialized',
+                    Scheduler.ServerClosed: 'Closed',
+                    Scheduler.ServerDisconnected: 'Disconnected',
+                    Scheduler.ServerSuspended: 'Suspended',
+                    Scheduler.ServerResumed: 'Initialized'}
 
     ip_re = re.compile(r'^((\d+\.\d+\.\d+\.\d+)|([0-9a-f:]+))$')
     loc_re = re.compile(r'^((\d+\.\d+\.\d+\.\d+)|([0-9a-f:]+)):(\d+)$')
@@ -403,7 +403,7 @@ class HTTPServer(object):
                             node.update_time = time.time()
                             self._updates[node.addr] = node
             elif isinstance(msg, DispycosStatus):
-                if msg.status == dispycos.Scheduler.TaskCreated:
+                if msg.status == Scheduler.TaskStarted:
                     rtask = msg.info
                     node = self._nodes.get(rtask.task.location.addr)
                     if node:
@@ -414,8 +414,8 @@ class HTTPServer(object):
                             node.tasks_submitted += 1
                             node.update_time = time.time()
                             self._updates[node.addr] = node
-                elif (msg.status == dispycos.Scheduler.ServerInitialized or
-                      msg.status == dispycos.Scheduler.ServerResumed):
+                elif (msg.status == Scheduler.ServerInitialized or
+                      msg.status == Scheduler.ServerResumed):
                     node = self._nodes.get(msg.info.addr)
                     if node:
                         server = node.servers.get(str(msg.info), None)
@@ -425,9 +425,9 @@ class HTTPServer(object):
                         server.status = HTTPServer.ServerStatus[msg.status]
                         node.update_time = time.time()
                         self._updates[node.addr] = node
-                elif (msg.status == dispycos.Scheduler.ServerClosed or
-                      msg.status == dispycos.Scheduler.ServerDisconnected or
-                      msg.status == dispycos.Scheduler.ServerSuspended):
+                elif (msg.status == Scheduler.ServerClosed or
+                      msg.status == Scheduler.ServerDisconnected or
+                      msg.status == Scheduler.ServerSuspended):
                     node = self._nodes.get(msg.info.addr)
                     if node:
                         server = node.servers.get(str(msg.info), None)
@@ -435,8 +435,8 @@ class HTTPServer(object):
                             server.status = HTTPServer.ServerStatus[msg.status]
                             node.update_time = time.time()
                             self._updates[node.addr] = node
-                elif (msg.status == dispycos.Scheduler.NodeInitialized or
-                      msg.status == dispycos.Scheduler.NodeResumed):
+                elif (msg.status == Scheduler.NodeInitialized or
+                      msg.status == Scheduler.NodeResumed):
                     node = self._nodes.get(msg.info.addr)
                     if not node:
                         node = HTTPServer._Node(msg.info.name, msg.info.addr)
@@ -446,9 +446,9 @@ class HTTPServer(object):
                     node.status = HTTPServer.NodeStatus[msg.status]
                     node.update_time = time.time()
                     self._updates[node.addr] = node
-                elif (msg.status == dispycos.Scheduler.NodeClosed or
-                      msg.status == dispycos.Scheduler.NodeDisconnected or
-                      msg.status == dispycos.Scheduler.NodeSuspended):
+                elif (msg.status == Scheduler.NodeClosed or
+                      msg.status == Scheduler.NodeDisconnected or
+                      msg.status == Scheduler.NodeSuspended):
                     node = self._nodes.get(msg.info.addr)
                     if node:
                         node.status = HTTPServer.NodeStatus[msg.status]
