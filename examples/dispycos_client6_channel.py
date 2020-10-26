@@ -86,9 +86,9 @@ def client_proc(client, task=None):
 
     trend_task = pycos.Task(trend_proc)
 
-    rtask_avg = yield client.run(rtask_avg_proc, data_channel, 0.4, trend_task, 10)
+    rtask_avg = yield client.rtask(rtask_avg_proc, data_channel, 0.4, trend_task, 10)
     assert isinstance(rtask_avg, pycos.Task)
-    rtask_save = yield client.run(rtask_save_proc, data_channel)
+    rtask_save = yield client.rtask(rtask_save_proc, data_channel)
     assert isinstance(rtask_save, pycos.Task)
 
     # make sure both remote tasks have subscribed to channel ('deliver'

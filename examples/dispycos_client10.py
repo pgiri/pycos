@@ -59,8 +59,8 @@ def use_server(location, data_file, client, task=None):
                 break
 
     reply_task = pycos.Task(recv_results)
-    yield client.run_at(location, compute, file_name, reply_task)
-    yield reply_task.finish()
+    yield client.rtask_at(location, compute, file_name, reply_task)
+    yield reply_task()
 
 
 # 'client_proc' is executed locally (at client) to schedule computation and to receive status
@@ -90,7 +90,7 @@ def client_proc(task=None):
             server_tasks.pop(msg.info, None)
 
     for server_task in server_tasks.values():  # wait for results for data files
-        yield server_task.finish()
+        yield server_task()
     yield client.close()
 
 

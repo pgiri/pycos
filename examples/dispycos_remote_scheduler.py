@@ -46,7 +46,7 @@ def client_proc(client, task=None):
         if n is None:
             break
         i += 1
-        rtask = yield client.run(compute, i, n, reply_task)
+        rtask = yield client.rtask(compute, i, n, reply_task)
         if isinstance(rtask, pycos.Task):
             print('  Task %s created for %s at %s' % (i, n, rtask.location))
 

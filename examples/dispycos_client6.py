@@ -85,9 +85,9 @@ def client_proc(client, task=None):
     trend_task = pycos.Task(trend_proc)
 
     # run average and save tasks at two different servers
-    rtask_avg = yield client.run(rtask_avg_proc, 0.4, trend_task, 10)
+    rtask_avg = yield client.rtask(rtask_avg_proc, 0.4, trend_task, 10)
     assert isinstance(rtask_avg, pycos.Task)
-    rtask_save = yield client.run(rtask_save_proc)
+    rtask_save = yield client.rtask(rtask_save_proc)
     assert isinstance(rtask_save, pycos.Task)
 
     # if data is sent frequently (say, many times a second), enable streaming

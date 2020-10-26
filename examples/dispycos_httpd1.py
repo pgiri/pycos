@@ -43,10 +43,10 @@ def client_proc(client, task=None):
             print('  "%s" is not a number' % cmd)
             continue
         else:
-            # unlike in dispycos_client*.py, here 'run_async' is used to run as
+            # unlike in dispycos_client*.py, here 'io_rtask' is used to run as
             # many tasks as given on servers (i.e., possibly more than one task
             # on a server at any time).
-            yield client.run_async(compute, c, task)
+            yield client.io_rtask(compute, c, task)
 
     # close client with 'await_async=True' to wait until all running async
     # tasks to finish before closing client

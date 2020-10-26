@@ -41,7 +41,7 @@ def status_proc(task=None):
             else:
                 print('  rtask %s failed: %s / %s' % (msg.args[0], msg.args[1][0], msg.args[1][1]))
         elif isinstance(msg, DispycosStatus):
-            if msg.status == Scheduler.TaskCreated:
+            if msg.status == Scheduler.TaskStarted:
                 print('rtask %s started' % msg.info.task)
             # else:
             #     print('Status: %s / %s' % (msg.status, msg.info))
@@ -65,10 +65,10 @@ def client_proc(client, task=None):
         i += 1
         c = C(i)
         c.n = random.uniform(20, 50)
-        # unlike in dispycos_client*.py, here 'run_async' is used to run as
+        # unlike in dispycos_client*.py, here 'io_rtask' is used to run as
         # many tasks as given on servers (i.e., possibly more than one
         # task on a server at any time).
-        rtask = yield client.run_async(compute, c, task)
+        rtask = yield client.io_rtask(compute, c, task)
         if isinstance(rtask, pycos.Task):
             print('  %s: rtask %s created' % (i, rtask))
         else:

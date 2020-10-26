@@ -99,12 +99,12 @@ def run_jobs_proc(client, data_files, task=None):
     for i in range(len(data_files)):
         data_file = os.path.basename(data_files[i])
         # create remote task
-        rtask = yield client.run(rtask_proc)
+        rtask = yield client.rtask(rtask_proc)
         if isinstance(rtask, pycos.Task):
             # create local task to send input file and data to rtask
             pycos.Task(client_proc, i, data_file, rtask)
         else:
-            print('  job %s failed: %s' % (i, rtask))
+            print('  ** job %s failed: %s' % (i, rtask))
 
     yield client.close()
 

@@ -60,10 +60,12 @@ def client_proc(client, njobs, task=None):
         print('    %s computed result: %.4f' % (rtask.location, result))
 
     for i in range(njobs):
-        rtask = yield client.run(compute_task)
+        rtask = yield client.rtask(compute_task)
         if isinstance(rtask, pycos.Task):
             print('  job %d processed by %s' % (i, rtask.location))
             pycos.Task(send_requests, rtask)
+        else:
+            print('  ** job %s failed: %s' % (i, rtask))
 
     yield client.close()
 

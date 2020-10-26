@@ -92,13 +92,19 @@ def client_proc(client, task=None):
     # scheduler will use as many processes as necessary/available, running one
     # job at a server process
     algorithms = ['md5', 'sha1', 'sha224', 'sha256', 'sha384', 'sha512']
-    args = [(algorithms[i % len(algorithms)], random.uniform(5, 10)) for i in range(15)]
-    results = yield client.run_results(compute, args)
-    for i, result in enumerate(results):
-        if isinstance(result, tuple) and len(result) == 3:
-            print('    %ssum for %s: %s' % (result[1], result[0], result[2]))
+    rtasks = []
+    for i in range(15):
+        alg = algorithms[i % len(algorithms)]
+        rtask = yield client.rtask(compute, alg, random.uniform(1, 3))
+        if isinstance(rtask, pycos.Task):
+            rtasks.append(rtask)
         else:
-            print('  rtask failed for %s: %s' % (args[i][0], str(result)))
+            pycos.logger.warning('  ** rtask failed for %s', alg)
+    # wait for results
+    for rtask in rtasks:
+        result = yield rtask()
+        if isinstance(result, tuple) and len(result) == 3:
+            print('   %ssum for %s: %s' % (result[1], result[0], result[2]))
 
     yield client.close()
 

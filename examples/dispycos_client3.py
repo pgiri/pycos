@@ -24,7 +24,7 @@ class C(object):
 
 # this generator function is sent to remote dispycos servers to run tasks
 # there
-def compute(obj, client, task=None):
+def compute(obj, result_task, task=None):
     # obj is an instance of C
     import math
     # this task and client can use message passing
@@ -32,7 +32,7 @@ def compute(obj, client, task=None):
     yield task.sleep(obj.n)
     obj.n = math.sqrt(obj.n)
     # send result back to client
-    yield client.deliver(obj, timeout=5)
+    yield result_task.deliver(obj, timeout=5)
 
 
 # local task submits computation tasks at dispycos servers
@@ -58,12 +58,12 @@ def client_proc(client, njobs, task=None):
         cobj = C(i)
         cobj.n = random.uniform(5, 10)
         # as noted in 'dispycos_client2.py', 'run' method is used to run jobs
-        # sequentially; use 'run_async' to run multiple jobs on one server
+        # sequentially; use 'io_rtask' to run multiple jobs on one server
         # concurrently
         print('  request %d: %s' % (i, cobj.n))
-        rtask = yield client.run(compute, cobj, results_task)
+        rtask = yield client.rtask(compute, cobj, results_task)
         if not isinstance(rtask, pycos.Task):
-            print('failed to create rtask %s: %s' % (i, rtask))
+            print('  ** rtask failed %s: %s' % (i, rtask))
 
     # wait for all results and close client
     yield client.close()

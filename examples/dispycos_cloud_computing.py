@@ -38,14 +38,21 @@ def client_proc(client, njobs, task=None):
     # all nodes with just one statement as:
     # yield pycos.Pycos().peer(pycos.Location('54.204.242.185', 9706), relay=True)
 
-    # execute n jobs (tasks) and get their results. Note that number of
-    # jobs created can be more than number of server processes available; the
-    # scheduler will use as many processes as necessary/available, running one
-    # job at a time at one server process
-    args = [(i, random.uniform(3, 10)) for i in range(njobs)]
-    results = yield client.run_results(compute, args)
-    for result in results:
-        print('job %s result: %s' % (result[0], result[1]))
+    # schedule tasks on dispycos servers
+    rtasks = []
+    for i in range(njobs):
+        rtask = yield client.rtask(compute, i, random.uniform(3, 10))
+        if isinstance(rtask, pycos.Task):
+            rtasks.append(rtask)
+        else:
+            print('  ** rtask failed for %s' % i)
+    # wait for results
+    for rtask in rtasks:
+        result = yield rtask()
+        if isinstance(result, tuple) and len(result) == 2:
+            print('    result from %s: %s' % (rtask.location, str(result)))
+        else:
+            print('  ** rtask %s failed' % rtask)
 
     yield client.close()
 

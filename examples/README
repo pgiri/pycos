@@ -32,12 +32,12 @@ framework for distributed and parallel computing.
   tasks. The remote version and local version are similar, except that remote
   versions register/locate tasks.
 
-* dispycos_client1.py illustrates how to use dispycos to distribute computations
+* dispycos_client1.py is a variation of dispycos_client1.py. In this example,
+  http server is used to monitor cluster, nodes, remote tasks.
+
+* dispycos_client2.py illustrates how to use dispycos to distribute computations
   to remote servers to run them as tasks on those servers and get results back
   to client.
-
-* dispycos_client2.py is a variation of dispycos_client1.py. In this example,
-  http server is used to monitor cluster, nodes, remote tasks.
 
 * dispycos_client3.py shows how to exchange messages with objects (instances of
   class) between client and remote tasks.

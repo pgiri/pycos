@@ -1,10 +1,10 @@
 # Run 'dispycosnode.py' program to start processes to execute computations sent
 # by this client, along with this program.
 
-# This program is similar to 'dispycos_client1.py', but instead of using
-# 'run_result' (which is simpler), it uses status message notifications from
-# dispycos scheduler to run jobs at specific remote dispycos servers. This
-# template can be used to implement cusomized scheduler to run remote tasks.
+# This program is similar to 'dispycos_client1.py', but instead of using 'run' (which is simpler),
+# it uses status message notifications from dispycos scheduler to run jobs at specific remote
+# dispycos servers. This template can be used to implement cusomized scheduler to run remote
+# tasks.
 
 import pycos
 import pycos.netpycos
@@ -17,9 +17,9 @@ def rtask_proc(n, task=None):
     raise StopIteration(n)
 
 
-# Instead of using client's 'run_result' method to get results (which is
-# easier), in this example status messages from dispycos scheduler are used to
-# start remote tasks and get their results
+# Instead of using client's 'run' method to schedule tasks at any available server (which is
+# easier), in this example status messages from dispycos scheduler are used to start remote tasks
+# at specific servers and get their results
 def status_proc(client, njobs, task=None):
     # set client's status_task to receive status messages from dispycos
     # scheduler (this should be done before httpd is created, in case it is
@@ -36,14 +36,14 @@ def status_proc(client, njobs, task=None):
 
     # in this example at most one task is submitted at a server; depending on
     # client / needs, many tasks can be simlutaneously submitted / running
-    # at a server (with 'client.run_async').
+    # at a server (with 'client.io_rtask').
     while True:
         msg = yield task.receive()
         if isinstance(msg, DispycosStatus):
             # print('Status: %s / %s' % (msg.info, msg.status))
             if msg.status == Scheduler.ServerInitialized and njobs > 0:  # run a job
                 n = random.uniform(5, 10)
-                rtask = yield client.run_at(msg.info, rtask_proc, n)
+                rtask = yield client.rtask_at(msg.info, rtask_proc, n)
                 if isinstance(rtask, pycos.Task):
                     print('  rtask_proc started at %s with %s' % (rtask.location, n))
                     njobs -= 1
@@ -53,7 +53,7 @@ def status_proc(client, njobs, task=None):
             if msg.args[1][0] == StopIteration:  # exit status type
                 print('      rtask_proc at %s finished with %s' % (rtask.location, msg.args[1][1]))
             else:
-                print('      rtask_proc at %s failed: %s / %s' %
+                print('      ** rtask_proc at %s failed: %s / %s' %
                       (rtask.location, msg.args[1][0], msg.args[1][1]))
 
             npending -= 1
@@ -61,7 +61,7 @@ def status_proc(client, njobs, task=None):
                 break
             if njobs > 0:  # run another job
                 n = random.uniform(5, 10)
-                rtask = yield client.run_at(rtask.location, rtask_proc, n)
+                rtask = yield client.rtask_at(rtask.location, rtask_proc, n)
                 if isinstance(rtask, pycos.Task):
                     print('  rtask_proc started at %s with %s' % (rtask.location, n))
                     njobs -= 1

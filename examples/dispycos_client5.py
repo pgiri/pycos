@@ -58,7 +58,7 @@ def rtask_proc(client, program, task=None):
         yield pipe.write(data + '\n'.encode(), full=True)
     pipe.stdin.close()
     # wait for all data to be read (subprocess to end)
-    yield reader.finish()
+    yield reader()
     raise StopIteration(pipe.poll())
 
 
@@ -92,16 +92,16 @@ def client_proc(client, program, n, task=None):
         # create reader and send to rtask so it can send messages to reader
         client_reader = pycos.Task(get_output, i)
         # schedule rtask on (available) remote server
-        rtask = yield client.run(rtask_proc, client_reader, program)
+        rtask = yield client.rtask(rtask_proc, client_reader, program)
         if isinstance(rtask, pycos.Task):
             print('  job %s processed by %s' % (i, rtask.location))
             # sender sends input data to rtask
             pycos.Task(send_input, rtask)
             # wait for all data to be received
-            yield client_reader.finish()
+            yield client_reader()
             print('  job %s done' % i)
         else:  # failed to schedule
-            print('  job %s failed: %s' % (i, rtask))
+            print('  ** job %s failed: %s' % (i, rtask))
             client_reader.terminate()
 
     # create n jobs (that run concurrently)
@@ -110,7 +110,7 @@ def client_proc(client, program, n, task=None):
         job_tasks.append(pycos.Task(create_job, i))
     # wait for jobs to finish
     for job_task in job_tasks:
-        yield job_task.finish()
+        yield job_task()
 
     yield client.close()
 

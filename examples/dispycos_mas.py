@@ -86,7 +86,7 @@ def status_proc(task=None):
         if isinstance(msg, DispycosStatus):
             if msg.status == Scheduler.ServerInitialized:
                 # start new agent at this server
-                agent = yield client.run_at(msg.info, agent_proc, client_task)
+                agent = yield client.rtask_at(msg.info, agent_proc, client_task)
                 # there is no need to keep track of agents in this example, but done so here to
                 # show potential use
                 if isinstance(agent, pycos.Task):
