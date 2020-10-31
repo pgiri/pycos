@@ -1641,18 +1641,11 @@ def _dispycos_node():
                         ((now - last_zombie) > client_info.zombie_period) and client_info.scheduler):
                         last_zombie = now
                         close_period = 2 * client_info.zombie_period
-                        if (((now - node_servers[0].busy_time.value) > close_period) and
-                            all((not server.task) or
-                                ((now - server.busy_time.value) > close_period)
-                                for server in node_servers)):
-                            pycos.logger.debug('Closing zombie computation %s from %s',
-                                               client_info.auth, client_info.client_location)
-                            node_task.send({'req': 'close', 'auth': node_auth})
-                        else:
-                            zombie_servers = [
-                                server for server in node_servers if
-                                (server.task and
-                                 (now - server.busy_time.value) > client_info.zombie_period)]
+                        zombie_servers = [
+                            server for server in node_servers if
+                            (server.task and
+                             (now - server.busy_time.value) > client_info.zombie_period)]
+                        if zombie_servers:
                             for server in zombie_servers:
                                 if (server.busy_time.value and
                                     ((now - server.busy_time.value) < close_period)):
@@ -1661,6 +1654,13 @@ def _dispycos_node():
                                 else:
                                     pycos.logger.debug('server %s died!', server.id)
                                     pycos.Task(close_server, server, server.pid, terminate=True)
+                        elif (((now - node_servers[0].busy_time.value) > close_period) and
+                              all((not server.task) or
+                                  ((now - server.busy_time.value) > close_period)
+                                  for server in node_servers)):
+                            pycos.logger.debug('Closing zombie computation %s from %s',
+                                               client_info.auth, client_info.client_location)
+                            node_task.send({'req': 'close', 'auth': node_auth})
 
                 if ping_interval and (now - last_ping) > ping_interval and service_available():
                     dispycos_scheduler.discover_peers(port=pycos.config.NetPort)
