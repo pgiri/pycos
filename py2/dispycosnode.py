@@ -40,6 +40,7 @@ def _dispycos_server_proc():
     _dispycos_config = yield _dispycos_task.receive()
     if not isinstance(_dispycos_config, dict):
         raise StopIteration(-1)
+    logger.name = 'dispycosserver-%s' % _dispycos_config['sid']
     _dispycos_node_task = _dispycos_config.pop('node_task')
     if not isinstance(_dispycos_node_task, Task):
         logger.warning('%s: invalid node task: %s',
@@ -77,8 +78,8 @@ def _dispycos_server_proc():
         del _dispycos_config[_dispycos_var]
 
     _dispycos_busy_time.value = int(time.time())
-    logger.info('dispycos server %s started at %s; client files will be saved in "%s"',
-                _dispycos_config['sid'], _dispycos_task.location, _dispycos_config['dest_path'])
+    logger.info('started at %s with PID %s; client files will be stored in "%s"',
+                _dispycos_task.location, _dispycos_config['pid'], _dispycos_config['dest_path'])
     _dispycos_req = _dispycos_reply_task = _dispycos_msg = None
     _dispycos_peer_status = _dispycos_monitor_task = _dispycos_monitor_proc = _dispycos_job = None
     _dispycos_restart = False
@@ -236,8 +237,7 @@ def _dispycos_server_proc():
 
     SysTask(_dispycos_timer_proc)
     _dispycos_monitor_task = SysTask(_dispycos_monitor_proc)
-    logger.debug('dispycos server "%s", PID: %s: Client "%s" from %s', _dispycos_name,
-                 _dispycos_config['pid'], _dispycos_auth, _dispycos_scheduler_task.location)
+    logger.debug('scheduler from %s', _dispycos_scheduler_task.location)
 
     while 1:
         _dispycos_msg = yield _dispycos_task.receive()
@@ -401,7 +401,7 @@ def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config):
         pycos.logger.setLevel(pycos.logger.INFO)
     del _dispycos_config['loglevel']
 
-    pycos.logger.name = 'dispycosserver'
+    pycos.logger.name = 'dispycosserver-%s' % _dispycos_config['sid']
     _dispycos_pid = os.getpid()
     _dispycos_sid = _dispycos_config['sid']
     _dispycos_auth = _dispycos_config['auth']
@@ -532,7 +532,7 @@ def _dispycos_spawn(_dispycos_node_q, _dispycos_spawn_q, _dispycos_config, _disp
     global pycos
     import pycos
 
-    pycos.logger.name = 'dispycosnode'
+    pycos.logger.name = 'dispycosspawn'
     if _dispycos_config['loglevel']:
         pycos.logger.setLevel(pycos.logger.DEBUG)
         # pycos.logger.show_ms(True)
@@ -705,7 +705,7 @@ def _dispycos_spawn(_dispycos_node_q, _dispycos_spawn_q, _dispycos_config, _disp
                                                   'dispycos_server_%s' % server_config['sid'])
         lock.acquire()
         if server.status is not None:
-            pycos.logger.warning('Server %s already started?: %s', server.sid, server.status)
+            pycos.logger.warning('server %s already started?: %s', server.sid, server.status)
             lock.release()
             return
         server.status = 'pending'
@@ -713,11 +713,10 @@ def _dispycos_spawn(_dispycos_node_q, _dispycos_spawn_q, _dispycos_config, _disp
                                        args=(mp_q, server_config))
         if isinstance(proc, multiprocessing.Process):
             proc.start()
-            pycos.logger.debug('dispycos server %s started with PID %s', server.sid, proc.pid)
             server.proc = proc
             server.pid = proc.pid
         else:
-            pycos.logger.warning('Could not start dispycos server for %s at %s',
+            pycos.logger.warning('could not start dispycos server for %s at %s',
                                  server.sid, server.port)
             server.status = None
             server.pid = 0
@@ -1632,6 +1631,7 @@ def _dispycos_node():
                     dispycos_scheduler.discover_peers(port=pycos.config.NetPort)
                     last_ping = now
 
+        pycos.logger.info('dispycos node started at %s with PID %s', task.location, dispycos_pid)
         timer_task = pycos.Task(timer_proc)
         dispycos_scheduler.peer_status(pycos.Task(monitor_peers))
         if service_times.start:
