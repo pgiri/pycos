@@ -58,10 +58,10 @@ __maintainer__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __license__ = "Apache 2.0"
 __url__ = "https://pycos.sourceforge.io"
 __status__ = "Production"
-__version__ = "4.9.2"
+__version__ = "4.10.0"
 
 __all__ = ['Task', 'Pycos', 'Lock', 'RLock', 'Event', 'Condition', 'Semaphore',
-           'AsyncSocket', 'HotSwapException', 'MonitorException', 'Location', 'Channel',
+           'AsyncSocket', 'HotSwapException', 'MonitorStatus', 'Location', 'Channel',
            'CategorizeMessages', 'AsyncThreadPool', 'AsyncDBCursor',
            'Singleton', 'logger', 'serialize', 'deserialize', 'Logger']
 
@@ -2413,25 +2413,23 @@ class HotSwapException(Exception):
     pass
 
 
-class MonitorException(Exception):
-    """This execption is used to indicate that a task being monitored has
-    finished or terminated.
+class MonitorStatus(object):
+    """This is used to indicate that a task being monitored has finished or terminated.
 
-    If 'exc' is the exception, then
+    'info' is information about status. It status is about a task, then 'info' is that task
+    instance. If status is about an exception, then 'info' is contextual information (as a string)
+    of that exception, such as location where exception occurred.
 
-    exc.args[0] is the task (either local or remote) about which this exception
-    is thrown,
+    'type' is type of 'value', or type of exception this status is sent.
 
-    If the task finished executing normally, then len(exc.args) == 2,
-    type(exc.args[1]) == tuple, len(exc.args[1]) == 2, exc.args[1][0] is
-    StopIteration and exc.args[1][1] is the value of task (i.e., last value
-    yielded). If the task is remote and value (i.e., exc.args[1][1]) is not
-    serializable, then exc.args[1][1] is just the type of that value.
+    'value' is value, such as exit value of a task or exception trace in case of failure. In case
+    of exception, 'value' may be a string (e.g., trace) but 'type' would be type of exception.
 
-    If the task terminated due to exception, then exc.args[1:] (i.e., rest of
-    exc.args) is the list of exceptions pending at the time task terminated.
     """
-    pass
+    def __init__(self, info, type, value=None):
+        self.info = info
+        self.type = type
+        self.value = value
 
 
 class _Peer(object):
@@ -3763,7 +3761,7 @@ class Pycos(object, metaclass=Singleton):
                         for monitor in monitors:
                             if task._exceptions:
                                 exc = task._exceptions[0]
-                                exc = MonitorException(task, (exc[0], exc_trace))
+                                exc = MonitorStatus(task, exc[0], exc_trace)
                             else:
                                 exc = (StopIteration, task._value)
                                 if monitor._location:
@@ -3771,7 +3769,7 @@ class Pycos(object, metaclass=Singleton):
                                         serialize(task._value)
                                     except Exception as exc:
                                         exc = (type(exc), traceback.format_exc())
-                                exc = MonitorException(task, exc)
+                                exc = MonitorStatus(task, exc[0], exc[1])
                             if monitor.send(exc):
                                 logger.warning('monitor for %s is not valid!', task.name)
                                 task._monitors.discard(monitor)

@@ -28,7 +28,7 @@ import stat
 import pycos
 import pycos.netpycos
 import pycos.config
-from pycos import Task, SysTask, logger, MonitorException
+from pycos import Task, SysTask, logger, MonitorStatus
 
 __author__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __copyright__ = "Copyright (c) 2014-2015 Giridhar Pemmasani"
@@ -605,37 +605,44 @@ class Client(object):
         def _job_req(task=None):
             msg = {'req': 'job', 'auth': self._auth, 'reply_task': task,
                    'job': _DispycosJob_(name, where, cpu, code, args, kwargs)}
-            if (yield self.scheduler.deliver(msg, timeout=MsgTimeout)) == 1:
-                rtask = yield task.receive()
-                if isinstance(rtask, Task):
-                    if self.__askew_tasks:
-                        askew = self.__askew_tasks.pop(rtask, None)
-                    else:
-                        askew = None
-                    if askew:
-                        if askew._value[0] == StopIteration:
-                            pycos.logger.debug('rtask %s done', rtask)
-                            rtask._value = askew._value[1]
-                        elif askew._value[1][0] == Scheduler.TaskTerminated:
-                            pycos.logger.warning('rtask %s terminated', rtask)
-                        elif askew._value[1][0] == Scheduler.TaskAbandoned:
-                            pycos.logger.warning('rtask %s abandoned', rtask)
-                        else:
-                            pycos.logger.warning('rtask %s failed: %s with %s',
-                                                 rtask, askew._value[0], askew._value[1])
-                        rtask._complete.set()
-                        if self.status_task:
-                            self.status_task.send(MonitorException(rtask, askew._value))
-                    else:
-                        setattr(rtask, '_value', None)
-                        setattr(rtask, '_complete', pycos.Event())
-                        rtask._complete.clear()
-                        self.__rtasks[rtask] = rtask
-                        if self.status_task:
-                            msg = DispycosTaskInfo(rtask, args, kwargs, time.time())
-                            self.status_task.send(DispycosStatus(Scheduler.TaskStarted, msg))
+            if (yield self.scheduler.deliver(msg, timeout=MsgTimeout)) != 1:
+                pycos.logger.debug('scheduling %s timedout:', name)
+                raise StopIteration(None)
+
+            rtask = yield task.receive()
+            if not isinstance(rtask, Task):
+                if isinstance(rtask, MonitorStatus):
+                    msg = ':%s\n%s' % (rtask.info, rtask.value)
+                else:
+                    msg = ''
+                pycos.logger.debug('running %s failed: %s%s', name, msg)
+                raise StopIteration(None)
+            setattr(rtask, '_complete', pycos.Event())
+            rtask._complete.clear()
+            if self.__askew_tasks:
+                askew = self.__askew_tasks.pop(rtask, None)
             else:
-                rtask = None
+                askew = None
+            if askew:
+                if askew._value.type == StopIteration:
+                    pycos.logger.debug('rtask %s done', rtask)
+                    rtask._value = askew._value.value
+                elif askew._value.type == Scheduler.TaskTerminated:
+                    pycos.logger.warning('rtask %s terminated', rtask)
+                elif askew._value.type == Scheduler.TaskAbandoned:
+                    pycos.logger.warning('rtask %s abandoned', rtask)
+                else:
+                    pycos.logger.warning('rtask %s failed: %s with %s',
+                                         rtask, askew._value.type, askew._value.value)
+                rtask._complete.set()
+                if self.status_task:
+                    self.status_task.send(askew._value)
+            else:
+                setattr(rtask, '_value', None)
+                self.__rtasks[rtask] = rtask
+                if self.status_task:
+                    msg = DispycosTaskInfo(rtask, args, kwargs, time.time())
+                    self.status_task.send(DispycosStatus(Scheduler.TaskStarted, msg))
             raise StopIteration(rtask)
 
         raise StopIteration((yield Task(_job_req).finish()))
@@ -658,28 +665,26 @@ class Client(object):
                 last_pulse = time.time()
                 req = msg.get('req', None)
 
-                if isinstance(req, MonitorException):
+                if isinstance(req, MonitorStatus):
                     # TODO: process in Scheduler if not shared
-                    rtask = self.__rtasks.pop(req.args[0], None)
+                    rtask = self.__rtasks.pop(req.info, None)
                     if rtask:
-                        if req.args[1][0] == StopIteration:
+                        if req.type == StopIteration:
                             pycos.logger.debug('rtask %s done', rtask)
-                            rtask._value = req.args[1][1]
-                        elif req.args[1][0] == Scheduler.TaskTerminated:
+                            rtask._value = req.value
+                        elif req.type == Scheduler.TaskTerminated:
                             pycos.logger.warning('rtask %s terminated', rtask)
-                        elif req.args[1][0] == Scheduler.TaskAbandoned:
+                        elif req.type == Scheduler.TaskAbandoned:
                             pycos.logger.warning('rtask %s abandoned', rtask)
                         else:
                             pycos.logger.warning('rtask %s failed: %s with %s',
-                                                 rtask, req.args[1][0], req.args[1][1])
+                                                 rtask, req.type, req.value)
                         rtask._complete.set()
                         if self.status_task:
                             self.status_task.send(req)
                     else:
-                        rtask = req.args[0]
-                        setattr(rtask, '_value', req.args[1])
-                        setattr(rtask, '_complete', pycos.Event())
-                        rtask._complete.clear()
+                        rtask = req.info
+                        setattr(rtask, '_value', req)
                         self.__askew_tasks[rtask] = rtask
 
                 elif req == 'msg':
@@ -836,7 +841,7 @@ class Scheduler(object):
 
         def run(self, job, reply_task, node):
             def _run(self, task=None):
-                self.task.send({'req': 'run', 'auth': node.auth, 'job': job, 'reply_task': task})
+                self.task.send({'req': 'task', 'auth': node.auth, 'job': job, 'reply_task': task})
                 rtask = yield task.receive(timeout=MsgTimeout)
                 # currently fault-tolerancy is not supported, so clear job's
                 # args to save space
@@ -933,8 +938,8 @@ class Scheduler(object):
         while 1:
             msg = yield task.receive()
             now = time.time()
-            if isinstance(msg, MonitorException):
-                rtask = msg.args[0]
+            if isinstance(msg, MonitorStatus):
+                rtask = msg.info
                 if not isinstance(rtask, Task):
                     logger.warning('ignoring invalid rtask %s', type(rtask))
                     continue
@@ -956,11 +961,9 @@ class Scheduler(object):
                 node.last_pulse = now
                 job = server.rtasks.pop(rtask, None)
                 if not job:
-                    # Due to 'yield' used to create rtask, scheduler may not
-                    # have updated self._rtasks before the task's
-                    # MonitorException is received, so put it in
-                    # 'askew_results'. The scheduling task will resend it
-                    # when it receives rtask
+                    # Due to 'yield' used to create rtask, scheduler may not have updated
+                    # self._rtasks before the task's MonitorStatus is received, so put it in
+                    # 'askew_results'. The scheduling task will resend it when it receives rtask
                     server.askew_results[rtask] = msg
                     continue
                 # assert isinstance(job, _DispycosJob_)
@@ -2001,7 +2004,7 @@ class Scheduler(object):
             logger.warning('%s tasks abandoned at %s', len(server.rtasks), server_task.location)
             for rtask, job in server.rtasks.iteritems():
                 if client:
-                    status = MonitorException(rtask, (Scheduler.TaskAbandoned, None))
+                    status = MonitorStatus(rtask, Scheduler.TaskAbandoned)
                     client._pulse_task.send({'req': status, 'auth': self.__client_auth})
             server.rtasks.clear()
 

@@ -29,7 +29,7 @@ def _dispycos_server_proc():
 
     from pycos.dispycos import MinPulseInterval, MaxPulseInterval, \
         DispycosNodeInfo, DispycosNodeAvailInfo, Scheduler
-    from pycos.netpycos import Task, SysTask, Location, MonitorException, deserialize, logger
+    from pycos.netpycos import Task, SysTask, Location, MonitorStatus, deserialize, logger
     global _DispycosJob_
     from pycos.dispycos import _DispycosJob_
 
@@ -131,26 +131,25 @@ def _dispycos_server_proc():
         task.set_daemon()
         while 1:
             msg = yield task.receive()
-            if isinstance(msg, MonitorException):
-                logger.debug('task %s done at %s', msg.args[0], task.location)
+            if isinstance(msg, MonitorStatus):
+                logger.debug('task %s done at %s', msg.info, task.location)
                 try:
-                    _dispycos_job_tasks.remove(msg.args[0])
+                    _dispycos_job_tasks.remove(msg.info)
                 except KeyError:
-                    msg.args = (msg.args[0], (Scheduler.TaskTerminated, None))
+                    msg.type = Scheduler.TaskTerminated
                 _dispycos_busy_time.value = int(time.time())
                 if not _dispycos_job_tasks:
                     _dispycos_jobs_done.set()
                 try:
-                    pycos.serialize(msg.args[1][1])
+                    pycos.serialize(msg.value)
                 except Exception as exc:
-                    msg.args = (msg.args[0],
-                                (type(exc), ('Serialization of task result failed: %s' % exc)))
+                    msg.type = type(exc)
+                    msg.value = 'Serialization of task result failed: %s' % str(exc)
 
-                if (msg.args[1][0] != StopIteration and msg.args[1] != Scheduler.TaskTerminated and
-                    isinstance(msg.args[1][1], str)):
-                    exc = ('Task %s running at %s raised exception %s:\n%s' %
-                           (msg.args[0].name, task.location, msg.args[1][0], msg.args[1][1]))
-                    msg.args = (msg.args[0], (msg.args[1][0], exc))
+                if (msg.type != StopIteration and msg.type != Scheduler.TaskTerminated and
+                    isinstance(msg.value, str)):
+                    msg.value = ('Task %s running at %s raised exception %s:\n%s' %
+                                 (msg.info.name, task.location, msg.type, msg.value))
                 _dispycos_scheduler_task.send(msg)
             else:
                 logger.warning('invalid message to monitor ignored: %s', type(msg))
@@ -246,7 +245,7 @@ def _dispycos_server_proc():
         except Exception:
             continue
 
-        if _dispycos_req == 'run':
+        if _dispycos_req == 'task':
             _dispycos_reply_task = _dispycos_msg.get('reply_task', None)
             _dispycos_job = _dispycos_msg.get('job', None)
             if (not isinstance(_dispycos_reply_task, Task) or
@@ -262,8 +261,14 @@ def _dispycos_server_proc():
                 _dispycos_job.kwargs = deserialize(_dispycos_job.kwargs)
             except Exception:
                 _dispycos_var = sys.exc_info()
-                _dispycos_var = MonitorException(
-                    _dispycos_var[0], (_dispycos_var[1], 'Invalid job code or arguments'))
+                if len(_dispycos_var) == 2 or not _dispycos_var[2]:
+                    _dispycos_req = traceback.format_exception_only(*_dispycos_var[:2])
+                else:
+                    _dispycos_req = traceback.format_exception(_dispycos_var[0], _dispycos_var[1],
+                                                               _dispycos_var[2].tb_next)
+                _dispycos_var = MonitorStatus(
+                    'Invalid job code or arguments for %s' % _dispycos_job.name, _dispycos_var[0],
+                    ''.join(_dispycos_req))
                 _dispycos_reply_task.send(_dispycos_var)
             else:
                 Task._pycos._lock.acquire()
@@ -272,8 +277,9 @@ def _dispycos_server_proc():
                                          *(_dispycos_job.args), **(_dispycos_job.kwargs))
                 except Exception:
                     _dispycos_var = sys.exc_info()
-                    _dispycos_var = MonitorException(
-                        _dispycos_var[0], (_dispycos_var[1], 'Invalid task invocation'))
+                    _dispycos_var = MonitorStatus(
+                        'Invalid task %s invocation' % _dispycos_job.name,
+                        _dispycos_var[0], str(_dispycos_var[2]))
                 else:
                     _dispycos_job_tasks.add(_dispycos_var)
                     _dispycos_jobs_done.clear()
@@ -599,12 +605,12 @@ def _dispycos_spawn(_dispycos_node_q, _dispycos_spawn_q, _dispycos_config, _disp
     except Exception:
         _dispycos_var = sys.exc_info()
         if len(_dispycos_var) == 3 and _dispycos_var[2]:
-            _dispycos_var = ''.join(traceback.format_exception(_dispycos_var[0], _dispycos_var[1],
-                                                               _dispycos_var[2].tb_next))
+            _dispycos_var = traceback.format_exception(_dispycos_var[0], _dispycos_var[1],
+                                                       _dispycos_var[2].tb_next)
         else:
-            _dispycos_var = ''.join(traceback.format_exception_only(*_dispycos_var[:2]))
+            _dispycos_var = traceback.format_exception_only(*_dispycos_var[:2])
         _dispycos_node_q.put({'msg': 'closed', 'auth': _dispycos_config['auth'],
-                              'exception': _dispycos_var})
+                              'exception': ''.join(_dispycos_var)})
         exit(-1)
 
     def close_servers(children):

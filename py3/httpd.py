@@ -391,17 +391,18 @@ class HTTPServer(object):
         task.set_daemon()
         while True:
             msg = yield task.receive()
-            if isinstance(msg, pycos.MonitorException):
-                rtask = msg.args[0]
-                node = self._nodes.get(rtask.location.addr)
-                if node:
-                    server = node.servers.get(str(rtask.location))
-                    if server:
-                        if server.tasks.pop(str(rtask), None) is not None:
-                            server.tasks_done += 1
-                            node.tasks_done += 1
-                            node.update_time = time.time()
-                            self._updates[node.addr] = node
+            if isinstance(msg, pycos.MonitorStatus):
+                if isinstance(msg.ctx, pycos.Task):
+                    rtask = msg.ctx
+                    node = self._nodes.get(rtask.location.addr)
+                    if node:
+                        server = node.servers.get(str(rtask.location))
+                        if server:
+                            if server.tasks.pop(str(rtask), None) is not None:
+                                server.tasks_done += 1
+                                node.tasks_done += 1
+                                node.update_time = time.time()
+                                self._updates[node.addr] = node
             elif isinstance(msg, DispycosStatus):
                 if msg.status == Scheduler.TaskStarted:
                     rtask = msg.info

@@ -1449,7 +1449,7 @@ class RTI(object):
         """Must be used with 'yeild' as 'reply = yield rti.monitor(task)'.
 
         Install 'task' (a Task instance) as monitor for tasks created; i.e.,
-        'task' receives MonitorException messages. If call is successful, the
+        'task' receives MonitorStatus messages. If call is successful, the
         result is 0.
         """
         if not isinstance(task, Task):
