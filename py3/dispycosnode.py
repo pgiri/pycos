@@ -1254,6 +1254,7 @@ def _dispycos_node():
                 if server.done.is_set():
                     raise StopIteration
 
+            yield server.done.wait(timeout=0.5)
             if not client_info.spawn_q or not server.task:
                 raise StopIteration
             client_info.spawn_q.put({'msg': 'close_server', 'auth': client_info.auth,
