@@ -15,13 +15,12 @@ def monitor_proc(n, task=None):
     done = 0
     while done < n:
         msg = yield task.receive()
-        if isinstance(msg, pycos.MonitorException):
-            rtask = msg.args[0]
-            value_type, value = msg.args[1]
-            if value_type == StopIteration:
-                pycos.logger.debug('RTI %s finished with: %s', rtask, value)
+        if isinstance(msg, pycos.MonitorStatus):
+            rtask = msg.info
+            if msg.type == StopIteration:
+                pycos.logger.debug('RTI %s finished with: %s', rtask, msg.value)
             else:
-                pycos.logger.debug('RTI %s failed with: %s', rtask, value.args[0])
+                pycos.logger.debug('RTI %s failed with: %s', rtask, msg.type)
             done += 1
         else:
             pycos.logger.warning('ignoring invalid message')

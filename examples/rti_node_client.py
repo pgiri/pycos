@@ -17,16 +17,15 @@ def monitor_proc(client, task=None):
     # this is useful, e.g., in case remote task fails unexpectedly
     while True:
         msg = yield task.receive()
-        if isinstance(msg, pycos.MonitorException):
-            rtask = msg.args[0]
-            value_type, value = msg.args[1]
-            if value_type == StopIteration and value == 0:
-                pycos.logger.debug('RTI %s finished with: %s', rtask, value)
+        if isinstance(msg, pycos.MonitorStatus):
+            rtask = msg.info
+            if msg.type == StopIteration and msg.value == 0:
+                pycos.logger.debug('RTI %s finished with: %s', rtask, msg.value)
             else:
-                pycos.logger.debug('RTI %s failed with: %s', rtask, value)
+                pycos.logger.debug('RTI %s failed with: %s', rtask, msg.value)
                 # deal with failure; in this case, an exception is thrown to client for
                 # illustration
-                client.throw(Exception(value))
+                client.throw(Exception(msg.value))
             break
         else:
             pycos.logger.warning('ignoring invalid message')

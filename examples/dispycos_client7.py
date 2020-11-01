@@ -47,14 +47,14 @@ def status_proc(client, njobs, task=None):
                 if isinstance(rtask, pycos.Task):
                     print('  rtask_proc started at %s with %s' % (rtask.location, n))
                     njobs -= 1
-        elif isinstance(msg, pycos.MonitorException):
+        elif isinstance(msg, pycos.MonitorStatus):
             # previously submitted remote task finished
-            rtask = msg.args[0]
-            if msg.args[1][0] == StopIteration:  # exit status type
-                print('      rtask_proc at %s finished with %s' % (rtask.location, msg.args[1][1]))
+            rtask = msg.info
+            if msg.type == StopIteration:  # exit status type
+                print('      rtask_proc at %s finished with %s' % (rtask.location, msg.value))
             else:
                 print('      ** rtask_proc at %s failed: %s / %s' %
-                      (rtask.location, msg.args[1][0], msg.args[1][1]))
+                      (rtask.location, msg.type, msg.value))
 
             npending -= 1
             if npending == 0:

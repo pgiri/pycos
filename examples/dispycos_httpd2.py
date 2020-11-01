@@ -35,11 +35,11 @@ def status_proc(task=None):
     while True:
         msg = yield task.receive()
         # (re)send all status messages to http server
-        if isinstance(msg, pycos.MonitorException):
-            if msg.args[1][0] == StopIteration:
-                print('    rtask %s done' % (msg.args[0]))
+        if isinstance(msg, pycos.MonitorStatus):
+            if msg.type == StopIteration:
+                print('    rtask %s done' % (msg.info))
             else:
-                print('  rtask %s failed: %s / %s' % (msg.args[0], msg.args[1][0], msg.args[1][1]))
+                print('  rtask %s failed: %s / %s' % (msg.info, msg.type, msg.value))
         elif isinstance(msg, DispycosStatus):
             if msg.status == Scheduler.TaskStarted:
                 print('rtask %s started' % msg.info.task)

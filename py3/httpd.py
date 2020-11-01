@@ -392,8 +392,8 @@ class HTTPServer(object):
         while True:
             msg = yield task.receive()
             if isinstance(msg, pycos.MonitorStatus):
-                if isinstance(msg.ctx, pycos.Task):
-                    rtask = msg.ctx
+                if isinstance(msg.info, pycos.Task):
+                    rtask = msg.info
                     node = self._nodes.get(rtask.location.addr)
                     if node:
                         server = node.servers.get(str(rtask.location))
