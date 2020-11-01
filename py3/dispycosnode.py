@@ -132,25 +132,39 @@ def _dispycos_server_proc():
         while 1:
             msg = yield task.receive()
             if isinstance(msg, MonitorStatus):
-                logger.debug('task %s done at %s', msg.info, task.location)
                 try:
                     _dispycos_job_tasks.remove(msg.info)
                 except KeyError:
+                    if not isinstance(msg.info, pycos.Task):
+                        pycos.logger.warning('invalid dispycos task: %s', msg.info)
+                        continue
                     msg.type = Scheduler.TaskTerminated
+                logger.debug('task %s done at %s', msg.info, task.location)
                 _dispycos_busy_time.value = int(time.time())
                 if not _dispycos_job_tasks:
                     _dispycos_jobs_done.set()
-                try:
-                    pycos.serialize(msg.value)
-                except Exception as exc:
-                    msg.type = type(exc)
-                    msg.value = 'Serialization of task result failed: %s' % str(exc)
 
                 if (msg.type != StopIteration and msg.type != Scheduler.TaskTerminated and
                     isinstance(msg.value, str)):
-                    msg.value = ('Task %s running at %s raised exception %s:\n%s' %
-                                 (msg.info.name, task.location, msg.type, msg.value))
-                _dispycos_scheduler_task.send(msg)
+                    _dispycos_var = ('task %s running at %s raised exception:\n%s' %
+                                     (msg.task.name, task.location, msg.value))
+                    msg = MonitorStatus(msg.info, msg.type, _dispycos_var)
+                if (yield _dispycos_scheduler_task.deliver(msg)) != 1:
+                    try:
+                        pycos.serialize(msg.value)
+                    except Exception:
+                        exc = sys.exc_info()
+                        if len(exc) == 2 or not exc[2]:
+                            _dispycos_var = traceback.format_exception_only(*exc[:2])
+                        else:
+                            _dispycos_var = traceback.format_exception(exc[0], exc[1],
+                                                                       exc[2].tb_next)
+                        msg = MonitorStatus(msg.info, exc[1],
+                                            ('task %s running at %s raised exception:\n%s' %
+                                             (msg.info.name, task.location,
+                                              ''.join(_dispycos_var))))
+                        _dispycos_scheduler_task.send(msg)
+
             else:
                 logger.warning('invalid message to monitor ignored: %s', type(msg))
 
@@ -297,7 +311,7 @@ def _dispycos_server_proc():
                 continue
             if _dispycos_scheduler_task:
                 _dispycos_scheduler_task.send({'status': Scheduler.ServerClosed,
-                                              'location': _dispycos_task.location,
+                                               'location': _dispycos_task.location,
                                                'auth': _dispycos_auth, 'pid': _dispycos_config['pid']})
             while _dispycos_job_tasks:
                 if not pycos.Task.scheduler().is_alive():
