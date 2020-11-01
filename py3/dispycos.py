@@ -616,16 +616,16 @@ class Client(object):
             msg = {'req': 'job', 'auth': self._auth, 'reply_task': task,
                    'job': _DispycosJob_(name, where, cpu, code, args, kwargs)}
             if (yield self.scheduler.deliver(msg, timeout=MsgTimeout)) != 1:
-                pycos.logger.debug('scheduling %s timedout:', name)
+                pycos.logger.warning('scheduling %s timedout', name)
                 raise StopIteration(None)
 
             rtask = yield task.receive()
             if not isinstance(rtask, Task):
                 if isinstance(rtask, MonitorStatus):
-                    msg = ':%s\n%s' % (rtask.info, rtask.value)
+                    msg = ': %s\n%s' % (rtask.info, rtask.value)
                 else:
                     msg = ''
-                pycos.logger.debug('running %s failed: %s%s', name, msg)
+                pycos.logger.warning('running %s failed%s', name, msg)
                 raise StopIteration(None)
             setattr(rtask, '_complete', pycos.Event())
             rtask._complete.clear()

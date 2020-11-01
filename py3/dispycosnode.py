@@ -281,7 +281,7 @@ def _dispycos_server_proc():
                     _dispycos_req = traceback.format_exception(_dispycos_var[0], _dispycos_var[1],
                                                                _dispycos_var[2].tb_next)
                 _dispycos_var = MonitorStatus(
-                    'Invalid job code or arguments for %s' % _dispycos_job.name, _dispycos_var[0],
+                    'invalid job code or arguments for %s' % _dispycos_job.name, _dispycos_var[0],
                     ''.join(_dispycos_req))
                 _dispycos_reply_task.send(_dispycos_var)
             else:
@@ -291,9 +291,15 @@ def _dispycos_server_proc():
                                          *(_dispycos_job.args), **(_dispycos_job.kwargs))
                 except Exception:
                     _dispycos_var = sys.exc_info()
+                    if len(_dispycos_var) == 2 or not _dispycos_var[2]:
+                        _dispycos_req = traceback.format_exception_only(*_dispycos_var[:2])
+                    else:
+                        _dispycos_req = traceback.format_exception(_dispycos_var[0],
+                                                                   _dispycos_var[1],
+                                                                   _dispycos_var[2].tb_next)
                     _dispycos_var = MonitorStatus(
-                        'Invalid task %s invocation' % _dispycos_job.name,
-                        _dispycos_var[0], str(_dispycos_var[2]))
+                        'invalid task %s invocation' % _dispycos_job.name, _dispycos_var[0],
+                        ''.join(_dispycos_req))
                 else:
                     _dispycos_job_tasks.add(_dispycos_var)
                     _dispycos_jobs_done.clear()
