@@ -227,11 +227,10 @@ def _dispycos_server_proc():
                         # TODO: ignore this req?
                         logger.warning('Invalid pid for %s: %s / %s', _dispycos_req,
                                        _dispycos_msg.get('pid', None), _dispycos_config['pid'])
-                    if _dispycos_scheduler_task:
-                        _dispycos_scheduler_task.send({'status': Scheduler.ServerClosed,
-                                                       'location': _dispycos_task.location,
-                                                       'auth': _dispycos_auth,
-                                                       'pid': _dispycos_config['pid']})
+                    _dispycos_scheduler_task.send({'status': Scheduler.ServerClosed,
+                                                   'location': _dispycos_task.location,
+                                                   'auth': _dispycos_auth,
+                                                   'pid': _dispycos_config['pid']})
                     raise StopIteration(0)
                 else:
                     logger.warning('Ignoring invalid request to run server setup')
@@ -315,17 +314,17 @@ def _dispycos_server_proc():
                 pycos.logger.debug('Invalid pid for %s: %s / %s', _dispycos_req,
                                    _dispycos_msg.get('pid', None), _dispycos_config['pid'])
                 continue
-            if _dispycos_scheduler_task:
-                _dispycos_scheduler_task.send({'status': Scheduler.ServerClosed,
-                                               'location': _dispycos_task.location,
-                                               'auth': _dispycos_auth, 'pid': _dispycos_config['pid']})
+            _dispycos_scheduler_task.send({'status': Scheduler.ServerClosed,
+                                           'location': _dispycos_task.location,
+                                           'auth': _dispycos_auth, 'pid': _dispycos_config['pid']})
             while _dispycos_job_tasks:
                 if not pycos.Task.scheduler().is_alive():
                     logger.warning('dispycos server "%s": pycos scheduler seems to be dead!',
                                    _dispycos_name)
                     break
-                logger.debug('dispycos server "%s": Waiting for %s tasks to terminate before '
-                             'closing client', _dispycos_name, len(_dispycos_job_tasks))
+                logger.debug('dispycos server "%s": Waiting for %s tasks from %s to terminate',
+                             _dispycos_name, len(_dispycos_job_tasks),
+                             _dispycos_scheduler_task.location)
                 if (yield _dispycos_jobs_done.wait(timeout=5)):
                     break
                 _dispycos_var = yield _dispycos_task.recv(timeout=0)
@@ -344,10 +343,9 @@ def _dispycos_server_proc():
                 pycos.logger.debug('Invalid pid for %s: %s / %s', _dispycos_req,
                                    _dispycos_msg.get('pid', None), _dispycos_config['pid'])
                 continue
-            if _dispycos_scheduler_task:
-                _dispycos_scheduler_task.send({'status': Scheduler.ServerClosed,
-                                               'location': _dispycos_task.location,
-                                               'auth': _dispycos_auth, 'pid': _dispycos_config['pid']})
+            _dispycos_scheduler_task.send({'status': Scheduler.ServerClosed,
+                                           'location': _dispycos_task.location,
+                                           'auth': _dispycos_auth, 'pid': _dispycos_config['pid']})
             if _dispycos_msg.get('restart', False):
                 _dispycos_restart = True
             break
@@ -355,13 +353,9 @@ def _dispycos_server_proc():
         elif _dispycos_req == 'status':
             if _dispycos_msg.get('auth', None) != _dispycos_auth:
                 continue
-            if _dispycos_scheduler_task:
-                print('  dispycos server "%s" @ %s with PID %s running %d tasks for %s' %
-                      (_dispycos_name, _dispycos_task.location, os.getpid(),
-                       len(_dispycos_job_tasks), _dispycos_scheduler_task.location))
-            else:
-                print('  dispycos server "%s" @ %s with PID %s not used by any client' %
-                      (_dispycos_name, _dispycos_task.location, os.getpid()))
+            print('  dispycos server "%s" @ %s with PID %s running %d tasks for %s' %
+                  (_dispycos_name, _dispycos_task.location, _dispycos_config['pid'],
+                   len(_dispycos_job_tasks), _dispycos_scheduler_task.location))
 
         elif _dispycos_req == 'peers':
             if _dispycos_msg.get('auth', None) != _dispycos_auth:
@@ -389,10 +383,9 @@ def _dispycos_server_proc():
     _dispycos_job_tasks.clear()
     logger.debug('dispycos server "%s": %s tasks terminated',
                  _dispycos_name, len(_dispycos_job_tasks))
-    if _dispycos_scheduler_task:
-        _dispycos_msg = {'status': Scheduler.ServerDisconnected, 'location': _dispycos_task.location,
-                         'auth': _dispycos_auth, 'pid': _dispycos_config['pid']}
-        _dispycos_scheduler_task.send(_dispycos_msg)
+    _dispycos_msg = {'status': Scheduler.ServerDisconnected, 'location': _dispycos_task.location,
+                     'auth': _dispycos_auth, 'pid': _dispycos_config['pid']}
+    _dispycos_scheduler_task.send(_dispycos_msg)
 
     os.chdir(os.path.join(_dispycos_config['dest_path'], '..'))
     try:
