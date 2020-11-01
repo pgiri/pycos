@@ -974,7 +974,7 @@ class Pycos(pycos.Pycos):
                 task = req.kwargs.get('task', None)
                 if task:
                     name = req.kwargs.get('name', ' ')
-                    if name[0] == '~':
+                    if name[0] == '^':
                         task = self._tasks.get(int(task))
                         if task and task._rid == req.kwargs.get('rid') and task._name == name:
                             reply = task.send(req.kwargs['message'])
@@ -1005,7 +1005,7 @@ class Pycos(pycos.Pycos):
                 if task:
                     reply = -1
                     name = req.kwargs.get('name', ' ')
-                    if name[0] == '~':
+                    if name[0] == '^':
                         task = self._tasks.get(int(task))
                         if (task and task._rid == req.kwargs.get('rid') and task._name == name and
                             task.send(req.kwargs['message']) == 0):
@@ -1082,7 +1082,7 @@ class Pycos(pycos.Pycos):
 
             elif req.name == 'locate_task':
                 name = req.kwargs.get('name', ' ')
-                if name[0] == '~':
+                if name[0] == '^':
                     task = self._rtasks.get(name, None)
                 else:
                     Task._pycos._lock.acquire()
@@ -1107,7 +1107,7 @@ class Pycos(pycos.Pycos):
                 task = req.kwargs.get('task', None)
                 name = req.kwargs.get('name', None)
                 if task and name:
-                    if name == '~':
+                    if name == '^':
                         task = self._tasks.get(int(task), None)
                         if task and task._rid == req.kwargs.get('rid') and task._name == name:
                             reply = self._monitor(monitor, task)
@@ -1124,7 +1124,7 @@ class Pycos(pycos.Pycos):
                 task = req.kwargs.get('task', None)
                 name = req.kwargs.get('name', None)
                 if task and name:
-                    if name[0] == '~':
+                    if name[0] == '^':
                         task = self._tasks.get(int(task), None)
                     else:
                         Task._pycos._lock.acquire()
@@ -1574,13 +1574,13 @@ class SysTask(pycos.Task):
             Pycos.instance()
         self._scheduler = SysTask._pycos
         super(SysTask, self).__init__(*args, **kwargs)
-        self._name = '~' + self.name
+        self._name = '^' + self.name
 
     @staticmethod
     def locate(name, location=None, timeout=None):
         if not SysTask._pycos:
             Pycos.instance()
-        raise StopIteration((yield Task._locate('~' + name, location, timeout)))
+        raise StopIteration((yield Task._locate('^' + name, location, timeout)))
 
 
 class _NetRequest(object):
@@ -1943,7 +1943,7 @@ class _Peer(object):
                 _Peer.status_tasks.add(task)
         elif task is None:
             _Peer.status_tasks.difference_update([tsk for tsk in _Peer.status_tasks
-                                                  if tsk._name[0] == '!'])
+                                                  if tsk._name[0] != '^'])
         else:
             logger.warning('invalid peer status task ignored')
         _Peer._lock.release()

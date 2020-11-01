@@ -2405,7 +2405,7 @@ class Task(object):
 
     def __init__(self, *args, **kwargs):
         self._generator = Task.__get_generator(self, *args, **kwargs)
-        self._name = '!' + self._generator.__name__
+        self._name = self._generator.__name__
         self._id = id(self)
         self._state = None
         self._value = None
@@ -2441,7 +2441,7 @@ class Task(object):
 
         Can also be used on remotely running tasks.
         """
-        return self._name[1:]
+        return self._name
 
     @classmethod
     def scheduler(cls):
@@ -2457,14 +2457,14 @@ class Task(object):
         """
         if not Task._pycos:
             Pycos.instance()
-        raise StopIteration((yield Task._locate('!' + name, location=location, timeout=timeout)))
+        raise StopIteration((yield Task._locate(name, location=location, timeout=timeout)))
 
     @staticmethod
     def _locate(name, location, timeout):
         """Internal use only.
         """
         if not location or location in Task._pycos._locations:
-            if name[0] == '~':
+            if name[0] == '^':
                 SysTask._pycos._lock.acquire()
                 rtask = SysTask._pycos._rtasks.get(name, None)
                 SysTask._pycos._lock.release()
@@ -2484,12 +2484,10 @@ class Task(object):
             logger.warning('"register" is not allowed for remote tasks')
             return -1
         if name:
-            if not isinstance(name, str) or name[0] == '!' or name[0] == '~':
+            if not isinstance(name, str) or name[0] == '^':
                 logger.warning('Invalid name "%s" to register task ignored', name)
                 return -1
-            if self._scheduler == Task._pycos:
-                name = '!' + name
-            else:
+            if self._scheduler != Task._pycos:
                 name = '~' + name
         else:
             name = self._name
@@ -2501,10 +2499,8 @@ class Task(object):
         if self._location:
             return -1
         if name:
-            if self._scheduler == Task._pycos:
-                name = '!' + name
-            else:
-                name = '~' + name
+            if self._scheduler != Task._pycos:
+                name = '^' + name
         else:
             name = self._name
         return self._scheduler._unregister_task(self, name)
@@ -2803,7 +2799,7 @@ class Task(object):
         else:
             if isinstance(self._name, str) and len(self._name) > 1:
                 self._id = int(self._id)
-                if self._name[0] == '~':
+                if self._name[0] == '^':
                     self._scheduler = SysTask._pycos
                 else:
                     self._scheduler = Task._pycos
