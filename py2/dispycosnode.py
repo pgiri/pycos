@@ -1428,6 +1428,8 @@ def _dispycos_node():
                 server.done.clear()
                 server_task.send({'auth': client_info.auth, 'pid': pid, 'node_task': node_task})
                 pid = msg.get('pid', None)
+                if not os.path.isdir(dispycos_path):
+                    os.path.makedirs(dispycos_path)
                 with open(server.pid_file, 'wb') as fd:
                     pickle.dump({'pid': pid, 'ppid': client_info.spawn_mpproc.pid}, fd)
                 return 0
