@@ -147,7 +147,7 @@ def _dispycos_server_proc():
                 if (msg.type != StopIteration and msg.type != Scheduler.TaskTerminated and
                     isinstance(msg.value, str)):
                     _dispycos_var = ('task %s running at %s raised exception:\n%s' %
-                                     (msg.task.name, task.location, msg.value))
+                                     (msg.info.name, task.location, msg.value))
                     msg = MonitorStatus(msg.info, msg.type, _dispycos_var)
                 if (yield _dispycos_scheduler_task.deliver(msg)) != 1:
                     try:

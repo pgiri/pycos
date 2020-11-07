@@ -1742,27 +1742,15 @@ class Scheduler(object, metaclass=pycos.Singleton):
                     node = self._disabled_nodes.get(addr.addr, None)
                     if not node:
                         continue
-                server = node.servers.pop(addr, None)
+                if not node.task:
+                    continue
+                server = node.servers.get(addr, None)
                 if not server:
                     server = node.disabled_servers.get(addr, None)
                     if not server:
                         continue
-                # if server.status not in (Scheduler.ServerDiscovered, Scheduler.ServerInitialized,
-                #                          Scheduler.ServerSuspended):
-                #     continue
-                node.disabled_servers[addr] = server
-                server.cpu_avail.clear()
-                if not node.servers:
-                    node.cpu_avail.clear()
-                    self._cpu_nodes.discard(node)
-                    if not self._cpu_nodes:
-                        self._cpus_avail.clear()
-                    self._disabled_nodes[node.addr] = node
-                if node.task and self.__client:
-                    req = {'req': 'close_server', 'addr': addr, 'auth': node.auth,
-                           'terminate': msg.get('terminate', False),
-                           'restart': msg.get('restart', False)}
-                    node.task.send(req)
+                SysTask(self.__close_server, server, server.pid, node,
+                        terminate=msg.get('terminate', False), restart=msg.get('restart', False))
 
             elif req == 'close_node':
                 addr = msg.get('addr', None)
@@ -1968,7 +1956,8 @@ class Scheduler(object, metaclass=pycos.Singleton):
         if node.task and node.status < Scheduler.NodeClosed:
             node.task.send({'req': 'release', 'auth': node.auth})
 
-    def __close_server(self, server, pid, node, await_io=False, terminate=False, task=None):
+    def __close_server(self, server, pid, node, await_io=False, terminate=False, restart=False,
+                       task=None):
         if server.pid != pid:
             raise StopIteration(0)
         if server.status == Scheduler.ServerDisconnected:
@@ -1976,18 +1965,26 @@ class Scheduler(object, metaclass=pycos.Singleton):
                 if not server.rtasks:
                     break
                 yield task.sleep(0.2)
-            server.cpu_avail.set()
             server.done.set()
         server_task, server.task = server.task, None
         if not server_task or not node.task:
             raise StopIteration(0)
-        client = self.__client
         if node.servers.pop(server_task.location, None):
             node.disabled_servers[server_task.location] = server
+            if node.servers:
+                if server.cpu_avail.is_set():
+                    node.load = float(node.cpus_used) / len(node.servers)
+            else:
+                if node.cpu_avail.is_set():
+                    node.cpu_avail.clear()
+                    self._cpu_nodes.discard(node)
+                    if not self._cpu_nodes:
+                        self._cpus_avail.clear()
 
+        client = self.__client
         if server.status < Scheduler.ServerClosed:
-            node.task.send({'req': 'close_server', 'terminate': terminate, 'pid': pid,
-                            'addr': server_task.location, 'auth': node.auth})
+            node.task.send({'req': 'close_server', 'terminate': terminate, 'restart': restart,
+                            'pid': pid, 'addr': server_task.location, 'auth': node.auth})
             server.status = Scheduler.ServerClosed
         if server.status == Scheduler.ServerClosed:
             if server.rtasks:
@@ -2020,15 +2017,6 @@ class Scheduler(object, metaclass=pycos.Singleton):
         server.askew_results.clear()
         if client and client.status_task:
             client.status_task.send(DispycosStatus(server.status, server_task.location))
-
-        if not server.cpu_avail.is_set():
-            server.cpu_avail.set()
-            node.cpus_used -= 1
-            if node.cpus_used == len(node.servers):
-                self._cpu_nodes.discard(node)
-                if not self._cpu_nodes:
-                    self._cpus_avail.clear()
-                node.cpu_avail.clear()
 
         if not server.done.is_set():
             server.done.set()
