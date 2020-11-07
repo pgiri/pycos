@@ -1630,6 +1630,7 @@ class _Peer(object):
         self.certfile = certfile
         self.stream = False
         self.conn = None
+        self.reqs = collections.deque()
         self.waiting = False
         self.addrinfo = addrinfo
         _Peer._lock.acquire()
@@ -1640,7 +1641,6 @@ class _Peer(object):
         _Peer.peers[(location.addr, location.port)] = self
         _Peer._sign_locations[signature] = location
         _Peer._lock.release()
-        self.reqs = collections.deque()
         self.req_task = SysTask(self.req_proc)
 
         logger.debug('%s: found peer %s', addrinfo.location, location)
