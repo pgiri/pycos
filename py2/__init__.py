@@ -2488,7 +2488,7 @@ class Task(object):
                 logger.warning('Invalid name "%s" to register task ignored', name)
                 return -1
             if self._scheduler != Task._pycos:
-                name = '~' + name
+                name = '^' + name
         else:
             name = self._name
         return self._scheduler._register_task(self, name)
