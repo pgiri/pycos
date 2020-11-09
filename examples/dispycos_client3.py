@@ -7,11 +7,6 @@
 # done in 'dispycos_client1.py', remote task sends the result back to client
 # with message passing.
 
-import pycos
-import pycos.netpycos
-from pycos.dispycos import *
-
-
 # objects of C are exchanged between client and servers
 class C(object):
     def __init__(self, i):
@@ -22,8 +17,7 @@ class C(object):
         return '%d: %s' % (self.i, self.n)
 
 
-# this generator function is sent to remote dispycos servers to run tasks
-# there
+# this generator function is sent to remote dispycos servers to run tasks there
 def compute(obj, result_task, task=None):
     # obj is an instance of C
     import math
@@ -35,8 +29,12 @@ def compute(obj, result_task, task=None):
     yield result_task.deliver(obj, timeout=5)
 
 
+# -- code below is executed locally --
+
 # local task submits computation tasks at dispycos servers
-def client_proc(client, njobs, task=None):
+def client_proc(njobs, task=None):
+    # send generator function and class C (as the client uses # objects of C)
+    client = Client([compute, C])
     # schedule client with the scheduler; scheduler accepts one client
     # at a time, so if scheduler is shared, the client is queued until it
     # is done with already scheduled clients
@@ -71,12 +69,14 @@ def client_proc(client, njobs, task=None):
 
 if __name__ == '__main__':
     import random, sys
+    import pycos
+    import pycos.netpycos
+    from pycos.dispycos import *
+
     # pycos.logger.setLevel(pycos.Logger.DEBUG)
     # if scheduler is not already running (on a node as a program),
     # start it (private scheduler):
     Scheduler()
-    # send generator function and class C (as the client uses
-    # objects of C)
-    client = Client([compute, C])
     # run 10 (or given number of) jobs
-    pycos.Task(client_proc, client, 10 if len(sys.argv) < 2 else int(sys.argv[1])).value()
+    # use 'value()' on client task to wait for task finish
+    pycos.Task(client_proc, 10 if len(sys.argv) < 2 else int(sys.argv[1])).value()

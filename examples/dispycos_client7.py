@@ -6,25 +6,20 @@
 # dispycos servers. This template can be used to implement cusomized scheduler to run remote
 # tasks.
 
-import pycos
-import pycos.netpycos
-from pycos.dispycos import *
-
-
 # this generator function is sent to remote server to run tasks there
 def rtask_proc(n, task=None):
     yield task.sleep(n)
     raise StopIteration(n)
 
 
+# -- code below is executed locally --
+
 # Instead of using client's 'run' method to schedule tasks at any available server (which is
 # easier), in this example status messages from dispycos scheduler are used to start remote tasks
 # at specific servers and get their results
-def status_proc(client, njobs, task=None):
-    # set client's status_task to receive status messages from dispycos
-    # scheduler (this should be done before httpd is created, in case it is
-    # used).
-    client.status_task = task
+def client_proc(njobs, task=None):
+    # set 'status_task' to this task to receive message from scheduler
+    client = Client([rtask_proc], status_task=task)
     # schedule client with the scheduler; scheduler accepts one client
     # at a time, so if scheduler is shared, the client is queued until it
     # is done with already scheduled clients wait for jobs to be created
@@ -38,7 +33,7 @@ def status_proc(client, njobs, task=None):
     # client / needs, many tasks can be simlutaneously submitted / running
     # at a server (with 'client.io_rtask').
     while True:
-        msg = yield task.receive()
+        msg = yield task.receive()  # from dispycos scheduler
         if isinstance(msg, DispycosStatus):
             # print('Status: %s / %s' % (msg.info, msg.status))
             if msg.status == Scheduler.ServerInitialized and njobs > 0:  # run a job
@@ -71,6 +66,10 @@ def status_proc(client, njobs, task=None):
 
 if __name__ == '__main__':
     import sys, random
+    import pycos
+    import pycos.netpycos
+    from pycos.dispycos import *
+
     # pycos.logger.setLevel(pycos.Logger.DEBUG)
     # PyPI / pip packaging adjusts assertion below for Python 3.7+
     if sys.version_info.major == 3:
@@ -82,5 +81,5 @@ if __name__ == '__main__':
     # (private scheduler):
     Scheduler()
     njobs = 10 if len(sys.argv) < 2 else int(sys.argv[1])
-    client = Client([rtask_proc])
-    pycos.Task(status_proc, client, njobs)
+    # use 'value()' on client task to wait for task finish
+    pycos.Task(client_proc, njobs).value()

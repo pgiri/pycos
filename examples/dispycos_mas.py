@@ -3,10 +3,6 @@
 
 # this is a simple example of multi-agent system
 
-import pycos.netpycos as pycos
-from pycos.dispycos import *
-
-
 # this generator function is sent to remote dispycos servers to run tasks (agents) there
 def agent_proc(client_task, task=None):
     import random
@@ -77,9 +73,11 @@ def agent_proc(client_task, task=None):
             client_task.send(msg)
 
 
+# -- code below is executed locally --
+
 # status messages indicating nodes, servers and remote tasks finish status are sent to this local
 # task; in this case we process only servers initialized and closed
-def status_proc(task=None):
+def status_proc(client, task=None):
     task.set_daemon()
     while 1:
         msg = yield task.receive()
@@ -99,7 +97,10 @@ def status_proc(task=None):
 
 
 # this local task submits client to dispycos scheduler, shows latest updates
-def client_proc(client, task=None):
+def client_proc(task=None):
+    client = Client([agent_proc])
+    # set status_task separately as status_proc needs 'client' argument
+    client.status_task=pycos.Task(status_proc, client)
     # schedule client with the scheduler
     if (yield client.schedule()):
         raise Exception('schedule failed')
@@ -125,23 +126,22 @@ def client_proc(client, task=None):
 
 if __name__ == '__main__':
     import pycos.dispycos, sys
+    import pycos.netpycos as pycos
+    from pycos.dispycos import *
+
     pycos.logger.setLevel(pycos.Logger.DEBUG)
     # if scheduler is not already running (on a node as a program), start it (private scheduler):
     Scheduler()
-    kwargs = {
-        'status_task': pycos.Task(status_proc),
-        'restart_servers': True,
-        }
-    client = Client([agent_proc], **kwargs)
+
     agents = set()  # for illustration - not required in this example
-    client_task = pycos.Task(client_proc, client)
+    servers = set()
+    client_task = pycos.Task(client_proc)
+
     print('   Enter "quit" or "exit" to end the program ')
     if sys.version_info.major > 2:
         read_input = input
     else:
         read_input = raw_input
-
-    servers = set()
 
     while True:
         try:

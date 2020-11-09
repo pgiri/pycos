@@ -7,11 +7,6 @@
 # as the computation is supposed to be CPU heavy (although in this example they
 # are not).
 
-import pycos
-import pycos.netpycos
-from pycos.dispycos import *
-
-
 # this generator function is sent to remote dispycos servers to run tasks there
 def compute(i, n, reply, task=None):
     import time
@@ -21,6 +16,8 @@ def compute(i, n, reply, task=None):
     reply.send((i, task.location, time.asctime()))
     raise StopIteration(0)
 
+
+# -- code below is executed locally --
 
 # client (local) task submits computations
 def client_proc(client, task=None):
@@ -56,6 +53,10 @@ def client_proc(client, task=None):
 
 if __name__ == '__main__':
     import sys, random, pycos.httpd
+    import pycos
+    import pycos.netpycos
+    from pycos.dispycos import *
+
     pycos.logger.setLevel(pycos.Logger.DEBUG)
     # PyPI / pip packaging adjusts assertion below for Python 3.7+
     if sys.version_info.major == 3:
@@ -67,7 +68,7 @@ if __name__ == '__main__':
     # the network, so unlike in other examples, scheduler is not started here
 
     # assume that we want to customize allocation of CPUs; in this case, we
-    # leave one of the CPUs on node not used (DispycosNodeAllocate uses all
+    # leave one of the CPUs on node not used (default DispycosNodeAllocate uses all
     # CPUs)
     class NodeAllocate(DispycosNodeAllocate):
         # override 'allocate' method of DispycosNodeAllocate
@@ -94,12 +95,12 @@ if __name__ == '__main__':
             cmd = read_input().strip().lower()
             if cmd in ('quit', 'exit'):
                 break
-        except:
+        except Exception:
             break
         else:
             try:
                 n = float(cmd)
-            except:
+            except Exception:
                 # if input is not a number, generate random number
                 n = random.uniform(10, 20)
             client_task.send(n)

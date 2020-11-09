@@ -14,28 +14,14 @@
 # of their data (thus there is no duplicate data in servers at a node in this
 # case).
 
-import pycos
-import pycos.netpycos
-from pycos.dispycos import *
-
-
-def server_available(location, data_file, task=None):
-    # 'server_available' is executed locally (at client) when a server process
-    # is available. 'location' is Location instance of server. When this task is
-    # executed, 'depends' of client would've been transferred.  data_file
-    # could've been sent with the client 'depends'; however, to illustrate
-    # how files can be sent separately (to distribute data fragments among
-    # servers), files are transferred to servers in this example
-
-    print('  Sending %s to %s' % (data_file, location))
-    if (yield pycos.Pycos().send_file(location, data_file, timeout=5, overwrite=True)) < 0:
-        print('Could not send data file "%s" to %s' % (data_file, location))
-        raise StopIteration(-1)
-
-    # 'setup_server' is executed on remote server at 'location' with argument
-    # data_file
-    yield client.enable_server(location, os.path.basename(data_file))
-    raise StopIteration(0)
+# 'compute' is executed at remote server process repeatedly to compute checksum
+# of data in memory, initialized by 'setup_server'
+def compute(alg, n, task=None):
+    global data, hashlib, file_name
+    yield task.sleep(n)
+    checksum = getattr(hashlib, alg)()
+    checksum.update(data)
+    raise StopIteration((file_name, alg, checksum.hexdigest()))
 
 
 # 'setup_server' is executed at remote server process to read the data in given
@@ -46,7 +32,7 @@ def setup_server(data_file, task=None):  # executed on remote server
     # to all tasks on a server.
     global hashlib, data, file_name
     import os, hashlib
-    file_name = data_file
+    file_name = os.path.basename(data_file)
     print('%s processing %s' % (task.location, data_file))
     # note that files transferred to server are in the directory where
     # tasks are executed (cf 'node_setup' in dispycos_client9_node.py)
@@ -58,14 +44,24 @@ def setup_server(data_file, task=None):  # executed on remote server
     raise StopIteration(ret)
 
 
-# 'compute' is executed at remote server process repeatedly to compute checksum
-# of data in memory, initialized by 'setup_server'
-def compute(alg, n, task=None):
-    global data, hashlib, file_name
-    yield task.sleep(n)
-    checksum = getattr(hashlib, alg)()
-    checksum.update(data)
-    raise StopIteration((file_name, alg, checksum.hexdigest()))
+# -- code below is executed locally --
+
+# 'server_available' is executed locally (at client) when a server process
+# is available. 'location' is Location instance of server. When this task is
+# executed, 'depends' of client would've been transferred.  data_file
+# could've been sent with the client 'depends'; however, to illustrate
+# how files can be sent separately (to distribute data fragments among
+# servers), files are transferred to servers in this example
+def server_available(location, data_file, task=None):
+    print('  Sending %s to %s' % (data_file, location))
+    if (yield pycos.Pycos().send_file(location, data_file, timeout=5, overwrite=True)) < 0:
+        print('Could not send data file "%s" to %s' % (data_file, location))
+        raise StopIteration(-1)
+
+    # 'setup_server' is executed on remote server at 'location' with argument
+    # data_file
+    yield client.enable_server(location, os.path.basename(data_file))
+    raise StopIteration(0)
 
 
 # local task to process status messages from scheduler
@@ -83,10 +79,10 @@ def status_proc(task=None):
                 i = 0
 
 
+# this task schedules computation, submits tasks to remote servers and gets results from them
 def client_proc(client, task=None):
     if (yield client.schedule()):
         raise Exception('Could not schedule client')
-
     # execute 10 jobs (tasks) and get their results. Note that number of jobs
     # created can be more than number of server processes available; the
     # scheduler will use as many processes as necessary/available, running one
@@ -111,6 +107,10 @@ def client_proc(client, task=None):
 
 if __name__ == '__main__':
     import sys, os, random, glob
+    import pycos
+    import pycos.netpycos
+    from pycos.dispycos import *
+
     pycos.logger.setLevel(pycos.Logger.DEBUG)
     # PyPI / pip packaging adjusts assertion below for Python 3.7+
     if sys.version_info.major == 3:
@@ -129,8 +129,12 @@ if __name__ == '__main__':
     # private scheduler:
     Scheduler()
 
+    # unlike in previous examples, client is created in 'main' thread as it is used
+    # in 'server_available' as well
+
     # send 'compute' generator function; the client sends data files when server
     # is discovered (to illustrate how client can distribute data).
     client = Client([compute], status_task=pycos.Task(status_proc),
                     disable_servers=True, server_setup=setup_server)
-    pycos.Task(client_proc, client)
+    # use 'value()' on client task to wait for task finish
+    pycos.Task(client_proc, client).value()

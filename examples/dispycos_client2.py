@@ -7,10 +7,6 @@
 # as the computation is supposed to be CPU heavy (although in this example they
 # are not).
 
-import pycos
-import pycos.netpycos
-from pycos.dispycos import *
-
 
 # this generator function is sent to remote dispycos servers to run tasks there
 def compute(i, n, task=None):
@@ -19,8 +15,12 @@ def compute(i, n, task=None):
     raise StopIteration((i, task.location, time.asctime()))  # result of 'compute' is current time
 
 
+# -- code below is executed locally --
+
 # client (local) task submits tasks
-def client_proc(client, njobs, task=None):
+def client_proc(njobs, task=None):
+    # package client fragments
+    client = Client([compute])
     # schedule client with the scheduler; scheduler accepts one client
     # at a time, so if scheduler is shared, the client is queued until it
     # is done with already scheduled clients
@@ -49,6 +49,10 @@ def client_proc(client, njobs, task=None):
 
 if __name__ == '__main__':
     import sys, random
+    import pycos
+    import pycos.netpycos
+    from pycos.dispycos import *
+
     pycos.logger.setLevel(pycos.Logger.DEBUG)
     # PyPI / pip packaging adjusts assertion below for Python 3.7+
     if sys.version_info.major == 3:
@@ -56,10 +60,8 @@ if __name__ == '__main__':
             ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
              (__file__, sys.version_info.major, sys.version_info.minor))
 
-    # if scheduler is not already running (on a node as a program), start
-    # private scheduler:
+    # if scheduler is not already running (on a node as a program), start private scheduler:
     Scheduler()
-    # package client fragments
-    client = Client([compute])
     # run 10 (or given number of) jobs
-    pycos.Task(client_proc, client, 10 if len(sys.argv) < 2 else int(sys.argv[1]))
+    # use 'value()' on client task to wait for task finish
+    pycos.Task(client_proc, 10 if len(sys.argv) < 2 else int(sys.argv[1])).value()

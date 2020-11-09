@@ -10,11 +10,6 @@
 
 # dispycosnode.py -d --ext_ip_addr 54.204.242.185
 
-import pycos
-import pycos.netpycos
-from pycos.dispycos import *
-
-
 # this generator function is sent to remote dispycos servers to run
 # tasks there
 def compute(i, n, task=None):
@@ -25,7 +20,11 @@ def compute(i, n, task=None):
     raise StopIteration((i, n))
 
 
-def client_proc(client, njobs, task=None):
+# -- code below is executed locally --
+
+def client_proc(njobs, task=None):
+    # send 'compute' to dispycos servers to run tasks when jobs are scheduled
+    client = Client([compute])
     # schedule client with the scheduler; scheduler accepts one client
     # at a time, so if scheduler is shared, the client is queued until it
     # is done with already scheduled clients
@@ -59,7 +58,11 @@ def client_proc(client, njobs, task=None):
 
 if __name__ == '__main__':
     import sys, random
-    # enable debug initially
+    import pycos
+    import pycos.netpycos
+    from pycos.dispycos import *
+
+    # enable debug to see progress
     pycos.logger.setLevel(pycos.Logger.DEBUG)
     # PyPI / pip packaging adjusts assertion below for Python 3.7+
     if sys.version_info.major == 3:
@@ -79,6 +82,5 @@ if __name__ == '__main__':
     # if scheduler is not already running (on a node as a program),
     # start private scheduler:
     Scheduler()
-    # use 'compute' for client jobs
-    client = Client([compute])
-    pycos.Task(client_proc, client, njobs)
+    # use 'value()' on client task to wait for task finish
+    pycos.Task(client_proc, njobs).value()

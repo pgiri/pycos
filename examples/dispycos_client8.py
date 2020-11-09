@@ -4,11 +4,6 @@
 # This example uses status messages and message passing to run 'setup' task at
 # remote process to prepare it for processing jobs.
 
-import pycos
-import pycos.netpycos
-from pycos.dispycos import *
-
-
 # Unlike in earlier versions of pycos, computations can now take time - even if
 # computations don't "yield" to scheduler, pycos can still send/receive
 # messages, respond to timer events in scheduler etc. In this case, computation
@@ -17,13 +12,13 @@ from pycos.dispycos import *
 def compute_task(task=None):
     import time
 
-    client = yield task.receive()  # first message is client task
+    reply_task = yield task.receive()  # first message is reply task (send_requests) at client
 
     result = 0
     while True:
         n = yield task.receive()
         if n is None:  # end of requests
-            client.send(result)
+            reply_task.send(result)
             break
         # long-running computation (without 'yield') is simulated with
         # 'time.sleep'; during this time client may send messages to this task
@@ -33,8 +28,12 @@ def compute_task(task=None):
         result += n
 
 
+# -- code below is executed locally --
+
 # client (local) task runs computations
-def client_proc(client, njobs, task=None):
+def client_proc(njobs, task=None):
+    # package client components
+    client = Client([compute_task])
     # schedule client with the scheduler; scheduler accepts one client
     # at a time, so if scheduler is shared, the client is queued until it
     # is done with already scheduled clients
@@ -72,11 +71,14 @@ def client_proc(client, njobs, task=None):
 
 if __name__ == '__main__':
     import random, sys
+    import pycos
+    import pycos.netpycos
+    from pycos.dispycos import *
+
     # pycos.logger.setLevel(pycos.Logger.DEBUG)
     # if scheduler is not already running (on a node as a program), start
     # private scheduler:
     Scheduler()
-    # package client components
-    client = Client([compute_task])
     # run n jobs
-    pycos.Task(client_proc, client, 10 if len(sys.argv) < 2 else int(sys.argv[1]))
+    # use 'value()' on client task to wait for task finish
+    pycos.Task(client_proc, 10 if len(sys.argv) < 2 else int(sys.argv[1])).value()

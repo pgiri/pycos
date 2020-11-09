@@ -15,7 +15,6 @@
 # practice, it may be required to use information in 'DispycosNodeInfo' to find how much memory is
 # available at a node to use this approach.
 
-
 # 'init_mem' is executed at remote server process to store data into memory so future tasks can
 # use data in memory. This could've been done in 'compute' itself (without using 'init_mem'); here
 # separate task is used to illustrate how tasks can share memory (e.g., to keep
@@ -39,6 +38,7 @@ def init_mem(data_file, task=None):
 # different servers can run different functions or same server can run multiple functions etc.
 def compute(reply_task, task=None):
     global data, hashlib  # use variables (in memory) setup in 'init_mem'
+    import traceback
     while 1:
         msg = yield task.recv()
         if isinstance(msg, tuple) and len(msg) == 2:
@@ -63,7 +63,7 @@ def compute(reply_task, task=None):
     raise StopIteration(0)
 
 
-# ------------------ functions below are executed locally -------------
+# -- code below is executed locally --
 
 # this local function is executed when a server is available; this function runs 'init_mem'
 # on that server first and then 'compute' to process data in memory
@@ -156,4 +156,5 @@ if __name__ == '__main__':
     Scheduler()
 
     servers = {}
-    pycos.Task(client_proc, data_files)
+    # use 'value()' on client task to wait for task finish
+    pycos.Task(client_proc, data_files).value()

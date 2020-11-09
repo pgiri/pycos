@@ -7,11 +7,6 @@
 # message passing is used to send data from client to the program and to send
 # output from the program back to the client.
 
-import pycos
-import pycos.netpycos
-from pycos.dispycos import *
-
-
 # rtask_proc is sent to remote server to execute dispycos_client5_proc.py
 # program. It uses message passing to get data from client that is sent to the
 # program's stdin using pipe and read output from program that is sent back to
@@ -62,8 +57,12 @@ def rtask_proc(client, program, task=None):
     raise StopIteration(pipe.poll())
 
 
+# -- code below is executed locally --
+
 # client (local) task submits tasks for remote execution at dispycos servers
-def client_proc(client, program, n, task=None):
+def client_proc(program, n, task=None):
+    # send rtask_proc and program
+    client = Client([rtask_proc, program])
     # schedule client with the scheduler; scheduler accepts one client
     # at a time, so if scheduler is shared, the client is queued until it
     # is done with already scheduled clients
@@ -92,7 +91,7 @@ def client_proc(client, program, n, task=None):
         # create reader and send to rtask so it can send messages to reader
         client_reader = pycos.Task(get_output, i)
         # schedule rtask on (available) remote server
-        rtask = yield client.rtask(rtask_proc, client_reader, program)
+        rtask = yield client.rtask(rtask_proc, client_reader, os.path.basename(program))
         if isinstance(rtask, pycos.Task):
             print('  job %s processed by %s' % (i, rtask.location))
             # sender sends input data to rtask
@@ -117,6 +116,10 @@ def client_proc(client, program, n, task=None):
 
 if __name__ == '__main__':
     import sys, random, os
+    import pycos
+    import pycos.netpycos
+    from pycos.dispycos import *
+
     pycos.logger.setLevel(pycos.Logger.DEBUG)
     # PyPI / pip packaging adjusts assertion below for Python 3.7+
     if sys.version_info.major == 3:
@@ -137,8 +140,6 @@ if __name__ == '__main__':
     # if scheduler is not already running (on a node as a program),
     # start private scheduler:
     Scheduler()
-    # send rtask_proc and program
-    client = Client([rtask_proc, program])
 
     # Or (see 'Either' above), get the path as dispycos would: If current
     # directory is a parent of program's path, get relative path to it, or just
@@ -149,5 +150,5 @@ if __name__ == '__main__':
     #     program = os.path.basename(program)
 
     # run n (defailt 5) instances of program
-    pycos.Task(client_proc, client, os.path.basename(program),
-               5 if len(sys.argv) < 2 else int(sys.argv[1]))
+    # use 'value()' on client task to wait for task finish
+    pycos.Task(client_proc, program, 5 if len(sys.argv) < 2 else int(sys.argv[1])).value()

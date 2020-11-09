@@ -5,11 +5,6 @@
 # over Channel to send messages to remote tasks to process, and uses
 # 'deque' module to implement circular buffer.
 
-import pycos
-import pycos.netpycos
-from pycos.dispycos import *
-
-
 # This generator function is sent to remote dispycos to analyze data
 # and generate apprporiate signals that are sent to a task
 # running on client. The signal in this simple case is average of
@@ -58,7 +53,9 @@ def rtask_save_proc(channel, task=None):
     raise StopIteration(0)
 
 
-# This task runs on client. It gets trend messages from remote
+# -- code below is executed locally --
+
+# This task runs at client. It gets trend messages from remote
 # task that computes moving window average.
 def trend_proc(task=None):
     task.set_daemon()
@@ -70,7 +67,8 @@ def trend_proc(task=None):
 # This process runs locally. It creates two remote tasks at two dispycosnode
 # server processes, two local tasks, one to receive trend signal from one
 # of the remote tasks, and another to send data to two remote tasks
-def client_proc(client, task=None):
+def client_proc(task=None):
+    client = Client([])
     # schedule client with the scheduler; scheduler accepts one client
     # at a time, so if scheduler is shared, the client is queued until it
     # is done with already scheduled clients
@@ -122,6 +120,10 @@ def client_proc(client, task=None):
 
 if __name__ == '__main__':
     import sys, random
+    import pycos
+    import pycos.netpycos
+    from pycos.dispycos import *
+
     # pycos.logger.setLevel(pycos.Logger.DEBUG)
     # PyPI / pip packaging adjusts assertion below for Python 3.7+
     if sys.version_info.major == 3:
@@ -132,5 +134,5 @@ if __name__ == '__main__':
     # to be done (its location can optionally be given to 'schedule');
     # othrwise, start private scheduler:
     Scheduler()
-    client = Client([])
-    pycos.Task(client_proc, client)
+    # use 'value()' on client task to wait for task finish
+    pycos.Task(client_proc).value()

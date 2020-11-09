@@ -15,11 +15,6 @@
 # Note that the objective is to illustrate features, so implementation is not
 # ideal. Error checking is skipped at a few places for brevity.
 
-import pycos
-import pycos.netpycos
-from pycos.dispycos import *
-
-
 # objects of C are sent by a client to remote task
 class C(object):
     def __init__(self, i, data_file, n, client):
@@ -58,9 +53,11 @@ def rtask_proc(task=None):
     os.remove(cobj.result_file)
 
 
+# -- code below is executed locally --
+
 # this generator function is used to create local task (at the client) to
 # communicate with a remote task
-def client_proc(job_id, data_file, rtask, task=None):
+def use_rtask(job_id, data_file, rtask, task=None):
     # send input file to rtask.location; this will be saved to dispycos process's
     # working directory
     if (yield pycos.Pycos().send_file(rtask.location, data_file, timeout=10)) < 0:
@@ -68,7 +65,7 @@ def client_proc(job_id, data_file, rtask, task=None):
         # terminate remote task
         rtask.send(None)
         raise StopIteration(-1)
-    # send info about input
+    # send data to process
     obj = C(job_id, data_file, random.uniform(5, 8), task)
     if (yield rtask.deliver(obj)) != 1:
         print('Could not send input to %s' % rtask.location)
@@ -79,7 +76,8 @@ def client_proc(job_id, data_file, rtask, task=None):
         print('Processing %s failed' % obj.i)
         raise StopIteration(-1)
     # rtask saves results file at this client, which is saved in pycos's
-    # dest_path, not current working directory!
+    # dest_path, not current working directory; alternately, pycos.Pycos can be started with
+    # appropriate 'dest_path' parameter
     result_file = os.path.join(pycos.Pycos().dest_path, result.result_file)
     # move file to cwd
     target = os.path.join(os.getcwd(), os.path.basename(result_file))
@@ -87,9 +85,13 @@ def client_proc(job_id, data_file, rtask, task=None):
     print('    job %s output is in %s' % (obj.i, target))
 
 
-# local process submits computation at remote dispycos servers and corresponding
-# local task (with client_proc) to communicate with it
-def run_jobs_proc(client, data_files, task=None):
+# local process schedules computation, create remote tasks at dispycos servers and corresponding
+# local tasks (with use_rtask) to communicate with rtasks
+def client_proc(data_files, task=None):
+    # unlike in earlier examples, rtask_proc is not sent with client (as it
+    # is not included in 'components'; instead, it is sent each time a job is
+    # submitted, which is a bit inefficient
+    client = Client([C])
     # schedule client with the scheduler; scheduler accepts one client
     # at a time, so if scheduler is shared, the client is queued until it
     # is done with already scheduled clients
@@ -102,7 +104,7 @@ def run_jobs_proc(client, data_files, task=None):
         rtask = yield client.rtask(rtask_proc)
         if isinstance(rtask, pycos.Task):
             # create local task to send input file and data to rtask
-            pycos.Task(client_proc, i, data_file, rtask)
+            pycos.Task(use_rtask, i, data_file, rtask)
         else:
             print('  ** job %s failed: %s' % (i, rtask))
 
@@ -111,6 +113,10 @@ def run_jobs_proc(client, data_files, task=None):
 
 if __name__ == '__main__':
     import sys, random, os, glob
+    import pycos
+    import pycos.netpycos
+    from pycos.dispycos import *
+
     # pycos.logger.setLevel(pycos.Logger.DEBUG)
     # PyPI / pip packaging adjusts assertion below for Python 3.7+
     if sys.version_info.major == 3:
@@ -128,9 +134,6 @@ if __name__ == '__main__':
     # if scheduler is not already running (on a node as a program), start it
     # (private scheduler):
     Scheduler()
-    # unlike in earlier examples, rtask_proc is not sent with client (as it
-    # is not included in 'components'; instead, it is sent each time a job is
-    # submitted, which is a bit inefficient
-    client = Client([C])
 
-    pycos.Task(run_jobs_proc, client, data_files)
+    # use 'value()' on client task to wait for task finish
+    pycos.Task(client_proc, data_files).value()

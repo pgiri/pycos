@@ -7,18 +7,14 @@
 # dispycos_client6_channel.py that uses channels for communication and 'deque'
 # for circular buffers (instead of numpy).
 
-import pycos
-import pycos.netpycos
-from pycos.dispycos import *
-
-
 # This generator function is sent to remote dispycos to analyze data and
 # generate apprporiate signals that are sent to a task running on client. The
 # signal in this simple case is average of moving window of given size is below
 # or above a threshold.
 def rtask_avg_proc(threshold, trend_task, window_size, task=None):
-    import numpy as np
-    data = np.empty(window_size, dtype=float)
+    # numpy module is loaded in node_setup, so no need to load here
+    global numpy
+    data = numpy.empty(window_size, dtype=float)
     data.fill(0.0)
     cumsum = 0.0
     while True:
@@ -31,7 +27,7 @@ def rtask_avg_proc(threshold, trend_task, window_size, task=None):
             trend_task.send((i, 'high', float(avg)))
         elif avg < -threshold:
             trend_task.send((i, 'low', float(avg)))
-        data = np.roll(data, -1)
+        data = numpy.roll(data, -1)
         data[-1] = n
     raise StopIteration(0)
 
@@ -51,6 +47,8 @@ def rtask_save_proc(task=None):
     raise StopIteration(0)
 
 
+# -- code below is executed locally --
+
 # This task runs on client. It gets trend messages from remote task that
 # computes moving window average.
 def trend_proc(task=None):
@@ -63,19 +61,28 @@ def trend_proc(task=None):
 # this task is executed on a node to prepare for client. In this case we
 # want to make sure node has 'numpy' module used in rtask_avg_proc
 def node_setup(task=None):
+    # load numpy in global scope so it can be used in servers
+    global numpy
     try:
         import numpy
-    except:
+    except Exception:
         # non-zero "return" indicates failure and this node won't be used
         ret = yield -1
     else:
         ret = yield 0
     raise StopIteration(ret)
 
+
 # This task runs locally. It creates two remote tasks at two dispycosnode server
 # processes, two local tasks, one to receive trend signal from one of the remote
 # tasks, and another to send data to two remote tasks
-def client_proc(client, task=None):
+def client_proc(task=None):
+    # 'node_setup' is used to restrict to nodes that have 'numpy' module
+    # available. However, 'node_setup' doesn't work with Windows, so this
+    # example disables Windows nodes; alternately 'server_setup' (that works for
+    # Windows nodes as well) can be used instead of 'node_setup'.
+    nodes = [DispycosNodeAllocate(node='*', platform='Windows', cpus=0)]
+    client = Client([], nodes=nodes, node_setup=node_setup)
     # schedule client with the scheduler; scheduler accepts one client
     # at a time, so if scheduler is shared, the client is queued until it
     # is done with already scheduled clients
@@ -118,6 +125,10 @@ def client_proc(client, task=None):
 
 if __name__ == '__main__':
     import sys, random
+    import pycos
+    import pycos.netpycos
+    from pycos.dispycos import *
+
     # pycos.logger.setLevel(pycos.Logger.DEBUG)
     # PyPI / pip packaging adjusts assertion below for Python 3.7+
     if sys.version_info.major == 3:
@@ -129,10 +140,5 @@ if __name__ == '__main__':
     # done (its location can optionally be given to 'schedule'); othrwise, start
     # private scheduler:
     Scheduler()
-    # 'node_setup' is used to restrict to nodes that have 'numpy' module
-    # available. However, 'node_setup' doesn't work with Windows, so this
-    # example disables Windows nodes; alternately 'server_setup' (that works for
-    # Windows nodes as well) can be used instead of 'node_setup'.
-    nodes = [DispycosNodeAllocate(node='*', platform='Windows', cpus=0)]
-    client = Client([], nodes=nodes, node_setup=node_setup)
-    pycos.Task(client_proc, client)
+    # use 'value()' on client task to wait for task finish
+    pycos.Task(client_proc).value()

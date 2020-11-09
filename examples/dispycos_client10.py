@@ -3,11 +3,6 @@
 
 # In this example different files are sent to remote servers to compute checksums of file data.
 
-import pycos
-import pycos.netpycos
-from pycos.dispycos import *
-
-
 # 'compute' is executed at remote server process repeatedly to compute checksums of data in given
 # file; results are sent to 'reply_task' (which is at client)
 def compute(data_file, reply_task, task=None):
@@ -37,6 +32,8 @@ def compute(data_file, reply_task, task=None):
     # instance can be used.
     dispycos_close_server()
 
+
+# -- code below is executed locally --
 
 # 'use_server' is executed locally (at client) when a server process is available. 'location'
 # is Location instance of server. 'data_file' is sent to this server to run 'compute' on this
@@ -72,7 +69,6 @@ def client_proc(task=None):
     # 'restart_servers=True' causes servers to be started automatically when a server is closed;
     client = Client([compute], status_task=task, restart_servers=True)
     if (yield client.schedule()):
-        status_task.terminate()
         raise Exception('Could not schedule client')
 
     # in this example it is not needed to keep track of server tasks, but may be useful in
@@ -96,6 +92,10 @@ def client_proc(task=None):
 
 if __name__ == '__main__':
     import sys, os, glob
+    import pycos
+    import pycos.netpycos
+    from pycos.dispycos import *
+
     pycos.logger.setLevel(pycos.Logger.DEBUG)
     # PyPI / pip packaging adjusts assertion below for Python 3.7+
     if sys.version_info.major == 3:
@@ -121,4 +121,5 @@ if __name__ == '__main__':
     # private scheduler:
     Scheduler()
 
-    pycos.Task(client_proc)
+    # use 'value()' on client task to wait for task finish
+    pycos.Task(client_proc).value()

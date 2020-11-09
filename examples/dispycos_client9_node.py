@@ -7,31 +7,17 @@
 # 'dispycos_client9_server.py' which initializes each server to read data in to
 # memory for processing in computations.
 
-import pycos
-import pycos.netpycos
-from pycos.dispycos import *
-
-
-def node_available(avail_info, data_file, task=None):
-    # 'node_available' is executed locally (at client) when a node is
-    # available. 'location' is Location instance of node. When this task is
-    # executed, 'depends' of client would've been transferred.
-
-    # data_file could've been sent with the client 'depends'; however, to
-    # illustrate how files can be sent separately (e.g., to transfer different
-    # files to different nodes), file is transferred with 'node_available'.
-
-    print('  Sending %s to %s' % (data_file, avail_info.location.addr))
-    sent = yield pycos.Pycos().send_file(avail_info.location, data_file,
-                                         overwrite=True, timeout=5)
-    if (sent < 0):
-        print('Could not send data file "%s" to %s' % (data_file, avail_info.location))
-        raise StopIteration(-1)
-
-    # value of task (last value yield'ed or value of 'raise StopIteration') will
-    # be passed to node_setup as argument(s).
-    ret = yield client.enable_node(avail_info.location.addr, os.path.basename(data_file))
-    raise StopIteration(ret)
+# 'compute' is executed at remote server process repeatedly to compute checksum
+# of data in memory, initialized by 'node_setup'
+def compute(alg, n, task=None):
+    # note that files sent in 'node_available' would've been at parent of working directory, so to
+    # access 'data_file' above (if not removed in 'node_setup' as done in this case), it can do so
+    # with, e.g., as "open(os.path.join('..', data_file), 'rb')"
+    global data, hashlib, file_name
+    yield task.sleep(n)
+    checksum = getattr(hashlib, alg)()
+    checksum.update(data)
+    raise StopIteration((file_name, alg, checksum.hexdigest()))
 
 
 def node_setup(data_file):
@@ -45,26 +31,35 @@ def node_setup(data_file):
     # note that files transferred to node are in parent directory of cwd where
     # each client is run (in case such files need to be accessed in
     # computation).
+    file_name = data_file
     print('data_file: "%s"' % data_file)
     with open(data_file, 'rb') as fd:
         data = fd.read()
     os.remove(data_file)  # data_file is not needed anymore
-    file_name = data_file
-    ret = yield 0  #  task must have at least one 'yield' and 0 indicates success
+    ret = yield 0  # task must have at least one 'yield' and 0 indicates success
     raise StopIteration(ret)
 
 
-# 'compute' is executed at remote server process repeatedly to compute checksum
-# of data in memory, initialized by 'node_setup'
-def compute(alg, n, task=None):
-    # note that files sent in 'node_available' would've been at parent of working directory, so to
-    # access 'data_file' above (if not removed in 'node_setup' as done in this case), it can do so
-    # with, e.g., as "open(os.path.join('..', data_file), 'rb')"
-    global data, hashlib
-    yield task.sleep(n)
-    checksum = getattr(hashlib, alg)()
-    checksum.update(data)
-    raise StopIteration((file_name, alg, checksum.hexdigest()))
+# -- code below is executed locally --
+
+# 'node_available' is executed locally (at client) when a node is
+# available. 'location' is Location instance of node. When this task is
+# executed, 'depends' of client would've been transferred.
+def node_available(avail_info, data_file, task=None):
+    # data_file could've been sent with the client 'depends'; however, to
+    # illustrate how files can be sent separately (e.g., to transfer different
+    # files to different nodes), file is transferred with 'node_available'.
+
+    print('  Sending %s to %s' % (data_file, avail_info.location.addr))
+    sent = yield pycos.Pycos().send_file(avail_info.location, data_file,
+                                         overwrite=True, timeout=5)
+    if (sent < 0):
+        print('Could not send data file "%s" to %s' % (data_file, avail_info.location))
+        raise StopIteration(-1)
+
+    # node_setup will be executed at dispynode with data_file as argument
+    ret = yield client.enable_node(avail_info.location.addr, os.path.basename(data_file))
+    raise StopIteration(ret)
 
 
 # local task to process status messages from scheduler
@@ -110,6 +105,10 @@ def client_proc(client, task=None):
 
 if __name__ == '__main__':
     import sys, os, random, glob
+    import pycos
+    import pycos.netpycos
+    from pycos.dispycos import *
+
     pycos.logger.setLevel(pycos.Logger.DEBUG)
     # PyPI / pip packaging adjusts assertion below for Python 3.7+
     if sys.version_info.major == 3:
@@ -128,9 +127,13 @@ if __name__ == '__main__':
     # start private scheduler:
     Scheduler()
 
+    # unlike in previous examples, client is created in 'main' thread as it is used
+    # in 'status_proc' as well
+
     # Since this example doesn't work with Windows, 'nodes' feature is used to filter out nodes
     # running Windows.
     nodes = [DispycosNodeAllocate(node='*', platform='Windows', cpus=0)]
     client = Client([compute], nodes=nodes, node_setup=node_setup, disable_nodes=True,
                     status_task=pycos.Task(status_proc))
-    pycos.Task(client_proc, client)
+    # use 'value()' on client task to wait for task finish
+    pycos.Task(client_proc, client).value()

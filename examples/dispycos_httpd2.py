@@ -6,11 +6,6 @@
 # relayed by httpd's status_task) to show when remote task is created and
 # finished.
 
-import pycos
-import pycos.netpycos
-from pycos.dispycos import *
-
-
 # objects of C are exchanged between client and servers
 class C(object):
     def __init__(self, i):
@@ -27,6 +22,8 @@ def compute(obj, client, task=None):
     # obj is an instance of C
     yield task.sleep(obj.n)
 
+
+# -- code below is executed locally --
 
 # status messages indicating nodes, servers and remote tasks
 # finish status are sent to this task
@@ -52,7 +49,15 @@ def status_proc(task=None):
             print('status msg ignored: %s' % type(msg))
 
 
-def client_proc(client, task=None):
+def client_proc(task=None):
+    # send generator function and class C (as the client uses objects of C)
+    # use MinPulseInterval so node status updates are sent more frequently
+    # (instead of default 2*MinPulseInterval)
+    client = Client([compute, C], status_task=pycos.Task(status_proc),
+                    pulse_interval=pycos.dispycos.MinPulseInterval)
+
+    # create http server to monitor nodes, servers, tasks
+    http_server = pycos.httpd.HTTPServer(client)
     # schedule client with the scheduler
     if (yield client.schedule()):
         raise Exception('schedule failed')
@@ -77,23 +82,20 @@ def client_proc(client, task=None):
     # unlike in dispycos_httpd1.py, here 'await_async' is not used, so any
     # running async tasks are just terminated.
     yield client.close()
+    http_server.shutdown()
 
 
 if __name__ == '__main__':
     import pycos.dispycos, pycos.httpd, sys, random
-    pycos.logger.setLevel(pycos.Logger.DEBUG)
-    # if scheduler is not already running (on a node as a program),
-    # start it (private scheduler):
-    Scheduler()
-    # send generator function and class C (as the client uses objects of C)
-    # use MinPulseInterval so node status updates are sent more frequently
-    # (instead of default 2*MinPulseInterval)
-    client = Client([compute, C], status_task=pycos.Task(status_proc),
-                              pulse_interval=pycos.dispycos.MinPulseInterval)
+    import pycos
+    import pycos.netpycos
+    from pycos.dispycos import *
 
-    # create http server to monitor nodes, servers, tasks
-    http_server = pycos.httpd.HTTPServer(client)
-    task = pycos.Task(client_proc, client)
+    pycos.logger.setLevel(pycos.Logger.DEBUG)
+    # if scheduler is not already running (on a node as a program), start it (private scheduler)
+    Scheduler()
+    task = pycos.Task(client_proc)
+
     print('   Enter "quit" or "exit" to end the program, or ')
     print('   Enter anything else to schedule a task on one of the servers')
     if sys.version_info.major > 2:
@@ -106,8 +108,7 @@ if __name__ == '__main__':
             cmd = read_input().strip().lower()
             if cmd in ('quit', 'exit'):
                 break
-        except:
+        except Exception:
             break
         task.send(cmd)
     task.send(None)
-    http_server.shutdown()
