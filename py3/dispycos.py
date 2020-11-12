@@ -619,14 +619,16 @@ class Client(object):
                 pycos.logger.warning('scheduling %s timedout', name)
                 raise StopIteration(None)
 
-            rtask = yield task.receive()
-            if not isinstance(rtask, Task):
-                if isinstance(rtask, MonitorStatus):
-                    msg = ': %s\n%s' % (rtask.info, rtask.value)
+            msg = yield task.receive()
+            if not isinstance(msg, Task):
+                if (isinstance(msg, MonitorStatus) and
+                    isinstance(msg.info, str) and isinstance(msg.value, str)):
+                    msg = ': %s\n%s' % (msg.info, msg.value)
                 else:
                     msg = ''
                 pycos.logger.warning('running %s failed%s', name, msg)
                 raise StopIteration(None)
+            rtask = msg
             setattr(rtask, '_complete', pycos.Event())
             rtask._complete.clear()
             if self.__askew_tasks:
@@ -677,6 +679,13 @@ class Client(object):
 
                 if isinstance(req, MonitorStatus):
                     # TODO: process in Scheduler if not shared
+                    if not isinstance(req.info, pycos.Task):
+                        if isinstance(req.info, str) and isinstance(req.value, str):
+                            pycos.logger.info('%s: %s with %s', req.info, req.type, req.value)
+                        else:
+                            pycos.logger.warning('invalid MonitorStatus message ignored: %s',
+                                                 type(req.info))
+                        continue
                     rtask = self.__rtasks.pop(req.info, None)
                     if rtask:
                         if req.type == StopIteration:
@@ -696,9 +705,6 @@ class Client(object):
                         rtask = req.info
                         setattr(rtask, '_value', req)
                         self.__askew_tasks[rtask] = rtask
-
-                elif req == 'msg':
-                    pycos.logger.info(msg.get('msg'))
 
                 elif req == 'allocate':
                     reply_task = msg.get('reply_task', None)
@@ -738,7 +744,8 @@ class Client(object):
                      '_pulse_interval', '_pulse_task', '_ping_interval',
                      '_restart_servers', '_zombie_period', '_abandon_zombie']:
             state[attr] = getattr(self, attr)
-        if self._pulse_task.location == self.scheduler.location:
+        if (isinstance(self._pulse_task, pycos.Task) and
+            self._pulse_task.location == self.scheduler.location):
             node_allocations = self._node_allocations
         else:
             node_allocations = []
@@ -947,10 +954,16 @@ class Scheduler(object, metaclass=pycos.Singleton):
             msg = yield task.receive()
             now = time.time()
             if isinstance(msg, MonitorStatus):
-                rtask = msg.info
-                if not isinstance(rtask, Task):
-                    logger.warning('ignoring invalid rtask %s', type(rtask))
+                if not isinstance(msg.info, Task):
+                    if self._remote and self.__client:
+                        self.__client._pulse_task.send({'req': msg, 'auth': self.__client_auth})
+                    else:
+                        if isinstance(msg.info, str) and isinstance(msg.value, str):
+                            logger.info('%s: %s with %s', msg.info, msg.type, msg.value)
+                        else:
+                            logger.warning('invalid MonitorStatus ignored: %s', type(msg.info))
                     continue
+                rtask = msg.info
                 node = self._nodes.get(rtask.location.addr, None)
                 if not node:
                     node = self._disabled_nodes.get(rtask.location.addr, None)
@@ -1274,16 +1287,16 @@ class Scheduler(object, metaclass=pycos.Singleton):
         node.task.send({'req': 'client', 'client': pycos.serialize(client),
                         'auth': node.auth, 'setup_args': setup_args,
                         'restart_servers': client._restart_servers, 'reply_task': task})
-        cpus = yield task.receive(timeout=MsgTimeout)
-        if not isinstance(cpus, int) or cpus <= 0 or client != self.__client:
+        reply = yield task.receive(timeout=MsgTimeout)
+        if not isinstance(reply, int) or reply <= 0 or client != self.__client:
             if client._pulse_task:
-                client._pulse_task.send({'req': 'msg', 'auth': self.__client_auth, 'msg': cpus})
+                client._pulse_task.send({'req': reply, 'auth': self.__client_auth})
             node.status = Scheduler.NodeClosed
             node.task.send({'req': 'release', 'auth': node.auth, 'reply_task': None})
             node.lock.release()
             raise StopIteration(-1)
 
-        node.cpus = cpus
+        node.cpus = reply
         node.status = Scheduler.NodeInitialized
         node.lock.release()
         if client.status_task:

@@ -29,7 +29,7 @@ def _dispycos_server_proc():
 
     from pycos.dispycos import MinPulseInterval, MaxPulseInterval, \
         DispycosNodeInfo, DispycosNodeAvailInfo, Scheduler
-    from pycos.netpycos import Task, SysTask, Location, MonitorStatus, deserialize, logger
+    from pycos import Task, SysTask, Location, MonitorStatus, deserialize, logger
     global _DispycosJob_
     from pycos.dispycos import _DispycosJob_
 
@@ -159,7 +159,7 @@ def _dispycos_server_proc():
                         else:
                             _dispycos_var = traceback.format_exception(exc[0], exc[1],
                                                                        exc[2].tb_next)
-                        msg = MonitorStatus(msg.info, exc[1],
+                        msg = MonitorStatus(msg.info, exc[0],
                                             ('task %s running at %s raised exception:\n%s' %
                                              (msg.info.name, task.location,
                                               ''.join(_dispycos_var))))
@@ -199,7 +199,8 @@ def _dispycos_server_proc():
         raise StopIteration(-1)
     _dispycos_var = deserialize(_dispycos_config['client_location'])
     if (yield _dispycos_scheduler.peer(_dispycos_var)):
-        logger.warning('%s could not communicate with commputation', _dispycos_task.location)
+        logger.warning('%s could not communicate with client at %s',
+                       _dispycos_task.location, _dispycos_var)
         raise StopIteration(-1)
     _dispycos_peers.add(_dispycos_var)
 
@@ -220,7 +221,7 @@ def _dispycos_server_proc():
                     continue
                 _dispycos_req = _dispycos_msg.get('req', None)
                 if _dispycos_req == 'enable_server':
-                    _dispycos_var = pycos.deserialize(_dispycos_msg['setup_args'])
+                    _dispycos_var = _dispycos_msg.get('setup_args', ())
                     break
                 elif _dispycos_req == 'terminate' or _dispycos_req == 'quit':
                     if _dispycos_msg.get('pid', None) != _dispycos_config['pid']:
@@ -236,11 +237,32 @@ def _dispycos_server_proc():
                     logger.warning('Ignoring invalid request to run server setup')
         else:
             _dispycos_var = ()
-        _dispycos_var = yield pycos.Task(globals()[_dispycos_config['server_setup']],
-                                         *_dispycos_var).finish()
-        if _dispycos_var != 0:
-            logger.debug('dispycos server %s @ %s setup failed', _dispycos_config['sid'],
-                         _dispycos_task.location)
+
+        def setup(task=None):
+            try:
+                if _dispycos_var:
+                    args = pycos.deserialize(_dispycos_var)
+                else:
+                    args = ()
+                ret = yield globals()[_dispycos_config['server_setup']](*args, task=task)
+                assert isinstance(ret, int) and ret == 0, \
+                    'server_setup exited with non-zero value %s' % ret
+            except Exception:
+                ret = sys.exc_info()
+            raise StopIteration(ret)
+        _dispycos_var = yield pycos.Task(setup).finish()
+        del setup
+        if isinstance(_dispycos_var, tuple):
+            print(_dispycos_var[0])
+            if len(_dispycos_var) == 2 or not _dispycos_var[2]:
+                _dispycos_req = traceback.format_exception_only(*_dispycos_var[:2])
+            else:
+                _dispycos_req = traceback.format_exception(_dispycos_var[0], _dispycos_var[1],
+                                                           _dispycos_var[2].tb_next)
+            _dispycos_var = MonitorStatus(
+                'server_setup failed at %s' % _dispycos_task.location, _dispycos_var[0],
+                ''.join(_dispycos_req))
+            _dispycos_scheduler_task.send(_dispycos_var)
             raise StopIteration(_dispycos_var)
         _dispycos_config['server_setup'] = None
     _dispycos_scheduler_task.send({'status': Scheduler.ServerInitialized, 'task': _dispycos_task,
@@ -249,7 +271,7 @@ def _dispycos_server_proc():
 
     SysTask(_dispycos_timer_proc)
     _dispycos_monitor_task = SysTask(_dispycos_monitor_proc)
-    logger.debug('scheduler from %s', _dispycos_scheduler_task.location)
+    logger.debug('serving scheduler at %s', _dispycos_scheduler_task.location)
 
     while 1:
         _dispycos_msg = yield _dispycos_task.receive()
@@ -557,7 +579,7 @@ def _dispycos_spawn(_dispycos_node_q, _dispycos_spawn_q, _dispycos_config, _disp
         # pycos.logger.show_ms(True)
     else:
         pycos.logger.setLevel(pycos.logger.INFO)
-    pycos.Pycos.instance()
+    pycos_scheduler = pycos.Pycos.instance()
 
     class Struct(object):
 
@@ -589,6 +611,7 @@ def _dispycos_spawn(_dispycos_node_q, _dispycos_spawn_q, _dispycos_config, _disp
             os.setregid(sgid, sgid)
             os.setreuid(suid, suid)
 
+    _dispycos_var = 0
     try:
         with open(os.path.join(_dispycos_config['dest_path'], '..', 'dispycos_client'), 'rb') as fd:
             client = pickle.load(fd)
@@ -606,24 +629,38 @@ def _dispycos_spawn(_dispycos_node_q, _dispycos_spawn_q, _dispycos_config, _disp
                 exec(client._code) in globals()
 
             if client._node_setup:
-                setup_args = pycos.deserialize(setup_args)
-                ret = pycos.Task(globals()[client._node_setup], *setup_args).value()
-                if ret != 0:
-                    raise Exception('node_setup failed with %s' % ret)
+                def setup(setup_args, task=None):
+                    try:
+                        ret = yield globals()[client._node_setup](*setup_args, task=task)
+                        assert isinstance(ret, int) and ret == 0, \
+                            'node_setup exited with non-zero value %s' % ret
+                    except Exception:
+                        ret = sys.exc_info()
+                    raise StopIteration(ret)
+                _dispycos_var = pycos.Task(setup, pycos.deserialize(setup_args)).value()
+                del setup
                 if not os.path.isdir(_dispycos_config['dest_path']):
                     os.path.makedirs(_dispycos_config['dest_path'])
         client._code = None
         client._node_setup = None
-        del setup_args
+        setup_args = None
     except Exception:
         _dispycos_var = sys.exc_info()
-        if len(_dispycos_var) == 3 and _dispycos_var[2]:
-            _dispycos_var = traceback.format_exception(_dispycos_var[0], _dispycos_var[1],
-                                                       _dispycos_var[2].tb_next)
-        else:
+
+    pycos_scheduler.finish()
+    del pycos_scheduler
+    if isinstance(_dispycos_var, tuple):
+        if len(_dispycos_var) == 2 or not _dispycos_var[2]:
             _dispycos_var = traceback.format_exception_only(*_dispycos_var[:2])
+        else:
+            _dispycos_var = traceback.format_exception(_dispycos_var[0],
+                                                       _dispycos_var[1],
+                                                       _dispycos_var[2].tb_next)
+        node_location = pycos.deserialize(_dispycos_config['node_location'])
+        _dispycos_var = pycos.MonitorStatus('node_setup failed at %s' % node_location,
+                                            _dispycos_var[0], ''.join(_dispycos_var))
         _dispycos_node_q.put({'msg': 'closed', 'auth': _dispycos_config['auth'],
-                              'exception': ''.join(_dispycos_var)})
+                              'exception': _dispycos_var})
         exit(-1)
 
     def close_servers(children):
