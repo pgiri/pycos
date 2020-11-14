@@ -2088,7 +2088,7 @@ class Lock(object):
     def __init__(self):
         self._owner = None
         self._waitlist = []
-        self._scheduler = Pycos.scheduler()
+        self._scheduler = None
 
     def acquire(self, blocking=True):
         """Must be used with 'yield' as 'yield lock.acquire()'.
@@ -2123,7 +2123,7 @@ class RLock(object):
         self._owner = None
         self._depth = 0
         self._waitlist = []
-        self._scheduler = Pycos.scheduler()
+        self._scheduler = None
 
     def acquire(self, blocking=True):
         """Must be used with 'yield' as 'yield rlock.acquire()'.
@@ -2170,7 +2170,7 @@ class Condition(object):
         self._depth = 0
         self._waitlist = []
         self._notifylist = []
-        self._scheduler = Pycos.scheduler()
+        self._scheduler = None
 
     def acquire(self, blocking=True):
         """Must be used with 'yield' as 'yield cv.acquire()'.
@@ -2265,7 +2265,7 @@ class Event(object):
     def __init__(self):
         self._flag = False
         self._waitlist = []
-        self._scheduler = Pycos.scheduler()
+        self._scheduler = None
 
     def set(self):
         """May be used with 'yield'.
@@ -2316,7 +2316,7 @@ class Semaphore(object):
         assert value >= 1
         self._waitlist = []
         self._counter = value
-        self._scheduler = Pycos.scheduler()
+        self._scheduler = None
 
     def acquire(self, blocking=True):
         """Must be used with 'yield' as 'yield sem.acquire()'.
