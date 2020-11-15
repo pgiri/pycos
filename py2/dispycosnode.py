@@ -22,7 +22,6 @@ def _dispycos_server_proc():
     """
 
     import os
-    import shutil
     import traceback
     import sys
     import time
@@ -409,11 +408,6 @@ def _dispycos_server_proc():
                      'auth': _dispycos_auth, 'pid': _dispycos_config['pid']}
     _dispycos_scheduler_task.send(_dispycos_msg)
 
-    os.chdir(os.path.join(_dispycos_config['dest_path'], '..'))
-    try:
-        shutil.rmtree(_dispycos_config['dest_path'], ignore_errors=True)
-    except Exception:
-        pass
     logger.debug('dispycos server %s @ %s done', _dispycos_config['sid'], _dispycos_task.location)
     raise StopIteration({'status': 0, 'restart': _dispycos_restart})
 
@@ -423,6 +417,7 @@ def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config):
     import sys
     import time
     import signal
+    import shutil
     # import traceback
 
     for _dispycos_var in sys.modules.keys():
@@ -502,7 +497,7 @@ def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config):
 
     _dispycos_node_task = _dispycos_config['node_task']
     _dispycos_task = pycos.SysTask(_dispycos_config.pop('server_proc'))
-    _dispycos_config['dest_path'] = config['dest_path']
+    _dispycos_path = _dispycos_config['dest_path'] = config['dest_path']
     _dispycos_config['pid'] = _dispycos_pid
     _dispycos_task.send(_dispycos_config)
     _dispycos_queue.put({'req': 'server_task', 'auth': _dispycos_auth, 'task': _dispycos_task,
@@ -543,6 +538,12 @@ def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config):
         _dispycos_scheduler.finish()
     else:
         pycos.logger.debug('dispycos task server %s seems to be dead!', _dispycos_sid)
+
+    os.chdir(os.path.join(_dispycos_path, '..'))
+    try:
+        shutil.rmtree(_dispycos_path, ignore_errors=True)
+    except Exception:
+        pass
     _dispycos_queue.put({'req': 'server_task', 'auth': _dispycos_auth, 'task': None,
                          'server_id': _dispycos_sid, 'pid': _dispycos_pid,
                          'status': _dispycos_status.get('status', -1)})
