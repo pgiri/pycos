@@ -61,8 +61,6 @@ def rtask_proc(client, program, task=None):
 
 # client (local) task submits tasks for remote execution at dispycos servers
 def client_proc(program, n, task=None):
-    # send rtask_proc and program
-    client = Client([rtask_proc, program])
     # schedule client with the scheduler; scheduler accepts one client
     # at a time, so if scheduler is shared, the client is queued until it
     # is done with already scheduled clients
@@ -137,9 +135,6 @@ if __name__ == '__main__':
 
     # program to distribute and execute
     program = os.path.join(os.path.dirname(sys.argv[0]), 'dispycos_client5_proc.py')
-    # if scheduler is not already running (on a node as a program),
-    # start private scheduler:
-    Scheduler()
 
     # Or (see 'Either' above), get the path as dispycos would: If current
     # directory is a parent of program's path, get relative path to it, or just
@@ -149,6 +144,7 @@ if __name__ == '__main__':
     # else:
     #     program = os.path.basename(program)
 
+    # send rtask_proc and program
+    client = Client([rtask_proc, program])
     # run n (defailt 5) instances of program
-    # use 'value()' on client task to wait for task finish
-    pycos.Task(client_proc, program, 5 if len(sys.argv) < 2 else int(sys.argv[1])).value()
+    pycos.Task(client_proc, program, 5 if len(sys.argv) < 2 else int(sys.argv[1]))

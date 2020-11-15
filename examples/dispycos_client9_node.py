@@ -20,7 +20,7 @@ def compute(alg, n, task=None):
     raise StopIteration((file_name, alg, checksum.hexdigest()))
 
 
-def node_setup(data_file):
+def node_setup(data_file, task=None):
     # 'node_setup' is executed on a node with the arguments returned by
     # 'node_available'. This task should return 0 to indicate successful
     # initialization.
@@ -77,7 +77,7 @@ def status_proc(task=None):
             i += 1
 
 
-def client_proc(client, task=None):
+def client_proc(task=None):
     if (yield client.schedule()):
         raise Exception('Could not schedule client')
 
@@ -116,24 +116,19 @@ if __name__ == '__main__':
             ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
              (__file__, sys.version_info.major, sys.version_info.minor))
 
+    # use files in 'examples' directory
+    data_files = glob.glob(os.path.join(os.path.dirname(pycos.__file__), 'examples', '*.py'))
+    # optional argument must be integer indicating number of files to process
+    if len(sys.argv) > 1:
+        data_files = data_files[:min(len(data_files), int(sys.argv[1]))]
+
     # optional first argument must be a directory containing Python files
     if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
         data_files = glob.glob(os.path.join(sys.argv[1], '*.py'))
-    else:
-        # use files in 'examples' directory
-        data_files = glob.glob(os.path.join(os.path.dirname(pycos.__file__), 'examples', '*.py'))
-
-    # if scheduler is not already running (on a node as a program),
-    # start private scheduler:
-    Scheduler()
-
-    # unlike in previous examples, client is created in 'main' thread as it is used
-    # in 'status_proc' as well
 
     # Since this example doesn't work with Windows, 'nodes' feature is used to filter out nodes
     # running Windows.
     nodes = [DispycosNodeAllocate(node='*', platform='Windows', cpus=0)]
     client = Client([compute], nodes=nodes, node_setup=node_setup, disable_nodes=True,
                     status_task=pycos.Task(status_proc))
-    # use 'value()' on client task to wait for task finish
-    pycos.Task(client_proc, client).value()
+    pycos.Task(client_proc)

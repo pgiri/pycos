@@ -24,10 +24,6 @@ def compute(obj, client, task=None):
 # -- code below is executed locally --
 
 def client_proc(task=None):
-    # send generator function and class C (as the client uses objects of C)
-    # use MinPulseInterval so node status updates are sent more frequently
-    # (instead of default 2*MinPulseInterval)
-    client = Client([compute, C], pulse_interval=pycos.dispycos.MinPulseInterval)
     # create http server to monitor nodes, servers, tasks
     http_server = pycos.httpd.HTTPServer(client)
     if (yield client.schedule()):
@@ -64,8 +60,10 @@ if __name__ == '__main__':
     from pycos.dispycos import *
 
     # pycos.logger.setLevel(pycos.Logger.DEBUG)
-    # if scheduler is not already running (on a node as a program), start it (private scheduler)
-    Scheduler()
+    # send generator function and class C (as the client uses objects of C)
+    # use MinPulseInterval so node status updates are sent more frequently
+    # (instead of default 2*MinPulseInterval)
+    client = Client([compute, C], pulse_interval=pycos.dispycos.MinPulseInterval)
     task = pycos.Task(client_proc)
 
     print('   Enter "quit" or "exit" to end the program, or ')

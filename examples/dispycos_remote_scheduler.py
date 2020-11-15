@@ -21,10 +21,6 @@ def compute(i, n, reply, task=None):
 
 # client (local) task submits computations
 def client_proc(client, task=None):
-    # schedule client with the scheduler; if remote scheduler is not
-    # automatically discovered (e.g., if it is on remote network, or UDP is
-    # lossy), use 'peer' method to discover, e.g., with
-    # yield pycos.Pycos.instance().peer(pycos.Location('hostname_or_ip_of_scheduler', 9706))
     if (yield client.schedule()):
         raise Exception('Could not schedule client')
 
@@ -77,7 +73,12 @@ if __name__ == '__main__':
             return cpus - 1
 
     nodes = [NodeAllocate(node='*')]
-    client = Client([compute], pulse_interval=10, zombie_period=51, nodes=nodes)
+    # unlike in other example, here dispycos scheduler is assumed to be running on host 'foreman';
+    # using a remote scheduler is useful when multiple clients can use nodes so each client
+    # can use all available nodes exclusively and clients are scheduled one after another, using
+    # nodes very effectively in a shared environment
+    client = Client([compute], pulse_interval=10, zombie_period=51, nodes=nodes,
+                    scheduler='foreman')
     # start httpd so client can be monitored with a browser
     http_server = pycos.httpd.HTTPServer(client)
 

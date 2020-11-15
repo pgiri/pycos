@@ -64,10 +64,8 @@ def use_server(location, data_file, client, task=None):
 # messages from scheduler. When ServerInitialized message is received, it starts a new task with
 # 'use_server' to use that server to process a file.
 def client_proc(task=None):
-    # send 'compute' generator function;
     # this task receives status messages from scheduler which are processed below;
-    # 'restart_servers=True' causes servers to be started automatically when a server is closed;
-    client = Client([compute], status_task=task, restart_servers=True)
+    client.status_task = task
     if (yield client.schedule()):
         raise Exception('Could not schedule client')
 
@@ -117,9 +115,7 @@ if __name__ == '__main__':
     if n:
         data_files = data_files[:n]
 
-    # if scheduler is not already running (on a node as a program), start
-    # private scheduler:
-    Scheduler()
-
-    # use 'value()' on client task to wait for task finish
-    pycos.Task(client_proc).value()
+    # send 'compute' generator function;
+    # 'restart_servers=True' causes servers to be started automatically when a server is closed;
+    client = Client([compute], restart_servers=True)
+    pycos.Task(client_proc)

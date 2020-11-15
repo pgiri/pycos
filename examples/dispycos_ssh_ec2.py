@@ -31,8 +31,6 @@ def compute(i, n, task=None):
 # -- code below is executed locally --
 
 def client_proc(njobs, task=None):
-    # send 'compute' to remote servers to run tasks when submitted
-    client = Client([compute])
     # schedule client with the scheduler; scheduler accepts one client
     # at a time, so if scheduler is shared, the client is queued until it
     # is done with already scheduled clients
@@ -78,9 +76,7 @@ if __name__ == '__main__':
              (__file__, sys.version_info.major, sys.version_info.minor))
 
     pycos.Pycos(node='127.0.0.1', tcp_port=9705, udp_port=9705)
+    # send 'compute' to remote servers to run tasks when submitted
+    client = Client([compute])
     njobs = 10 if len(sys.argv) == 1 else int(sys.argv[1])
-    # if scheduler is not already running (on a node as a program),
-    # start private scheduler:
-    Scheduler()
-    # use 'value()' on client task to wait for task finish
-    pycos.Task(client_proc, njobs).value()
+    pycos.Task(client_proc, njobs)

@@ -18,8 +18,8 @@ def rtask_proc(n, task=None):
 # easier), in this example status messages from dispycos scheduler are used to start remote tasks
 # at specific servers and get their results
 def client_proc(njobs, task=None):
-    # set 'status_task' to this task to receive message from scheduler
-    client = Client([rtask_proc], status_task=task)
+    # set status_task to receive status messages from scheduler
+    client.status_task = task
     # schedule client with the scheduler; scheduler accepts one client
     # at a time, so if scheduler is shared, the client is queued until it
     # is done with already scheduled clients wait for jobs to be created
@@ -77,9 +77,6 @@ if __name__ == '__main__':
             ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
              (__file__, sys.version_info.major, sys.version_info.minor))
 
-    # if scheduler is not already running (on a node as a program), start it
-    # (private scheduler):
-    Scheduler()
     njobs = 10 if len(sys.argv) < 2 else int(sys.argv[1])
-    # use 'value()' on client task to wait for task finish
-    pycos.Task(client_proc, njobs).value()
+    client = Client([rtask_proc])
+    pycos.Task(client_proc, njobs)

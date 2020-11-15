@@ -19,8 +19,6 @@ def compute(i, n, task=None):
 
 # client (local) task submits tasks
 def client_proc(njobs, task=None):
-    # package client fragments
-    client = Client([compute])
     # schedule client with the scheduler; scheduler accepts one client
     # at a time, so if scheduler is shared, the client is queued until it
     # is done with already scheduled clients
@@ -34,7 +32,7 @@ def client_proc(njobs, task=None):
         if isinstance(rtask, pycos.Task):
             rtasks.append(rtask)
         else:
-            print('  ** run failed for %s' % i)
+            print('  ** rtask failed for %s' % i)
     # wait for results
     for rtask in rtasks:
         result = yield rtask()
@@ -60,8 +58,7 @@ if __name__ == '__main__':
             ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
              (__file__, sys.version_info.major, sys.version_info.minor))
 
-    # if scheduler is not already running (on a node as a program), start private scheduler:
-    Scheduler()
+    # package client fragments
+    client = Client([compute])
     # run 10 (or given number of) jobs
-    # use 'value()' on client task to wait for task finish
-    pycos.Task(client_proc, 10 if len(sys.argv) < 2 else int(sys.argv[1])).value()
+    pycos.Task(client_proc, 10 if len(sys.argv) < 2 else int(sys.argv[1]))

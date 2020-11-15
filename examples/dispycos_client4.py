@@ -88,10 +88,6 @@ def use_rtask(job_id, data_file, rtask, task=None):
 # local process schedules computation, create remote tasks at dispycos servers and corresponding
 # local tasks (with use_rtask) to communicate with rtasks
 def client_proc(data_files, task=None):
-    # unlike in earlier examples, rtask_proc is not sent with client (as it
-    # is not included in 'components'; instead, it is sent each time a job is
-    # submitted, which is a bit inefficient
-    client = Client([C])
     # schedule client with the scheduler; scheduler accepts one client
     # at a time, so if scheduler is shared, the client is queued until it
     # is done with already scheduled clients
@@ -103,7 +99,9 @@ def client_proc(data_files, task=None):
         # create remote task
         rtask = yield client.rtask(rtask_proc)
         if isinstance(rtask, pycos.Task):
-            # create local task to send input file and data to rtask
+            # start local task to send input file and data to rtask (due to concurrency, many
+	    # use_rtask processes can be simultaneously sending data to different servers,
+	    # improving efficiency)
             pycos.Task(use_rtask, i, data_file, rtask)
         else:
             print('  ** job %s failed: %s' % (i, rtask))
@@ -131,9 +129,8 @@ if __name__ == '__main__':
         data_files = data_files[:int(sys.argv[1])]
     print(data_files)
 
-    # if scheduler is not already running (on a node as a program), start it
-    # (private scheduler):
-    Scheduler()
-
-    # use 'value()' on client task to wait for task finish
-    pycos.Task(client_proc, data_files).value()
+    # unlike in earlier examples, rtask_proc is not sent with client (as it
+    # is not included in 'components'; instead, it is sent each time a job is
+    # submitted, which is a bit inefficient, but useful when using many functions for tasks
+    client = Client([C])
+    pycos.Task(client_proc, data_files)

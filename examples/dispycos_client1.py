@@ -17,12 +17,8 @@ def compute(n, task=None):
 
 # this function runs locally to schedule remote tasks (with 'compute' function above).
 def client_proc(njobs, task=None):
-    # send 'compute' generator function; use MinPulseInterval so node status
-    # updates are sent more frequently (instead of default 2*MinPulseInterval)
-    client = Client([compute], pulse_interval=pycos.dispycos.MinPulseInterval)
-
-    # to illustrate relaying of status messages to multiple tasks, httpd is
-    # also used in this example; this sets client's status_task to httpd's status_task
+    # use httpd so computation progress can be monitored in a web browser
+    # this is useful in identifying potential problems / evaluate performance of algorithms etc.
     httpd = pycos.httpd.HTTPServer(client)
     # cluster and progress of computations can be viewed in a web browser at this client's
     # network address and port 8181 (e.g., 'http://127.0.0.1:8181' at client)
@@ -47,7 +43,7 @@ def client_proc(njobs, task=None):
 
     # wait for all jobs to be done and close client
     yield client.close()
-    # shutdown httpd only after client is closed
+    # shutdown httpd after client is closed
     httpd.shutdown()
 
 
@@ -60,10 +56,8 @@ if __name__ == '__main__':
 
     # pycos.logger.setLevel(pycos.Logger.DEBUG)  # enable it to see more details
 
-    # if scheduler is not already running (on a node as a program), start
-    # private scheduler:
-    Scheduler()
+    # send 'compute' generator function to run tasks at dispycos servers
+    client = Client([compute])
 
     # run 10 (or given number of) jobs
-    # use 'value()' on client task to wait for task finish
-    pycos.Task(client_proc, 10 if len(sys.argv) < 2 else int(sys.argv[1])).value()
+    pycos.Task(client_proc, 10 if len(sys.argv) < 2 else int(sys.argv[1]))

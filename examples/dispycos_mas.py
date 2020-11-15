@@ -17,10 +17,10 @@ def agent_proc(client_task, task=None):
     def peer_status(task=None):
         task.set_daemon()
         while 1:
+            # broadcast discover messages to find other agents
+            pycos_scheduler.discover_peers()
             status = yield task.receive(timeout=60)
             if not status:  # timed out
-                # periodically broadcast as UDP messages (used for discovery) may be lost
-                pycos_scheduler.discover_peers()
                 continue
             if isinstance(status, pycos.PeerStatus):
                 if status.status == pycos.PeerStatus.Online:
@@ -41,8 +41,6 @@ def agent_proc(client_task, task=None):
     pycos_scheduler = pycos.Pycos.instance()
     # peer_status gets notifications of peers online and offline
     pycos_scheduler.peer_status(pycos.Task(peer_status))
-    # broadcast discover messages to find other agents
-    pycos_scheduler.discover_peers()
 
     # in this simple case agents discover low and high valeues (silly exercise) randomly by
     # cooperating to accelerate the process
@@ -65,12 +63,12 @@ def agent_proc(client_task, task=None):
                 continue
 
             msg = (task, low, high)
+            client_task.send(msg)
             # send message to agents and drop agents that may have gone away
             drop = [agent for agent in agents if agent.send(msg)]
             if drop:
                 for agent in drop:
                     agents.discard(agent)
-            client_task.send(msg)
 
 
 # -- code below is executed locally --
@@ -98,9 +96,8 @@ def status_proc(client, task=None):
 
 # this local task submits client to dispycos scheduler, shows latest updates
 def client_proc(task=None):
-    client = Client([agent_proc])
     # set status_task separately as status_proc needs 'client' argument
-    client.status_task=pycos.Task(status_proc, client)
+    client.status_task = pycos.Task(status_proc, client)
     # schedule client with the scheduler
     if (yield client.schedule()):
         raise Exception('schedule failed')
@@ -130,9 +127,8 @@ if __name__ == '__main__':
     from pycos.dispycos import *
 
     pycos.logger.setLevel(pycos.Logger.DEBUG)
-    # if scheduler is not already running (on a node as a program), start it (private scheduler):
-    Scheduler()
 
+    client = Client([agent_proc])
     agents = set()  # for illustration - not required in this example
     servers = set()
     client_task = pycos.Task(client_proc)

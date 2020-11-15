@@ -106,10 +106,7 @@ def use_server(client, location, data_file, task=None):
 
 
 def client_proc(data_files, task=None):
-    # it is easier to send computation functions in 'depends' here; in this case, functions are
-    # sent by 'use_server' to illustrate possibilities
-    client = Client([], status_task=task)
-
+    client.status_task = task
     if (yield client.schedule()):
         raise Exception('Could not schedule client')
 
@@ -152,9 +149,6 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         data_files = data_files[:min(len(data_files), int(sys.argv[1]))]
 
-    # if scheduler is not already running (on a node as a program), start private scheduler:
-    Scheduler()
-
-    servers = {}
-    # use 'value()' on client task to wait for task finish
-    pycos.Task(client_proc, data_files).value()
+    client = Client([init_mem, compute])
+    servers = {}  # keep track of servers processing files (used in 'client_proc' and 'use_server')
+    pycos.Task(client_proc, data_files)

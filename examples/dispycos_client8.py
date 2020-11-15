@@ -32,8 +32,6 @@ def compute_task(task=None):
 
 # client (local) task runs computations
 def client_proc(njobs, task=None):
-    # package client components
-    client = Client([compute_task])
     # schedule client with the scheduler; scheduler accepts one client
     # at a time, so if scheduler is shared, the client is queued until it
     # is done with already scheduled clients
@@ -75,10 +73,7 @@ if __name__ == '__main__':
     import pycos.netpycos
     from pycos.dispycos import *
 
-    # pycos.logger.setLevel(pycos.Logger.DEBUG)
-    # if scheduler is not already running (on a node as a program), start
-    # private scheduler:
-    Scheduler()
+    # package client components
+    client = Client([compute_task])
     # run n jobs
-    # use 'value()' on client task to wait for task finish
-    pycos.Task(client_proc, 10 if len(sys.argv) < 2 else int(sys.argv[1])).value()
+    pycos.Task(client_proc, 10 if len(sys.argv) < 2 else int(sys.argv[1]))

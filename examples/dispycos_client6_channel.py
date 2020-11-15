@@ -68,7 +68,6 @@ def trend_proc(task=None):
 # server processes, two local tasks, one to receive trend signal from one
 # of the remote tasks, and another to send data to two remote tasks
 def client_proc(task=None):
-    client = Client([])
     # schedule client with the scheduler; scheduler accepts one client
     # at a time, so if scheduler is shared, the client is queued until it
     # is done with already scheduled clients
@@ -130,9 +129,8 @@ if __name__ == '__main__':
         assert sys.version_info.minor < 7, \
             ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
              (__file__, sys.version_info.major, sys.version_info.minor))
-    # if scheduler is shared (i.e., running as program), nothing needs
-    # to be done (its location can optionally be given to 'schedule');
-    # othrwise, start private scheduler:
-    Scheduler()
-    # use 'value()' on client task to wait for task finish
-    pycos.Task(client_proc).value()
+
+    # functions are not sent with 'depends' since two different rtasks are created with
+    # two different functions
+    client = Client([])
+    pycos.Task(client_proc)

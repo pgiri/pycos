@@ -13,7 +13,7 @@
 # or above a threshold.
 def rtask_avg_proc(threshold, trend_task, window_size, task=None):
     # numpy module is loaded in node_setup, so no need to load here
-    global numpy
+    global numpy  # no need to declare, but clarifies
     data = numpy.empty(window_size, dtype=float)
     data.fill(0.0)
     cumsum = 0.0
@@ -77,12 +77,6 @@ def node_setup(task=None):
 # processes, two local tasks, one to receive trend signal from one of the remote
 # tasks, and another to send data to two remote tasks
 def client_proc(task=None):
-    # 'node_setup' is used to restrict to nodes that have 'numpy' module
-    # available. However, 'node_setup' doesn't work with Windows, so this
-    # example disables Windows nodes; alternately 'server_setup' (that works for
-    # Windows nodes as well) can be used instead of 'node_setup'.
-    nodes = [DispycosNodeAllocate(node='*', platform='Windows', cpus=0)]
-    client = Client([], nodes=nodes, node_setup=node_setup)
     # schedule client with the scheduler; scheduler accepts one client
     # at a time, so if scheduler is shared, the client is queued until it
     # is done with already scheduled clients
@@ -136,9 +130,10 @@ if __name__ == '__main__':
             ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
              (__file__, sys.version_info.major, sys.version_info.minor))
 
-    # if scheduler is shared (i.e., running as program), nothing needs to be
-    # done (its location can optionally be given to 'schedule'); othrwise, start
-    # private scheduler:
-    Scheduler()
-    # use 'value()' on client task to wait for task finish
-    pycos.Task(client_proc).value()
+    # 'node_setup' is used to restrict to nodes that have 'numpy' module
+    # available. However, 'node_setup' doesn't work with Windows, so this
+    # example disables Windows nodes; alternately 'server_setup' (that works for
+    # Windows nodes as well) can be used instead of 'node_setup'.
+    nodes = [DispycosNodeAllocate(node='*', platform='Windows', cpus=0)]
+    client = Client([], nodes=nodes, node_setup=node_setup)
+    pycos.Task(client_proc)

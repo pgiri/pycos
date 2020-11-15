@@ -33,8 +33,6 @@ def compute(obj, result_task, task=None):
 
 # local task submits computation tasks at dispycos servers
 def client_proc(njobs, task=None):
-    # send generator function and class C (as the client uses # objects of C)
-    client = Client([compute, C])
     # schedule client with the scheduler; scheduler accepts one client
     # at a time, so if scheduler is shared, the client is queued until it
     # is done with already scheduled clients
@@ -73,10 +71,7 @@ if __name__ == '__main__':
     import pycos.netpycos
     from pycos.dispycos import *
 
-    # pycos.logger.setLevel(pycos.Logger.DEBUG)
-    # if scheduler is not already running (on a node as a program),
-    # start it (private scheduler):
-    Scheduler()
+    # send generator function and class C (as the messages sent / received are objects of C)
+    client = Client([compute, C])
     # run 10 (or given number of) jobs
-    # use 'value()' on client task to wait for task finish
-    pycos.Task(client_proc, 10 if len(sys.argv) < 2 else int(sys.argv[1])).value()
+    pycos.Task(client_proc, 10 if len(sys.argv) < 2 else int(sys.argv[1]))
