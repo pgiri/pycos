@@ -28,7 +28,7 @@ import stat
 import pycos
 import pycos.netpycos
 import pycos.config
-from pycos import Task, SysTask, logger, MonitorStatus
+from pycos import Task, SysTask, logger, Location, MonitorStatus
 
 __author__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __copyright__ = "Copyright (c) 2014-2015 Giridhar Pemmasani"
@@ -142,7 +142,7 @@ class Client(object):
                  disable_nodes=False, disable_servers=False,
                  pulse_interval=(5*MinPulseInterval), node_allocations=[],
                  ping_interval=None, restart_servers=False,
-                 zombie_period=None, abandon_zombie_nodes=False):
+                 zombie_period=None, abandon_zombie_nodes=False, scheduler=None):
         """'components' should be a list, each element of which is either a
         module, a (generator or normal) function, path name of a file, a class
         or an object (in which case the code for its class is sent).
@@ -184,10 +184,21 @@ class Client(object):
             components = [components]
 
         self._code = ''
-        self._xfer_funcs = set()
         self._xfer_files = []
         self._auth = None
-        self.scheduler = None
+        self.__xfer_funcs = set()
+        if scheduler is None:
+            self.__scheduler = None
+            Scheduler()
+        elif isinstance(scheduler, Location):
+            self.__scheduler = Location(pycos.Pycos.host_ipaddr(scheduler.addr), scheduler.port)
+        elif isinstance(scheduler, str):
+            if not isinstance(pycos.config.DispycosSchedulerPort, int):
+                pycos.config.DispycosSchedulerPort = eval(pycos.config.DispycosSchedulerPort)
+            self.__scheduler = Location(pycos.Pycos.host_ipaddr(scheduler),
+                                        pycos.config.DispycosSchedulerPort)
+        else:
+            raise Exception('"scheduler" must be an instance of Location or host name or IP')
         self._pulse_task = None
         if zombie_period:
             self._pulse_interval = min(pulse_interval, zombie_period / 3)
@@ -262,7 +273,7 @@ class Client(object):
                 if name in depends:
                     continue
                 depends.add(name)
-                self._xfer_funcs.add(name)
+                self.__xfer_funcs.add(name)
                 self._code += '\n' + inspect.getsource(dep).lstrip()
             else:
                 raise Exception('Invalid component: %s' % dep)
@@ -275,7 +286,7 @@ class Client(object):
         if os.name == 'nt' and '__mp_main__' not in sys.modules:
             sys.modules['__mp_main__'] = sys.modules['__main__']
 
-    def schedule(self, location=None, timeout=None):
+    def schedule(self, timeout=None):
         """Schedule client for execution. Must be used with 'yield' as
         'result = yield client.schedule()'. If scheduler is executing other clients,
         this will block until scheduler processes them (clients are processed in the
@@ -288,22 +299,31 @@ class Client(object):
         if self.status_task is not None and not isinstance(self.status_task, Task):
             raise StopIteration(-1)
 
-        self.scheduler = yield SysTask.locate('dispycos_scheduler', location=location,
-                                              timeout=MsgTimeout)
-        if not isinstance(self.scheduler, Task):
+        if not self._pulse_task:
+            self._pulse_task = SysTask(self._pulse_proc)
+        location = None
+        if self.__scheduler is None:
+            location = self._pulse_task.location
+        elif isinstance(self.__scheduler, Location):
+            if (yield pycos.Pycos.instance().peer(self.__scheduler)) == 0:
+                location = self.__scheduler
+        self.__scheduler = yield SysTask.locate('dispycos_scheduler', location=location,
+                                                timeout=MsgTimeout)
+        if not isinstance(self.__scheduler, Task):
+            pycos.logger.warning('could not find dispycos scheduler at %s', location)
             raise StopIteration(-1)
 
         def _schedule(self, task=None):
-            self._pulse_task = SysTask(self._pulse_proc)
-            msg = {'req': 'schedule', 'client': pycos.serialize(self), 'reply_task': task}
-            self.scheduler.send(msg)
+            msg = {'req': 'schedule', 'client': pycos.serialize(self),
+                   'auth': self._auth, 'reply_task': task}
+            self.__scheduler.send(msg)
             self._auth = yield task.receive(timeout=MsgTimeout)
             if not isinstance(self._auth, str):
                 logger.debug('Could not send client to scheduler %s: %s',
-                             self.scheduler, self._auth)
+                             self.__scheduler, self._auth)
                 raise StopIteration(-1)
             SysTask.scheduler().atexit(10, lambda: SysTask(self.close))
-            if task.location != self.scheduler.location:
+            if task.location != self.__scheduler.location:
                 for xf, dst, sep in self._xfer_files:
                     drive, xf = os.path.splitdrive(xf)
                     if xf.startswith(sep):
@@ -313,12 +333,12 @@ class Client(object):
                     xf = drive + xf
                     dst = os.path.join(self._auth, os.path.join(*(dst.split(sep))))
                     if (yield pycos.Pycos.instance().send_file(
-                       self.scheduler.location, xf, dir=dst, timeout=MsgTimeout)) < 0:
+                       self.__scheduler.location, xf, dir=dst, timeout=MsgTimeout)) < 0:
                         logger.warning('Could not send file "%s" to scheduler', xf)
                         yield self.close()
                         raise StopIteration(-1)
             msg = {'req': 'await', 'auth': self._auth, 'reply_task': task}
-            self.scheduler.send(msg)
+            self.__scheduler.send(msg)
             resp = yield task.receive(timeout=timeout)
             if (isinstance(resp, dict) and resp.get('auth') == self._auth and
                resp.get('resp') == 'scheduled'):
@@ -336,7 +356,7 @@ class Client(object):
 
         def _nodes(self, task=None):
             msg = {'req': 'nodes', 'auth': self._auth, 'reply_task': task}
-            if (yield self.scheduler.deliver(msg, timeout=MsgTimeout)) == 1:
+            if (yield self.__scheduler.deliver(msg, timeout=MsgTimeout)) == 1:
                 yield task.receive(MsgTimeout)
             else:
                 raise StopIteration([])
@@ -350,7 +370,7 @@ class Client(object):
 
         def _servers(self, task=None):
             msg = {'req': 'servers', 'auth': self._auth, 'reply_task': task}
-            if (yield self.scheduler.deliver(msg, timeout=MsgTimeout)) == 1:
+            if (yield self.__scheduler.deliver(msg, timeout=MsgTimeout)) == 1:
                 yield task.receive(MsgTimeout)
             else:
                 raise StopIteration([])
@@ -365,7 +385,7 @@ class Client(object):
 
         def _tasks(self, task=None):
             msg = {'req': 'tasks', 'auth': self._auth, 'reply_task': task, 'at': where}
-            if (yield self.scheduler.deliver(msg, timeout=MsgTimeout)) == 1:
+            if (yield self.__scheduler.deliver(msg, timeout=MsgTimeout)) == 1:
                 yield task.receive(MsgTimeout)
             else:
                 raise StopIteration([])
@@ -379,7 +399,7 @@ class Client(object):
         def _close(self, done, task=None):
             msg = {'req': 'close_client', 'auth': self._auth, 'reply_task': task,
                    'await_io': bool(await_io), 'terminate': bool(terminate)}
-            self.scheduler.send(msg)
+            self.__scheduler.send(msg)
             msg = yield task.receive(timeout=timeout)
             if msg != 'closed':
                 logger.warning('%s: closing client failed?', self._auth)
@@ -466,11 +486,11 @@ class Client(object):
         that node. If 'node_setup' succeeds (i.e., finishes with value 0), the
         node is used for clients.
         """
-        if self.scheduler:
-            if isinstance(ip_addr, pycos.Location):
+        if self.__scheduler:
+            if isinstance(ip_addr, Location):
                 ip_addr = ip_addr.addr
-            self.scheduler.send({'req': 'enable_node', 'auth': self._auth, 'addr': ip_addr,
-                                 'setup_args': pycos.serialize(setup_args)})
+            self.__scheduler.send({'req': 'enable_node', 'auth': self._auth, 'addr': ip_addr,
+                                   'setup_args': pycos.serialize(setup_args)})
 
     def enable_server(self, location, *setup_args):
         """If client disabled servers (with 'disabled_servers=True' when
@@ -483,35 +503,35 @@ class Client(object):
         that server. If 'server_setup' succeeds (i.e., finishes with value 0), the
         server is used for clients.
         """
-        if self.scheduler:
-            self.scheduler.send({'req': 'enable_server', 'auth': self._auth, 'server': location,
-                                 'setup_args': pycos.serialize(setup_args)})
+        if self.__scheduler:
+            self.__scheduler.send({'req': 'enable_server', 'auth': self._auth, 'server': location,
+                                   'setup_args': pycos.serialize(setup_args)})
 
     def suspend_node(self, location):
         """Suspend submitting jobs (tasks) at this node. Any currently running
         tasks are left running.
         """
-        if self.scheduler:
-            self.scheduler.send({'req': 'suspend_node', 'auth': self._auth, 'addr': location})
+        if self.__scheduler:
+            self.__scheduler.send({'req': 'suspend_node', 'auth': self._auth, 'addr': location})
 
     def resume_node(self, location):
         """Resume submitting jobs (tasks) at this node.
         """
-        if self.scheduler:
-            self.scheduler.send({'req': 'enable_node', 'auth': self._auth, 'addr': location})
+        if self.__scheduler:
+            self.__scheduler.send({'req': 'enable_node', 'auth': self._auth, 'addr': location})
 
     def suspend_server(self, location):
         """Suspend submitting jobs (tasks) at this server. Any currently running
         tasks are left running.
         """
-        if self.scheduler:
-            self.scheduler.send({'req': 'suspend_server', 'auth': self._auth, 'server': location})
+        if self.__scheduler:
+            self.__scheduler.send({'req': 'suspend_server', 'auth': self._auth, 'server': location})
 
     def resume_server(self, location):
         """Resume submitting jobs (tasks) at this server.
         """
-        if self.scheduler:
-            self.scheduler.send({'req': 'enable_server', 'auth': self._auth, 'server': location})
+        if self.__scheduler:
+            self.__scheduler.send({'req': 'enable_server', 'auth': self._auth, 'server': location})
 
     def close_server(self, location, terminate=False, restart=False):
         """Close server at given location. After this call, no more tasks are scheduled
@@ -520,16 +540,16 @@ class Client(object):
         If 'terminate' is True, any tasks running at that server are terminated without waiting
         for them to finish. If it is False, the server will wait until tasks finish before closing.
         """
-        if self.scheduler and isinstance(location, pycos.Location):
-            self.scheduler.send({'req': 'close_server', 'auth': self._auth, 'addr': location,
-                                 'terminate': bool(terminate), 'restart': bool(restart)})
+        if self.__scheduler and isinstance(location, Location):
+            self.__scheduler.send({'req': 'close_server', 'auth': self._auth, 'addr': location,
+                                   'terminate': bool(terminate), 'restart': bool(restart)})
 
     def restart_server(self, location, terminate=False):
         """Restart server at given location. If 'terminate' is True, kill any running tasks.
         """
-        if self.scheduler:
-            self.scheduler.send({'req': 'close_server', 'auth': self._auth, 'addr': location,
-                                 'terminate': bool(terminate), 'restart': True})
+        if self.__scheduler:
+            self.__scheduler.send({'req': 'close_server', 'auth': self._auth, 'addr': location,
+                                   'terminate': bool(terminate), 'restart': True})
 
     def close_node(self, location, terminate=False):
         """Close node at given location, which can be either a Location instance (of any server
@@ -540,11 +560,11 @@ class Client(object):
         without waiting for them to finish. If it is False, the node will wait until tasks finish
         before closing.
         """
-        if self.scheduler:
-            if isinstance(location, pycos.Location):
+        if self.__scheduler:
+            if isinstance(location, Location):
                 location = location.addr
-            self.scheduler.send({'req': 'close_node', 'auth': self._auth, 'addr': location,
-                                 'terminate': bool(terminate), 'restart': False})
+            self.__scheduler.send({'req': 'close_node', 'auth': self._auth, 'addr': location,
+                                   'terminate': bool(terminate), 'restart': False})
 
     def restart_node(self, location, *setup_args, terminate=False):
         """Close node at given location, which can be either a Location instance (of any server
@@ -555,12 +575,12 @@ class Client(object):
         without waiting for them to finish. If it is False, the node will wait until tasks finish
         before closing.
         """
-        if self.scheduler:
-            if isinstance(location, pycos.Location):
+        if self.__scheduler:
+            if isinstance(location, Location):
                 location = location.addr
-            self.scheduler.send({'req': 'close_node', 'auth': self._auth, 'addr': location,
-                                 'terminate': bool(terminate), 'restart': True,
-                                 'setup_args': pycos.serialize(setup_args)})
+            self.__scheduler.send({'req': 'close_node', 'auth': self._auth, 'addr': location,
+                                   'terminate': bool(terminate), 'restart': True,
+                                   'setup_args': pycos.serialize(setup_args)})
 
     def node_allocate(self, node_allocate):
         """Request scheduler to add 'node_allocate' to any previously sent
@@ -571,11 +591,11 @@ class Client(object):
         if not self._pulse_task:
             return -1
         if (node_allocate.__class__ != DispycosNodeAllocate and
-            self._pulse_task.location != self.scheduler.location):
+            self._pulse_task.location != self.__scheduler.location):
             node_allocate = copy.copy(node_allocate)
             node_allocate.__class__ = DispycosNodeAllocate
-        return self.scheduler.send({'req': 'node_allocate', 'auth': self._auth,
-                                    'node': node_allocate})
+        return self.__scheduler.send({'req': 'node_allocate', 'auth': self._auth,
+                                      'node': node_allocate})
 
     def abandon_zombie(self, location, flag):
         """If a node at given location is deemed zombie (i.e., no response in 'zombie_period'),
@@ -589,11 +609,11 @@ class Client(object):
 
         'flag' must be either True or False indicating whether nodes would be abandoned or not.
         """
-        if self.scheduler:
-            if isinstance(location, pycos.Location):
+        if self.__scheduler:
+            if isinstance(location, Location):
                 location = location.addr
-            self.scheduler.send({'req': 'abandon_zombie', 'auth': self._auth, 'addr': location,
-                                 'flag': bool(flag)})
+            self.__scheduler.send({'req': 'abandon_zombie', 'auth': self._auth, 'addr': location,
+                                   'flag': bool(flag)})
 
     def _rtask_req(self, where, cpu, gen, *args, **kwargs):
         """Internal use only.
@@ -603,7 +623,7 @@ class Client(object):
         else:
             name = gen.__name__
 
-        if name in self._xfer_funcs:
+        if name in self.__xfer_funcs:
             code = None
         else:
             if not inspect.isgeneratorfunction(gen):
@@ -615,7 +635,7 @@ class Client(object):
         def _job_req(task=None):
             msg = {'req': 'job', 'auth': self._auth, 'reply_task': task,
                    'job': _DispycosJob_(name, where, cpu, code, args, kwargs)}
-            if (yield self.scheduler.deliver(msg, timeout=MsgTimeout)) != 1:
+            if (yield self.__scheduler.deliver(msg, timeout=MsgTimeout)) != 1:
                 pycos.logger.warning('scheduling %s timedout', name)
                 raise StopIteration(None)
 
@@ -679,7 +699,7 @@ class Client(object):
 
                 if isinstance(req, MonitorStatus):
                     # TODO: process in Scheduler if not shared
-                    if not isinstance(req.info, pycos.Task):
+                    if not isinstance(req.info, Task):
                         if isinstance(req.info, str) and isinstance(req.value, str):
                             pycos.logger.info('%s: %s with %s', req.info, req.type, req.value)
                         else:
@@ -729,7 +749,7 @@ class Client(object):
                 break
 
             elif msg is None:
-                logger.warning('scheduler may have gone away!')
+                logger.warning('scheduler is not reachable!')
                 if (time.time() - last_pulse) > (10 * self._pulse_interval):
                     # TODO: inform status and / or "close"?
                     pass
@@ -739,13 +759,13 @@ class Client(object):
 
     def __getstate__(self):
         state = {}
-        for attr in ['_code', '_xfer_funcs', '_xfer_files', '_auth',  'scheduler', 'status_task',
-                     '_node_setup', '_server_setup', '_disable_nodes', '_disable_servers',
-                     '_pulse_interval', '_pulse_task', '_ping_interval',
-                     '_restart_servers', '_zombie_period', '_abandon_zombie']:
+        for attr in ['_auth', '_code', 'status_task', '_xfer_files', '_node_setup', '_server_setup',
+                     '_disable_nodes', '_disable_servers', '_pulse_interval', '_pulse_task',
+                     '_ping_interval', '_restart_servers', '_zombie_period', '_abandon_zombie']:
             state[attr] = getattr(self, attr)
-        if (isinstance(self._pulse_task, pycos.Task) and
-            self._pulse_task.location == self.scheduler.location):
+        if (isinstance(self._pulse_task, Task) and
+            isinstance(getattr(self, '__scheduler', None), Task) and
+            self._pulse_task.location == self.__scheduler.location):
             node_allocations = self._node_allocations
         else:
             node_allocations = []
@@ -922,8 +942,8 @@ class Scheduler(object, metaclass=pycos.Singleton):
         self.__client_task = SysTask(self.__client_proc)
         self.__client_task.register('dispycos_scheduler')
         for node in nodes:
-            if not isinstance(node, pycos.Location):
-                node = pycos.Location(node, self._node_port)
+            if not isinstance(node, Location):
+                node = Location(node, self._node_port)
             Task(self.pycos.peer, node, relay=relay_nodes)
 
     def status(self):
@@ -1037,7 +1057,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
                 status = msg.get('status', None)
                 if status == 'pulse':
                     location = msg.get('location', None)
-                    if not isinstance(location, pycos.Location):
+                    if not isinstance(location, Location):
                         continue
                     node = self._nodes.get(location.addr, None)
                     if node:
@@ -1053,7 +1073,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
 
                 elif status == Scheduler.ServerDiscovered:
                     rtask = msg.get('task', None)
-                    if not isinstance(rtask, pycos.Task):
+                    if not isinstance(rtask, Task):
                         continue
                     node = self._nodes.get(rtask.location.addr, None)
                     if not node:
@@ -1081,7 +1101,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
 
                 elif status == Scheduler.ServerInitialized:
                     rtask = msg.get('task', None)
-                    if not isinstance(rtask, pycos.Task):
+                    if not isinstance(rtask, Task):
                         continue
                     node = self._nodes.get(rtask.location.addr, None)
                     if not node:
@@ -1131,7 +1151,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
 
                 elif status in (Scheduler.ServerClosed, Scheduler.ServerDisconnected):
                     location = msg.get('location', None)
-                    if not isinstance(location, pycos.Location):
+                    if not isinstance(location, Location):
                         continue
                     node = self._nodes.get(location.addr, None)
                     if not node:
@@ -1159,7 +1179,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
 
                 elif status == Scheduler.NodeClosed:
                     location = msg.get('location', None)
-                    if not isinstance(location, pycos.Location):
+                    if not isinstance(location, Location):
                         continue
                     node = self._nodes.pop(location.addr, None)
                     if node:
@@ -1284,7 +1304,11 @@ class Scheduler(object, metaclass=pycos.Singleton):
                 node.lock.release()
                 raise StopIteration(-1)
 
-        node.task.send({'req': 'client', 'client': pycos.serialize(client),
+        info = client
+        info._xfer_files = []
+        info.status_task = None
+        info._zombie_period = None
+        node.task.send({'req': 'client', 'client': pycos.serialize(info),
                         'auth': node.auth, 'setup_args': setup_args,
                         'restart_servers': client._restart_servers, 'reply_task': task})
         reply = yield task.receive(timeout=MsgTimeout)
@@ -1467,8 +1491,8 @@ class Scheduler(object, metaclass=pycos.Singleton):
             for node in self.__cur_node_allocations:
                 if node.ip_rex.find('*') >= 0:
                     continue
-                loc = pycos.Location(node.ip_rex.replace('\\.', '.'),
-                                     node.port if node.port else self._node_port)
+                loc = Location(node.ip_rex.replace('\\.', '.'),
+                               node.port if node.port else self._node_port)
                 SysTask(self.pycos.peer, loc)
             for node in self._disabled_nodes.values():
                 SysTask(self.__get_node_info, node)
@@ -1573,7 +1597,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
                         self._cpus_avail.clear()
             yield server.run(job, reply_task, node)
 
-        elif isinstance(where, pycos.Location):
+        elif isinstance(where, Location):
             node = self._nodes.get(where.addr)
             if not node:
                 reply_task.send(None)
@@ -1621,12 +1645,12 @@ class Scheduler(object, metaclass=pycos.Singleton):
                 continue
 
             reply_task = msg.get('reply_task', None)
-            if not isinstance(reply_task, pycos.Task):
+            if not isinstance(reply_task, Task):
                 reply_task = None
 
             if req == 'enable_server':
                 loc = msg.get('server', None)
-                if not isinstance(loc, pycos.Location):
+                if not isinstance(loc, Location):
                     continue
                 node = self._nodes.get(loc.addr, None)
                 if not node:
@@ -1691,7 +1715,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
 
             elif req == 'suspend_server':
                 loc = msg.get('server', None)
-                if not isinstance(loc, pycos.Location):
+                if not isinstance(loc, Location):
                     continue
                 node = self._nodes.get(loc.addr, None)
                 if not node:
@@ -1748,7 +1772,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
 
             elif req == 'close_server':
                 addr = msg.get('addr', None)
-                if not isinstance(addr, pycos.Location):
+                if not isinstance(addr, Location):
                     continue
                 node = self._nodes.get(addr.addr, None)
                 if not node:
@@ -1788,8 +1812,8 @@ class Scheduler(object, metaclass=pycos.Singleton):
                                                         if na.ip_rex != node.ip_rex]
                 if node.ip_rex.find('*') >= 0:
                     continue
-                loc = pycos.Location(node.ip_rex.replace('\\.', '.'),
-                                     node.port if node.port else self._node_port)
+                loc = Location(node.ip_rex.replace('\\.', '.'),
+                               node.port if node.port else self._node_port)
                 SysTask(self.pycos.peer, loc)
 
             elif req == 'nodes':
@@ -1812,7 +1836,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
                 tasks = []
                 where = msg.get('at', None)
                 if where:
-                    if isinstance(where, pycos.Location):
+                    if isinstance(where, Location):
                         addr = where.addr
                     else:
                         addr = where
@@ -1820,7 +1844,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
                     if not node:
                         node = self._disabled_nodes.get(addr, None)
                     if node:
-                        if isinstance(where, pycos.Location):
+                        if isinstance(where, Location):
                             server = node.servers.get(where, None)
                             if not server:
                                 server = node.disabled_servers.get(where, None)
