@@ -2840,10 +2840,15 @@ class Location(object):
     __slots__ = ('addr', 'port')
 
     def __init__(self, host, tcp_port):
-        if re.match(r'^\d+[\.\d]+$', host):
+        if re.match(r'\d+[\.\d]+$', host) or re.match(r'[0-9a-fA-F]*:[:0-9a-fA-F]+$', host):
             self.addr = host
         else:
-            self.addr = socket.getaddrinfo(host, 0, 0, socket.SOCK_STREAM)[0][4][0]
+            if hasattr(Pycos, 'host_ipaddr'):
+                self.addr = Pycos.host_ipaddr(host)
+            else:
+                self.addr = socket.getaddrinfo(host, 0, 0, socket.SOCK_STREAM)[0][4][0]
+            if not self.addr:
+                logger.warning('host "%s" for Location may not be valid', host)
         self.port = int(tcp_port)
 
     def __eq__(self, other):
