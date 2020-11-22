@@ -380,11 +380,17 @@ class Client(object):
     def tasks(self, where):
         """Get list of tasks at given node or server for this client.
         Must be used with 'yield' as 'yield client.tasks()'.
-
         """
 
+        if isinstance(where, str):
+            addr = pycos.Pycos.host_ipaddr(where)
+        else:
+            addr = None
+        if not addr:
+            logger.warning('invalid host name / IP address "%s"', where)
+
         def _tasks(self, task=None):
-            msg = {'req': 'tasks', 'auth': self._auth, 'reply_task': task, 'at': where}
+            msg = {'req': 'tasks', 'auth': self._auth, 'reply_task': task, 'at': addr}
             if (yield self.__scheduler.deliver(msg, timeout=MsgTimeout)) == 1:
                 yield task.receive(MsgTimeout)
             else:
@@ -434,7 +440,13 @@ class Client(object):
         'gen' must be generator function, as it is used to run task at
         remote location.
         """
-        raise StopIteration((yield self._rtask_req(where, 1, gen, *args, **kwargs)))
+        if isinstance(where, str):
+            addr = pycos.Pycos.host_ipaddr(where)
+        else:
+            addr = None
+        if not addr:
+            logger.warning('invalid host name / IP address "%s"', where)
+        raise StopIteration((yield self._rtask_req(addr, 1, gen, *args, **kwargs)))
 
     def rtask(self, gen, *args, **kwargs):
         """Run CPU bound task at any remote server; see 'rtask_at' above.
@@ -462,7 +474,13 @@ class Client(object):
         'gen' must be generator function, as it is used to run task at
         remote location.
         """
-        raise StopIteration((yield self._rtask_req(where, 0, gen, *args, **kwargs)))
+        if isinstance(where, str):
+            addr = pycos.Pycos.host_ipaddr(where)
+        else:
+            addr = None
+        if not addr:
+            logger.warning('invalid host name / IP address "%s"', where)
+        raise StopIteration((yield self._rtask_req(addr, 0, gen, *args, **kwargs)))
 
     def io_rtask(self, gen, *args, **kwargs):
         """Run I/O bound task at any server; see 'io_rtask_at' above.
@@ -474,12 +492,12 @@ class Client(object):
     run_async_at = io_rtask_at
     run_async = io_rtask
 
-    def enable_node(self, ip_addr, *setup_args):
+    def enable_node(self, node, *setup_args):
         """If client disabled nodes (with 'disabled_nodes=True' when
         Client is constructed), nodes are not automatically used by the
         scheduler until nodes are enabled with 'enable_node'.
 
-        'ip_addr' must be either IP address or host name of the node to be
+        'node' must be either IP address or host name of the node to be
         enabled.
 
         'setup_args' is arguments passed to 'node_setup' function specific to
@@ -487,9 +505,15 @@ class Client(object):
         node is used for clients.
         """
         if self.__scheduler:
-            if isinstance(ip_addr, Location):
-                ip_addr = ip_addr.addr
-            self.__scheduler.send({'req': 'enable_node', 'auth': self._auth, 'addr': ip_addr,
+            if isinstance(node, Location):
+                addr = ip_addr.addr
+            elif isinstance(node, str):
+                addr = pycos.Pycos.host_ipaddr(node)
+            else:
+                addr = None
+            if not addr:
+                logger.warning('invalid host name / IP address "%s"', node)
+            self.__scheduler.send({'req': 'enable_node', 'auth': self._auth, 'addr': addr,
                                    'setup_args': pycos.serialize(setup_args)})
 
     def enable_server(self, location, *setup_args):
@@ -504,33 +528,55 @@ class Client(object):
         server is used for clients.
         """
         if self.__scheduler:
+            if not isinstance(location, Location):
+                logger.warning('invalid location "%s"', location)
             self.__scheduler.send({'req': 'enable_server', 'auth': self._auth, 'server': location,
                                    'setup_args': pycos.serialize(setup_args)})
 
-    def suspend_node(self, location):
+    def suspend_node(self, node):
         """Suspend submitting jobs (tasks) at this node. Any currently running
         tasks are left running.
         """
         if self.__scheduler:
-            self.__scheduler.send({'req': 'suspend_node', 'auth': self._auth, 'addr': location})
+            if isinstance(node, Location):
+                addr = ip_addr.addr
+            elif isinstance(node, str):
+                addr = pycos.Pycos.host_ipaddr(node)
+            else:
+                addr = None
+            if not addr:
+                logger.warning('invalid host name / IP address "%s"', node)
+            self.__scheduler.send({'req': 'suspend_node', 'auth': self._auth, 'addr': addr})
 
-    def resume_node(self, location):
+    def resume_node(self, node):
         """Resume submitting jobs (tasks) at this node.
         """
         if self.__scheduler:
-            self.__scheduler.send({'req': 'enable_node', 'auth': self._auth, 'addr': location})
+            if isinstance(node, Location):
+                addr = ip_addr.addr
+            elif isinstance(node, str):
+                addr = pycos.Pycos.host_ipaddr(node)
+            else:
+                addr = None
+            if not addr:
+                logger.warning('invalid host name / IP address "%s"', node)
+            self.__scheduler.send({'req': 'enable_node', 'auth': self._auth, 'addr': addr})
 
     def suspend_server(self, location):
         """Suspend submitting jobs (tasks) at this server. Any currently running
         tasks are left running.
         """
         if self.__scheduler:
+            if not isinstance(location, Location):
+                logger.warning('invalid location "%s"', location)
             self.__scheduler.send({'req': 'suspend_server', 'auth': self._auth, 'server': location})
 
     def resume_server(self, location):
         """Resume submitting jobs (tasks) at this server.
         """
         if self.__scheduler:
+            if not isinstance(location, Location):
+                logger.warning('invalid location "%s"', location)
             self.__scheduler.send({'req': 'enable_server', 'auth': self._auth, 'server': location})
 
     def close_server(self, location, terminate=False, restart=False):
@@ -540,7 +586,9 @@ class Client(object):
         If 'terminate' is True, any tasks running at that server are terminated without waiting
         for them to finish. If it is False, the server will wait until tasks finish before closing.
         """
-        if self.__scheduler and isinstance(location, Location):
+        if self.__scheduler:
+            if not isinstance(location, Location):
+                logger.warning('invalid location "%s"', location)
             self.__scheduler.send({'req': 'close_server', 'auth': self._auth, 'addr': location,
                                    'terminate': bool(terminate), 'restart': bool(restart)})
 
@@ -548,10 +596,12 @@ class Client(object):
         """Restart server at given location. If 'terminate' is True, kill any running tasks.
         """
         if self.__scheduler:
+            if not isinstance(location, Location):
+                logger.warning('invalid location "%s"', location)
             self.__scheduler.send({'req': 'close_server', 'auth': self._auth, 'addr': location,
                                    'terminate': bool(terminate), 'restart': True})
 
-    def close_node(self, location, terminate=False):
+    def close_node(self, node, terminate=False):
         """Close node at given location, which can be either a Location instance (of any server
         at that node or of node itself) or IP address. After this call, no more tasks are
         scheduled at that node.
@@ -561,12 +611,18 @@ class Client(object):
         before closing.
         """
         if self.__scheduler:
-            if isinstance(location, Location):
-                location = location.addr
-            self.__scheduler.send({'req': 'close_node', 'auth': self._auth, 'addr': location,
+            if isinstance(node, Location):
+                addr = ip_addr.addr
+            elif isinstance(node, str):
+                addr = pycos.Pycos.host_ipaddr(node)
+            else:
+                addr = None
+            if not addr:
+                logger.warning('invalid host name / IP address "%s"', node)
+            self.__scheduler.send({'req': 'close_node', 'auth': self._auth, 'addr': addr,
                                    'terminate': bool(terminate), 'restart': False})
 
-    def restart_node(self, location, *setup_args, terminate=False):
+    def restart_node(self, node, *setup_args, terminate=False):
         """Close node at given location, which can be either a Location instance (of any server
         at that node or of node itself) or IP address. After this call, no more tasks are
         scheduled at that node.
@@ -576,9 +632,15 @@ class Client(object):
         before closing.
         """
         if self.__scheduler:
-            if isinstance(location, Location):
-                location = location.addr
-            self.__scheduler.send({'req': 'close_node', 'auth': self._auth, 'addr': location,
+            if isinstance(node, Location):
+                addr = ip_addr.addr
+            elif isinstance(node, str):
+                addr = pycos.Pycos.host_ipaddr(node)
+            else:
+                addr = None
+            if not addr:
+                logger.warning('invalid host name / IP address "%s"', node)
+            self.__scheduler.send({'req': 'close_node', 'auth': self._auth, 'addr': addr,
                                    'terminate': bool(terminate), 'restart': True,
                                    'setup_args': pycos.serialize(setup_args)})
 
