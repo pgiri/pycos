@@ -1,7 +1,7 @@
 # Run 'dispycosnode.py' program on one or more nodes (to start servers to execute tasks
-# sent by this client), and this program on local computer.
+# sent by this client), and this program on local computer(s).
 
-# this is a simple example of multi-agent system
+# this is a simple example of multi-agent system (https://en.wikipedia.org/wiki/Multi-agent_system)
 
 # this generator function is sent to remote dispycos servers to run tasks (agents) there
 def agent_proc(client_task, task=None):
@@ -10,8 +10,8 @@ def agent_proc(client_task, task=None):
     # register this task so server peers can discover each other
     task.register()
 
-    # find peers (other agents); it is not required in this example, but useful / required in
-    # real world multi-agent systems
+    # find peers (other agents) periodically; it may not be necessary to discover periodically,
+    # except once at beginning, but this may be useful e.g., if UDP is lossy especially with WiFi
     agents = set()
 
     def peer_status(task=None):

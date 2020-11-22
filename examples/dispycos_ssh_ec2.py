@@ -75,7 +75,7 @@ if __name__ == '__main__':
             ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
              (__file__, sys.version_info.major, sys.version_info.minor))
 
-    pycos.Pycos(node='127.0.0.1', tcp_port=9705, udp_port=9705)
+    pycos.Pycos(host='127.0.0.1', tcp_port=9705, udp_port=9705)
     # send 'compute' to remote servers to run tasks when submitted
     client = Client([compute])
     njobs = 10 if len(sys.argv) == 1 else int(sys.argv[1])

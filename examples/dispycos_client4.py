@@ -100,8 +100,8 @@ def client_proc(data_files, task=None):
         rtask = yield client.rtask(rtask_proc)
         if isinstance(rtask, pycos.Task):
             # start local task to send input file and data to rtask (due to concurrency, many
-	    # use_rtask processes can be simultaneously sending data to different servers,
-	    # improving efficiency)
+            # use_rtask processes can be simultaneously sending data to different servers,
+            # improving efficiency)
             pycos.Task(use_rtask, i, data_file, rtask)
         else:
             print('  ** job %s failed: %s' % (i, rtask))

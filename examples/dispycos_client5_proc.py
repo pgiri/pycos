@@ -4,7 +4,6 @@
 
 import sys
 import time
-import os
 
 
 lineno = 0
@@ -16,7 +15,7 @@ while True:
     lineno += 1
     try:
         n = float(line)
-    except:
+    except Exception:
         errors += 1
         continue
     time.sleep(n)
