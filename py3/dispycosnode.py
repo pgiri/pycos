@@ -443,7 +443,7 @@ def _dispycos_server_process(_dispycos_mp_queue, _dispycos_config):
     _dispycos_auth = _dispycos_config['auth']
     _dispycos_queue, _dispycos_mp_queue = _dispycos_mp_queue, None
     config = {}
-    for _dispycos_var in ['udp_port', 'tcp_port', 'node', 'ext_ip_addr', 'name', 'discover_peers',
+    for _dispycos_var in ['udp_port', 'tcp_port', 'host', 'ext_ip_addr', 'name', 'discover_peers',
                           'secret', 'certfile', 'keyfile', 'dest_path', 'max_file_size',
                           'ipv4_udp_multicast']:
         config[_dispycos_var] = _dispycos_config.pop(_dispycos_var, None)
@@ -1245,7 +1245,7 @@ def _dispycos_node():
         dispycos_ppid = 1
 
     server_config = {}
-    for _dispycos_var in ['udp_port', 'tcp_port', 'node', 'ext_ip_addr', 'name',
+    for _dispycos_var in ['udp_port', 'tcp_port', 'host', 'ext_ip_addr', 'name',
                           'discover_peers', 'secret', 'certfile', 'keyfile', 'dest_path',
                           'max_file_size', 'ipv4_udp_multicast']:
         server_config[_dispycos_var] = _dispycos_config.get(_dispycos_var, None)
@@ -2062,7 +2062,7 @@ if __name__ == '__main__':
     parser.add_argument('-c', '--cpus', dest='cpus', type=int, default=0,
                         help='number of CPUs/dispycos instances to run; '
                         'if negative, that many CPUs are not used')
-    parser.add_argument('-i', '--ip_addr', dest='node', action='append', default=[],
+    parser.add_argument('-i', '--ip_addr', dest='host', action='append', default=[],
                         help='IP address or host name of this node')
     parser.add_argument('--ext_ip_addr', dest='ext_ip_addr', action='append', default=[],
                         help='External IP address to use (needed in case of NAT firewall/gateway)')

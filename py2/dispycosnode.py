@@ -2023,7 +2023,7 @@ if __name__ == '__main__':
     parser.add_argument('-c', '--cpus', dest='cpus', type=int, default=0,
                         help='number of CPUs/dispycos instances to run; '
                         'if negative, that many CPUs are not used')
-    parser.add_argument('-i', '--ip_addr', dest='node', action='append', default=[],
+    parser.add_argument('-i', '--ip_addr', dest='host', action='append', default=[],
                         help='IP address or host name of this node')
     parser.add_argument('--ext_ip_addr', dest='ext_ip_addr', action='append', default=[],
                         help='External IP address to use (needed in case of NAT firewall/gateway)')

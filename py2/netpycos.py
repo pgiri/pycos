@@ -67,7 +67,7 @@ class Pycos(pycos.Pycos):
     """This adds network services to pycos.Pycos so it can communicate with
     peers.
 
-    If 'node' is not None, it must be either hostname or IP address, or list of
+    If 'host' is not None, it must be either hostname or IP address, or list of
     hostnames or IP addresses where pycos runs network services.
 
     'udp_port' is port number where pycos listens for broadcast messages to find
@@ -77,13 +77,13 @@ class Pycos(pycos.Pycos):
     in which case, port pycos.config.NetPort is used.
 
     'name' is used in locating peers. They must be unique. If 'name' is not
-    given, it is set to string 'node:tcp_port'.
+    given, it is set to string 'host:tcp_port'.
 
     'ext_ip_addr' is either the IP address or list of IP addresses of NAT
     firewall/gateway if pycos is behind that firewall/gateway. If it is a list,
-    each element must correspond to element of 'node' list.
+    each element must correspond to element of 'host' list.
 
-    If 'discover_peers' is True (default), this node broadcasts message to
+    If 'discover_peers' is True (default), this host broadcasts message to
     detect other peers. If it is False, message is not broadcasted.
 
     'secret' is string that is used to hash which is used for authentication, so
@@ -104,7 +104,7 @@ class Pycos(pycos.Pycos):
     _pycos = None
     _pycos_class = pycos.Pycos
 
-    def __init__(self, udp_port=pycos.config.NetPort, tcp_port=None, node=None, ext_ip_addr=None,
+    def __init__(self, udp_port=pycos.config.NetPort, tcp_port=None, host=None, ext_ip_addr=None,
                  socket_family=None, ipv4_udp_multicast=False, name=None, discover_peers=True,
                  secret='', certfile=None, keyfile=None, notifier=None,
                  dest_path=None, max_file_size=None):
@@ -138,13 +138,13 @@ class Pycos(pycos.Pycos):
         self._keyfile = keyfile
         self._ignore_peers = False
 
-        if isinstance(node, list):
-            if node:
-                nodes = node
+        if isinstance(host, list):
+            if host:
+                hosts = host
             else:
-                nodes = [None]
+                hosts = [None]
         else:
-            nodes = [node]
+            hosts = [host]
         if isinstance(ext_ip_addr, list):
             ext_ip_addrs = ext_ip_addr
         else:
@@ -154,18 +154,18 @@ class Pycos(pycos.Pycos):
             name = socket.gethostname()
         self.ipv4_udp_multicast = bool(ipv4_udp_multicast)
         location = None
-        for i in range(len(nodes)):
-            node = nodes[i]
+        for i in range(len(hosts)):
+            host = hosts[i]
             if len(ext_ip_addrs) > i and ext_ip_addrs[i]:
                 ext_ip_addr = Pycos.host_ipaddr(ext_ip_addrs[i])
                 if not ext_ip_addr:
                     logger.warning('invalid ext_ip_addr "%s" ignored', ext_ip_addrs[i])
             else:
                 ext_ip_addr = None
-            addrinfo = Pycos.host_addrinfo(host=node, socket_family=socket_family,
+            addrinfo = Pycos.host_addrinfo(host=host, socket_family=socket_family,
                                            ipv4_multicast=self.ipv4_udp_multicast)
             if not addrinfo:
-                logger.warning('Invalid node "%s" ignored', node)
+                logger.warning('Invalid host "%s" ignored', host)
                 continue
             addrs = [addrinfo.ip]
             if addrinfo.family == socket.AF_INET6:
@@ -217,7 +217,7 @@ class Pycos(pycos.Pycos):
 
         if not self._addrinfos:
             logger.warning('Could not initialize networking')
-            raise Exception('Invalid "node"?')
+            raise Exception('Invalid "host"?')
 
         if udp_port is None:
             udp_port = pycos.config.NetPort
@@ -370,7 +370,7 @@ class Pycos(pycos.Pycos):
                     ip_addr = Pycos.host_ipaddr(ip_addr)
                 loc = Location(ip_addr, 0)
             except Exception:
-                logger.warning('invalid node: "%s"', str(loc))
+                logger.warning('invalid host: "%s"', str(loc))
                 raise StopIteration(-1)
 
         self._lock.acquire()
