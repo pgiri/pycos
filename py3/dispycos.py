@@ -440,7 +440,9 @@ class Client(object):
         'gen' must be generator function, as it is used to run task at
         remote location.
         """
-        if isinstance(where, str):
+        if isinstance(where, Location):
+            addr = where
+        elif isinstance(where, str):
             addr = pycos.Pycos.host_ipaddr(where)
         else:
             addr = None
@@ -474,7 +476,9 @@ class Client(object):
         'gen' must be generator function, as it is used to run task at
         remote location.
         """
-        if isinstance(where, str):
+        if isinstance(where, Location):
+            addr = where
+        elif isinstance(where, str):
             addr = pycos.Pycos.host_ipaddr(where)
         else:
             addr = None
