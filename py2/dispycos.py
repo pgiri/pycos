@@ -1362,7 +1362,7 @@ class Scheduler(object):
                 node.lock.release()
                 raise StopIteration(-1)
 
-        info = client
+        info = copy.copy(client)
         info._xfer_files = []
         info.status_task = None
         info._zombie_period = None

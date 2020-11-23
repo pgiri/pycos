@@ -1370,7 +1370,7 @@ class Scheduler(object, metaclass=pycos.Singleton):
                 node.lock.release()
                 raise StopIteration(-1)
 
-        info = client
+        info = copy.copy(client)
         info._xfer_files = []
         info.status_task = None
         info._zombie_period = None
