@@ -500,7 +500,7 @@ class Client(object):
         """
         if self.__scheduler:
             if isinstance(node, Location):
-                addr = ip_addr.addr
+                addr = node.addr
             elif isinstance(node, str):
                 addr = pycos.Pycos.host_ipaddr(node)
             else:
@@ -533,7 +533,7 @@ class Client(object):
         """
         if self.__scheduler:
             if isinstance(node, Location):
-                addr = ip_addr.addr
+                addr = node.addr
             elif isinstance(node, str):
                 addr = pycos.Pycos.host_ipaddr(node)
             else:
@@ -547,7 +547,7 @@ class Client(object):
         """
         if self.__scheduler:
             if isinstance(node, Location):
-                addr = ip_addr.addr
+                addr = node.addr
             elif isinstance(node, str):
                 addr = pycos.Pycos.host_ipaddr(node)
             else:
@@ -606,7 +606,7 @@ class Client(object):
         """
         if self.__scheduler:
             if isinstance(node, Location):
-                addr = ip_addr.addr
+                addr = node.addr
             elif isinstance(node, str):
                 addr = pycos.Pycos.host_ipaddr(node)
             else:
@@ -627,7 +627,7 @@ class Client(object):
         """
         if self.__scheduler:
             if isinstance(node, Location):
-                addr = ip_addr.addr
+                addr = node.addr
             elif isinstance(node, str):
                 addr = pycos.Pycos.host_ipaddr(node)
             else:
