@@ -1065,7 +1065,7 @@ class Pycos(pycos.Pycos):
                     args = req.kwargs['args']
                     kwargs = req.kwargs['kwargs']
                     try:
-                        monitor = RTI._monitors.get(req.kwargs['mid'])
+                        monitor = req.kwargs.get('monitor', None)
                         if monitor:
                             Task._pycos._lock.acquire()
                             reply = Task(rti._method, *args, **kwargs)
@@ -1132,23 +1132,6 @@ class Pycos(pycos.Pycos):
                         Task._pycos._lock.release()
                     if task and task._rid == req.kwargs.get('rid') and task._name == name:
                         reply = task.terminate()
-                yield conn.send_msg(serialize(reply))
-
-            elif req.name == 'rti_monitor':
-                rti = self._rtis.get(req.kwargs['name'], None)
-                if rti:
-                    reply = RTI._set_monitor_(req.kwargs['mid'], req.kwargs['monitor'])
-                else:
-                    reply = -1
-                yield conn.send_msg(serialize(reply))
-
-            elif req.name == 'close_rti':
-                rti = self._rtis.get(req.kwargs['name'], None)
-                if rti:
-                    RTI._monitors.pop(req.kwargs.get('mid'), None)
-                    reply = 0
-                else:
-                    reply = -1
                 yield conn.send_msg(serialize(reply))
 
             elif req.name == 'subscribe':
@@ -1364,15 +1347,13 @@ class Pycos(pycos.Pycos):
 class RTI(object):
     """Remote Task Invocation.
 
-    Methods registered with RTI can be executed as tasks on request (by remotely
-    running tasks).
+    Methods registered with RTI can be executed as tasks on request (by remote clients).
     """
 
-    __slots__ = ('_name', '_location', '_method', '_mid')
+    __slots__ = ('_name', '_location', '_method', '_monitor_task', '_monitors', '_rtasks')
 
     _pycos = None
     _sign = None
-    _monitors = {}
 
     def __init__(self, method, name=None):
         """'method' must be generator method; this is used to create tasks. If
@@ -1388,13 +1369,18 @@ class RTI(object):
         if not RTI._pycos:
             Pycos.instance()
         self._location = None
-        self._mid = None
+        self._monitor_task = None
+        self._monitors = set()
+        self._rtasks = {}
 
     @property
     def location(self):
         """Get Location instance where this RTI is running.
         """
-        return copy.copy(self._location)
+        if isinstance(self._location, Location):
+            return copy.copy(self._location)
+        else:
+            return None
 
     @property
     def name(self):
@@ -1447,41 +1433,27 @@ class RTI(object):
             RTI._pycos._lock.release()
             return 0
 
-    def monitor(self, task, timeout=MsgTimeout):
-        """Must be used with 'yeild' as 'reply = yield rti.monitor(task)'.
-
-        Install 'task' (a Task instance) as monitor for tasks created; i.e.,
+    def monitor(self, task):
+        """Install 'task' (a Task instance) as monitor for tasks created; i.e.,
         'task' receives MonitorStatus messages. If call is successful, the
         result is 0.
         """
         if not isinstance(task, Task):
-            raise StopIteration(-1)
-        if self._mid:
-            mid = self._mid
-        else:
-            mid = RTI._pycos._location
-        req = _NetRequest('rti_monitor', kwargs={'name': self._name, 'monitor': task, 'mid': mid},
-                          dst=self._location, timeout=timeout)
-        reply = yield _Peer.sync_reply(req, alarm_value=-1)
-        if reply == 0:
-            self._mid = mid
-        raise StopIteration(reply)
+            return -1
+        self._monitors.add(task)
+        return 0
 
-    def close(self, timeout=MsgTimeout):
-        """Must be used with 'yield' as 'reply = yield rti.close()'.
-
-        Clients should use this method after an rti (obtained with 'RTI.locate')
+    def close(self):
+        """Clients should use this method after an rti (obtained with 'RTI.locate')
         is no longer needed. After this call, this RTI can't be used to create
         tasks. The result of this method is 0 in case of success.
         """
         if (not self._name) or (not self._location):
-            raise StopIteration(-1)
-        req = _NetRequest('close_rti', kwargs={'name': self._name, 'mid': self._mid},
-                          dst=self._location, timeout=timeout)
-        reply = yield _Peer.sync_reply(req, alarm_value=-1)
+            return -1
         self._name = None
-        self._mid = None
-        raise StopIteration(reply)
+        self._monitor_task.terminate()
+        self._monitor = None
+        return 0
 
     def __call__(self, *args, **kwargs):
         """Must be used with 'yeild' as 'rtask = yield rti(*args, **kwargs)'.
@@ -1490,40 +1462,70 @@ class RTI(object):
         kwargs must be serializable. Result is (remote) Task instance if call
         succeeds, otherwise it is None.
         """
+        if not self._monitor_task and isinstance(self._location, Location):
+            self._monitor_task = Task(self._monitor_proc)
         req = _NetRequest('run_rti', kwargs={'name': self._name, 'args': args, 'kwargs': kwargs,
-                                             'mid': self._mid},
+                                             'monitor': self._monitor_task},
                           dst=self._location, timeout=MsgTimeout)
-        reply = yield _Peer.sync_reply(req, alarm_value=None)
-        if isinstance(reply, Task):
-            raise StopIteration(reply)
+        rtask = yield _Peer.sync_reply(req)
+        if isinstance(rtask, Task):
+            self._rtasks[rtask] = rtask
+            setattr(rtask, '_value', None)
+            setattr(rtask, '_complete', pycos.Event())
+            rtask._complete.clear()
+            raise StopIteration(rtask)
         elif reply is None:
             raise StopIteration(None)
         else:
-            raise Exception(reply)
+            raise Exception(rtask)
 
-    @staticmethod
-    def _peer_closed_(location):
+    def _monitor_proc(self, task=None):
         """Internal use only.
         """
-        drop = [mid for (mid, monitor) in RTI._monitors.iteritems()
-                if monitor.location == location
-                # or mid == location
-                ]
-        for mid in drop:
-            RTI._monitors.pop(mid, None)
-
-    @staticmethod
-    def _set_monitor_(mid, monitor):
-        """Internal use only.
-        """
-        if not isinstance(mid, Location) or not isinstance(monitor, Task):
-            return -1
-        RTI._monitors[mid] = monitor
-        return 0
+        task.set_daemon()
+        while 1:
+            msg = yield task.recv()
+            if not isinstance(msg, MonitorStatus):
+                pycos.logger.warning('invalid MonitorStatus message ignored: %s', type(msg))
+                continue
+            if not isinstance(msg.info, Task):
+                if isinstance(msg.info, str) and isinstance(msg.value, str):
+                    pycos.logger.info('%s: %s with %s', msg.info, msg.type, msg.value)
+                else:
+                    pycos.logger.warning('invalid MonitorStatus message ignored: %s',
+                                         type(msg.info))
+                continue
+            rtask = self._rtasks.get(msg.info, None)
+            if not rtask:
+                for _ in range(10):
+                    yield task.sleep(0.1)
+                    rtask = self._rtasks.get(rtask, None)
+                    if rtask:
+                        break
+                else:
+                    pycos.logger.warning('RTI rtask %s may not be valid?', rtask)
+                    continue
+            msg.info = rtask
+            if msg.type == StopIteration:
+                pycos.logger.debug('rtask %s done: %s', rtask, msg.value)
+                rtask._value = msg.value
+            else:
+                pycos.logger.warning('rtask %s failed: %s%s', rtask, msg.type,
+                                     ' with %s' % msg.value if isinstance(msg.value, str) else '')
+            rtask._complete.set()
+            drop = []
+            for monitor in self._monitors:
+                if monitor.send(msg):
+                    drop.append(monitor)
+            if drop:
+                for tsk in drop:
+                    try:
+                        self._monitors.remove(tsk)
+                    except KeyError:
+                        pass
 
     def __getstate__(self):
         state = {'name': self._name}
-        state['mid'] = self._mid
         if self._location:
             state['location'] = self._location
         else:
@@ -1532,7 +1534,6 @@ class RTI(object):
 
     def __setstate__(self, state):
         self._name = state['name']
-        self._mid = state['mid']
         self._location = state['location']
         if isinstance(self._location, Location):
             if self._location in RTI._pycos._locations:
@@ -1540,6 +1541,10 @@ class RTI(object):
         else:
             self._location = _Peer.sign_location(self._location)
             # TODO: is it possible for peer to disconnect during deserialize?
+        if isinstance(self._location, Location):
+            self._monitors = set()
+            self._monitor_task = None
+            self._rtasks = {}
 
     def __eq__(self, other):
         return (isinstance(other, RTI) and
@@ -1652,6 +1657,7 @@ class _Peer(object):
         if drop:
             for tsk in drop:
                 _Peer.status_tasks.discard(tsk)
+
         _Peer._pycos._lock.acquire()
         if ((location.addr, location.port) in _Peer._pycos._stream_peers or
             (location.addr, 0) in _Peer._pycos._stream_peers):
@@ -1915,7 +1921,7 @@ class _Peer(object):
         _Peer._lock.release()
         if peer:
             logger.debug('%s: peer %s terminated', peer.addrinfo.location, peer.location)
-            RTI._peer_closed_(peer.location)
+            # RTI._peer_closed_(peer.location)
             peer.stream = False
             _Peer._sign_locations.pop(peer.signature, None)
             if peer.req_task:
