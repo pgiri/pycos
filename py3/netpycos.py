@@ -1484,13 +1484,13 @@ class RTI(object):
         while 1:
             msg = yield task.recv()
             if not isinstance(msg, MonitorStatus):
-                pycos.logger.warning('invalid MonitorStatus message ignored: %s', type(msg))
+                pycos.logger.warning('RTI: invalid MonitorStatus message ignored: %s', type(msg))
                 continue
             if not isinstance(msg.info, Task):
                 if isinstance(msg.info, str) and isinstance(msg.value, str):
-                    pycos.logger.info('%s: %s with %s', msg.info, msg.type, msg.value)
+                    pycos.logger.info('RTI: %s: %s with %s', msg.info, msg.type, msg.value)
                 else:
-                    pycos.logger.warning('invalid MonitorStatus message ignored: %s',
+                    pycos.logger.warning('RTI: invalid MonitorStatus message ignored: %s',
                                          type(msg.info))
                 continue
             rtask = self._rtasks.get(msg.info, None)
@@ -1501,14 +1501,14 @@ class RTI(object):
                     if rtask:
                         break
                 else:
-                    pycos.logger.warning('RTI rtask %s may not be valid?', rtask)
+                    pycos.logger.warning('RTI: rtask %s may not be valid?', rtask)
                     continue
             msg.info = rtask
             if msg.type == StopIteration:
-                pycos.logger.debug('rtask %s done: %s', rtask, msg.value)
+                pycos.logger.debug('RTI: rtask %s done: %s', rtask, msg.value)
                 rtask._value = msg.value
             else:
-                pycos.logger.warning('rtask %s failed: %s%s', rtask, msg.type,
+                pycos.logger.warning('RTI: rtask %s failed: %s%s', rtask, msg.type,
                                      ' with %s' % msg.value if isinstance(msg.value, str) else '')
             rtask._complete.set()
             drop = []
