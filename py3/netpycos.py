@@ -1448,9 +1448,15 @@ class RPS(object):
         """
         if (not self._name) or (not self._location):
             return -1
+        for tsk in self._rtasks:
+            tsk.terminate()
+        self._rtasks.clear()
         self._name = None
-        self._monitor_task.terminate()
-        self._monitor = None
+        if self._monitor_task:
+            self._monitor_task.terminate()
+            self._monitor_task = None
+        self._monitors.clear()
+        RPS._pycos.drop_atexit(5, self.close)
         return 0
 
     def __call__(self, *args, **kwargs):
@@ -1472,10 +1478,10 @@ class RPS(object):
             setattr(rtask, '_complete', pycos.Event())
             rtask._complete.clear()
             raise StopIteration(rtask)
-        elif reply is None:
-            raise StopIteration(None)
         else:
-            raise Exception(rtask)
+            if isinstance(rtask, Exception):
+                logger.warning('RPS call failed: %s', rtask)
+            raise StopIteration(None)
 
     def _monitor_proc(self, task=None):
         """Internal use only.
@@ -1493,11 +1499,11 @@ class RPS(object):
                     logger.warning('RPS: invalid MonitorStatus message ignored: %s',
                                    type(msg.info))
                 continue
-            rtask = self._rtasks.get(msg.info, None)
+            rtask = self._rtasks.pop(msg.info, None)
             if not rtask:
                 for _ in range(10):
                     yield task.sleep(0.1)
-                    rtask = self._rtasks.get(rtask, None)
+                    rtask = self._rtasks.pop(rtask, None)
                     if rtask:
                         break
                 else:
@@ -1543,6 +1549,7 @@ class RPS(object):
             self._monitors = set()
             self._monitor_task = None
             self._rtasks = {}
+            RPS._pycos.atexit(5, self.close)
 
     def __eq__(self, other):
         return (isinstance(other, RPS) and

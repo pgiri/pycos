@@ -3885,6 +3885,18 @@ class Pycos(object):
         self._atexit.insert(i, item)
         self._lock.release()
 
+    def drop_atexit(self, priority, func):
+        """Drop scheduled 'func' at 'priority'. If multiple 'func' at same 'priority' are
+        scheduled with different arguments, all of them are dropped.
+        """
+        item = (priority, func)
+        self._lock.acquire()
+        i = bisect_left(self._atexit, item)
+        while (i < len(self._atexit) and
+               (self._atexit[i][0] == priority and self._atexit[i][1] == func)):
+            self._atexit.pop(i)
+        self._lock.release()
+
     def _register_channel(self, channel, name):
         """Internal use only.
         """
