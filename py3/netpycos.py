@@ -47,7 +47,7 @@ __license__ = "Apache 2.0"
 __url__ = "https://pycos.sourceforge.io"
 
 __version__ = pycos.__version__
-__all__ = pycos.__all__ + ['PeerStatus', 'RTI']
+__all__ = pycos.__all__ + ['PeerStatus', 'RPS', 'RTI']
 
 MsgTimeout = pycos.config.MsgTimeout
 
@@ -113,9 +113,9 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                  dest_path=None, max_file_size=None):
 
         Pycos._pycos = Pycos._pycos_class.instance()
-        SysTask._pycos = RTI._pycos = _Peer._pycos = self
+        SysTask._pycos = RPS._pycos = _Peer._pycos = self
         super(self.__class__, self).__init__()
-        self._rtis = {}
+        self._rpss = {}
         self._locations = set()
         self._stream_peers = {}
         self._pending_reqs = {}
@@ -262,7 +262,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             self._signature.update(str(location).encode())
         self._signature = self._signature.hexdigest()
         self._auth_code = hashlib.sha1((self._signature + secret).encode()).hexdigest()
-        pycos.Task._sign = pycos.Channel._sign = SysTask._sign = RTI._sign = self._signature
+        pycos.Task._sign = pycos.Channel._sign = SysTask._sign = RPS._sign = self._signature
         if os.name != 'nt' and '__mp_main__' not in sys.modules:
             sys.modules['__mp_main__'] = sys.modules['__main__']
         if discover_peers:
@@ -299,7 +299,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         if Pycos._pycos:
             Pycos._pycos._exit(await_non_daemons, False)
             super(self.__class__, self)._exit(await_non_daemons, True)
-            SysTask._pycos = RTI._pycos = _Peer._pycos = None
+            SysTask._pycos = RPS._pycos = _Peer._pycos = None
             Singleton.discard(self.__class__)
             Pycos._pycos = None
 
@@ -1057,25 +1057,25 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 else:
                     logger.warning('Ignoring invalid reply for %s' % req.name)
 
-            elif req.name == 'run_rti':
-                rti = self._rtis.get(req.kwargs['name'], None)
-                if rti:
+            elif req.name == 'run_rps':
+                rps = self._rpss.get(req.kwargs['name'], None)
+                if rps:
                     args = req.kwargs['args']
                     kwargs = req.kwargs['kwargs']
                     try:
                         monitor = req.kwargs.get('monitor', None)
                         if monitor:
                             Task._pycos._lock.acquire()
-                            reply = Task(rti._method, *args, **kwargs)
+                            reply = Task(rps._method, *args, **kwargs)
                             if reply:
                                 reply.notify(monitor)
                             Task._pycos._lock.release()
                         else:
-                            reply = Task(rti._method, *args, **kwargs)
+                            reply = Task(rps._method, *args, **kwargs)
                     except Exception:
                         reply = Exception(traceback.format_exc())
                 else:
-                    reply = Exception('RTI "%s" is not registered' % req.kwargs['name'])
+                    reply = Exception('RPS "%s" is not registered' % req.kwargs['name'])
                 yield conn.send_msg(serialize(reply))
 
             elif req.name == 'locate_task':
@@ -1095,9 +1095,9 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 Channel._pycos._lock.release()
                 yield conn.send_msg(serialize(channel))
 
-            elif req.name == 'locate_rti':
-                rti = self._rtis.get(req.kwargs['name'], None)
-                yield conn.send_msg(serialize(rti))
+            elif req.name == 'locate_rps':
+                rps = self._rpss.get(req.kwargs['name'], None)
+                yield conn.send_msg(serialize(rps))
 
             elif req.name == 'monitor':
                 reply = -1
@@ -1342,10 +1342,10 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             return '"%s" @ %s' % (self._name, s)
 
 
-class RTI(object):
-    """Remote Task Invocation.
+class RPS(object):
+    """Remote Pico/Pycos Service.
 
-    Methods registered with RTI can be executed as tasks on request (by remote clients).
+    Methods registered with RPS can be executed as tasks on request (by remote clients).
     """
 
     __slots__ = ('_name', '_location', '_method', '_monitor_task', '_monitors', '_rtasks')
@@ -1358,13 +1358,13 @@ class RTI(object):
         'name' is not given, method's function name is used for registering.
         """
         if not inspect.isgeneratorfunction(method):
-            raise RuntimeError('RTI method must be generator function')
+            raise RuntimeError('RPS method must be generator function')
         self._method = method
         if name:
             self._name = name
         else:
             self._name = method.__name__
-        if not RTI._pycos:
+        if not RPS._pycos:
             Pycos.instance()
         self._location = None
         self._monitor_task = None
@@ -1373,7 +1373,7 @@ class RTI(object):
 
     @property
     def location(self):
-        """Get Location instance where this RTI is running.
+        """Get Location instance where this RPS is running.
         """
         if isinstance(self._location, Location):
             return copy.copy(self._location)
@@ -1382,53 +1382,53 @@ class RTI(object):
 
     @property
     def name(self):
-        """Get name of RTI.
+        """Get name of RPS.
         """
         return self._name
 
     @staticmethod
     def locate(name, location=None, timeout=None):
-        """Must be used with 'yield' as 'rti = yield RTI.locate("name")'.
+        """Must be used with 'yield' as 'rps = yield RPS.locate("name")'.
 
-        Returns RTI instance to registered RTI at a remote peer so its method
+        Returns RPS instance to registered RPS at a remote peer so its method
         can be used to execute tasks at that peer.
 
-        If 'location' is given, RTI is looked up at that specific peer;
+        If 'location' is given, RPS is looked up at that specific peer;
         otherwise, all known peers are queried for given name.
         """
-        if not RTI._pycos:
+        if not RPS._pycos:
             Pycos.instance()
-        req = _NetRequest('locate_rti', kwargs={'name': name}, dst=location, timeout=timeout)
-        rti = yield _Peer.async_request(req)
-        raise StopIteration(rti)
+        req = _NetRequest('locate_rps', kwargs={'name': name}, dst=location, timeout=timeout)
+        rps = yield _Peer.async_request(req)
+        raise StopIteration(rps)
 
     def register(self):
-        """RTI must be registered so it can be located.
+        """RPS must be registered so it can be located.
         """
         if self._location:
             return -1
         if not inspect.isgeneratorfunction(self._method):
             return -1
-        RTI._pycos._lock.acquire()
-        if RTI._pycos._rtis.get(self._name, None) is None:
-            RTI._pycos._rtis[self._name] = self
-            RTI._pycos._lock.release()
+        RPS._pycos._lock.acquire()
+        if RPS._pycos._rpss.get(self._name, None) is None:
+            RPS._pycos._rpss[self._name] = self
+            RPS._pycos._lock.release()
             return 0
         else:
-            RTI._pycos._lock.release()
+            RPS._pycos._lock.release()
             return -1
 
     def unregister(self):
-        """Unregister registered RTI; see 'register' above.
+        """Unregister registered RPS; see 'register' above.
         """
         if self._location:
             return -1
-        RTI._pycos._lock.acquire()
-        if RTI._pycos._rtis.pop(self._name, None) is None:
-            RTI._pycos._lock.release()
+        RPS._pycos._lock.acquire()
+        if RPS._pycos._rpss.pop(self._name, None) is None:
+            RPS._pycos._lock.release()
             return -1
         else:
-            RTI._pycos._lock.release()
+            RPS._pycos._lock.release()
             return 0
 
     def monitor(self, task):
@@ -1442,8 +1442,8 @@ class RTI(object):
         return 0
 
     def close(self):
-        """Clients should use this method after an rti (obtained with 'RTI.locate')
-        is no longer needed. After this call, this RTI can't be used to create
+        """Clients should use this method after an rps (obtained with 'RPS.locate')
+        is no longer needed. After this call, this RPS can't be used to create
         tasks. The result of this method is 0 in case of success.
         """
         if (not self._name) or (not self._location):
@@ -1454,15 +1454,15 @@ class RTI(object):
         return 0
 
     def __call__(self, *args, **kwargs):
-        """Must be used with 'yeild' as 'rtask = yield rti(*args, **kwargs)'.
+        """Must be used with 'yeild' as 'rtask = yield rps(*args, **kwargs)'.
 
-        Run RTI (method at remote location) with args and kwargs. Both args and
+        Run RPS (at remote location) with args and kwargs. Both args and
         kwargs must be serializable. Result is (remote) Task instance if call
         succeeds, otherwise it is None.
         """
         if not self._monitor_task and isinstance(self._location, Location):
             self._monitor_task = Task(self._monitor_proc)
-        req = _NetRequest('run_rti', kwargs={'name': self._name, 'args': args, 'kwargs': kwargs,
+        req = _NetRequest('run_rps', kwargs={'name': self._name, 'args': args, 'kwargs': kwargs,
                                              'monitor': self._monitor_task},
                           dst=self._location, timeout=MsgTimeout)
         rtask = yield _Peer.sync_reply(req)
@@ -1484,14 +1484,14 @@ class RTI(object):
         while 1:
             msg = yield task.recv()
             if not isinstance(msg, MonitorStatus):
-                pycos.logger.warning('RTI: invalid MonitorStatus message ignored: %s', type(msg))
+                logger.warning('RPS: invalid MonitorStatus message ignored: %s', type(msg))
                 continue
             if not isinstance(msg.info, Task):
                 if isinstance(msg.info, str) and isinstance(msg.value, str):
-                    pycos.logger.info('RTI: %s: %s with %s', msg.info, msg.type, msg.value)
+                    logger.info('RPS: %s: %s with %s', msg.info, msg.type, msg.value)
                 else:
-                    pycos.logger.warning('RTI: invalid MonitorStatus message ignored: %s',
-                                         type(msg.info))
+                    logger.warning('RPS: invalid MonitorStatus message ignored: %s',
+                                   type(msg.info))
                 continue
             rtask = self._rtasks.get(msg.info, None)
             if not rtask:
@@ -1501,15 +1501,15 @@ class RTI(object):
                     if rtask:
                         break
                 else:
-                    pycos.logger.warning('RTI: rtask %s may not be valid?', rtask)
+                    logger.warning('RPS: rtask %s may not be valid?', rtask)
                     continue
             msg.info = rtask
             if msg.type == StopIteration:
-                pycos.logger.debug('RTI: rtask %s done: %s', rtask, msg.value)
+                logger.debug('RPS: rtask %s done: %s', rtask, msg.value)
                 rtask._value = msg.value
             else:
-                pycos.logger.warning('RTI: rtask %s failed: %s%s', rtask, msg.type,
-                                     ' with %s' % msg.value if isinstance(msg.value, str) else '')
+                logger.warning('RPS: rtask %s failed: %s%s', rtask, msg.type,
+                               ' with %s' % msg.value if isinstance(msg.value, str) else '')
             rtask._complete.set()
             drop = []
             for monitor in self._monitors:
@@ -1527,14 +1527,14 @@ class RTI(object):
         if self._location:
             state['location'] = self._location
         else:
-            state['location'] = RTI._sign
+            state['location'] = RPS._sign
         return state
 
     def __setstate__(self, state):
         self._name = state['name']
         self._location = state['location']
         if isinstance(self._location, Location):
-            if self._location in RTI._pycos._locations:
+            if self._location in RPS._pycos._locations:
                 self._location = None
         else:
             self._location = _Peer.sign_location(self._location)
@@ -1545,11 +1545,11 @@ class RTI(object):
             self._rtasks = {}
 
     def __eq__(self, other):
-        return (isinstance(other, RTI) and
+        return (isinstance(other, RPS) and
                 self._name == other._name and self._location == other._location)
 
     def __ne__(self, other):
-        return ((not isinstance(other, RTI)) or
+        return ((not isinstance(other, RPS)) or
                 self._name != other._name or self._location != other._location)
 
     def __repr__(self):
@@ -1919,7 +1919,7 @@ class _Peer(object):
         _Peer._lock.release()
         if peer:
             logger.debug('%s: peer %s terminated', peer.addrinfo.location, peer.location)
-            # RTI._peer_closed_(peer.location)
+            # RPS._peer_closed_(peer.location)
             peer.stream = False
             _Peer._sign_locations.pop(peer.signature, None)
             if peer.req_task:
@@ -1957,5 +1957,5 @@ pycos._NetRequest = _NetRequest
 pycos._Peer = _Peer
 pycos.SysTask = SysTask
 pycos.Pycos = Pycos
-pycos.RTI = RTI
+pycos.RTI = RTI = pycos.RPS = RPS
 pycos.PeerStatus = PeerStatus
