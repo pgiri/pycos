@@ -3368,7 +3368,8 @@ class Pycos(object, metaclass=Singleton):
         self._notifier = _AsyncNotifier()
         if not Task._pycos:
             Task._pycos = Channel._pycos = self
-            logger.info('version %s with %s I/O notifier', __version__, self._notifier._poller_name)
+            logger.info('version %s (Python %s) with %s I/O notifier',
+                        __version__, platform.python_version(), self._notifier._poller_name)
         self._locations = set()
         self._location = None
         self._name = ''
