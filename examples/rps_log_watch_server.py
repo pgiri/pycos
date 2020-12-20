@@ -1,6 +1,6 @@
 # Example uses RPS to run log monitor service.
 
-# Run this on each node to monitor and 'log_monitor_client' on a client to get log messages that
+# Run this on each node to monitor and 'rps_log_watch_client' on a client to get log messages that
 # match a pattern from all the nodes to that client
 
 import sys

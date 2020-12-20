@@ -115,10 +115,7 @@ framework for distributed and parallel computing.
   the function being replaced, any unprocessed messages in the task are
   processed with new functionality.
 
-* pico_client_rti.py and pico_service_rti.py use RTI feature and message passing to show how a
-  tiny (pico size) service can be implemented.
-
-* pico_client_task.py and pico_service_task.py are variation of RTI version above
+* pico_client_task.py and pico_service_task.py are variation of RPS version above
   using (remote) tasks and message passing.
 
 * pipe_csum.py uses asynchronous pipes to write data to and read data from a
@@ -133,16 +130,24 @@ framework for distributed and parallel computing.
 * remote_task_client.py and remote_task_server.py exchange messages with
   one-to-one message passing to exchange messages between two remote tasks.
 
-* rti_monitor_client.py and rti_monitor_server.py illustrate another approach to
+* rps_log_watch_client.py and rps_log_watch_server.py use RPS to implement
+  log monitoring where each node running log_monitor_server sends filtered log messages
+  to client. This is useful to observe many nodes for potential issues
+  (e.g., authentication failures).
+
+* rps_monitor_client.py and rps_monitor_server.py illustrate another approach to
   execute remote tasks: The server registers a function and client requests to
   execute task with that function. Compare this to dispycos_client.py where the
   client sends the computation itself to the remote server, so the client can
-  execute arbitrary functions, whereas with RTI only registered functions can be
+  execute arbitrary functions, whereas with RPS only registered functions can be
   executed by clients.
 
-* rti_node_client.py and rti_node_server.py use RTI feature so client can run
+* rps_node_client.py and rps_node_server.py use RPS feature so client can run
   a script (node_update_script.py in this example) on the server. Authentication is
   used to prevent unauthorized use of this feature.
+
+* rps_pico_client.py and rps_pico_service.py use RPS feature and message passing
+  to show how a tiny (pico size) service can be implemented.
 
 * sock_client.py and sock_server.py use asynchronous network programmming to
   communicate.

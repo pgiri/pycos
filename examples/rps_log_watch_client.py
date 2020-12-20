@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# to be used with 'rts_monitor_server.py'
+# to be used with 'rps_log_watch_server.py'
 # client requests execution of tasks on (remote) server.
 
 import sys
@@ -9,6 +9,7 @@ import pycos
 import pycos.netpycos
 
 
+# this task receives log messages from servers (running 'rps_monitor_server')
 def rps_client(task=None):
     task.set_daemon()
     while 1:
@@ -18,6 +19,7 @@ def rps_client(task=None):
         else:
             pycos.logger.warning('Ignoring message: %s', type(msg))
             continue
+        # each message should be tuple of server task and log line
         who, line = msg
         if not isinstance(who, pycos.Task) or not isinstance(line, (str, bytes)):
             pycos.logger.warning('Ignoring message: %s / %s', type(who), type(line))
@@ -25,6 +27,7 @@ def rps_client(task=None):
         # TODO: check if 'who' in 'servers'
         print('%s: %s' % (who.location.addr, line.decode()))
 
+# this task gets peer status (online / off-line) notification
 def peer_status(task=None):
     client = pycos.Task(rps_client)
     rpss = set()
@@ -36,6 +39,7 @@ def peer_status(task=None):
             pycos.logger.warning('Invalid peer status %s ignored', type(status))
             continue
         if status.status == pycos.PeerStatus.Online:
+            # if peer has rps_log_monitor, run RPS there
             def discover_rps(location, task=None):
                 rps = yield pycos.RPS.locate('rps_log_monitor', location=location, timeout=5)
                 if isinstance(rps, pycos.RPS):
@@ -55,6 +59,7 @@ if __name__ == '__main__':
     # use 'secret' as used by server
     scheduler = pycos.Pycos(name='client', secret='LogMon')
     servers = {}
+    # set peer_status notification
     status_monitor = pycos.Task(peer_status)
     scheduler.peer_status(status_monitor)
 
