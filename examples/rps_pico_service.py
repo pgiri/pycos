@@ -32,6 +32,7 @@ def pico_service(req, task=None):
         yield task.sleep(delay)
         raise StopIteration({'result': time.asctime(), 'server': task})
 
+
 if __name__ == '__main__':
     # pycos.logger.setLevel(pycos.Logger.DEBUG)
     # 'secret' is set so only peers that use same secret can communicate;
@@ -50,5 +51,5 @@ if __name__ == '__main__':
             line = read_input('Enter "quit" or "exit" to terminate pico_service: ').strip().lower()
             if line in ('quit', 'exit'):
                 break
-        except:
+        except Exception:
             break

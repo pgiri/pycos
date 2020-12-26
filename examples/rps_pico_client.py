@@ -33,6 +33,7 @@ def client_proc(n, task=None):
             pycos.logger.info('result: %s, from: %s',
                               reply.get('result', None), reply.get('server', None))
 
+
 if __name__ == '__main__':
     # pycos.logger.setLevel(pycos.Logger.DEBUG)
     if len(sys.argv) > 1:

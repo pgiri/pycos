@@ -1,8 +1,9 @@
-# Run 'dispycosnode.py' program to start processes to execute computations sent by this client,
-# along with this program.
+# Run 'dispycosnode.py' program on nodes to start processes to execute computations sent by this
+# client, along with this program.
 
-# This example is similar to 'dispycos_client6.py', except it uses broadcasting over Channel to
-# send messages to remote tasks to process, and uses 'deque' module to implement circular buffer.
+# This example shows how to stream data to different remote tasks (a case of MISD - multiple
+# instruction single data) to compute live analytics on data and send interesting signals
+# (information in live data) back to client.
 
 # This generator function is sent to remote dispycos to analyze data and generate apprporiate
 # signals that are sent to a task running on client. The signal in this simple case is average of

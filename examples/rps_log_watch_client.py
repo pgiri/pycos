@@ -27,10 +27,11 @@ def rps_client(task=None):
         # TODO: check if 'who' in 'servers'
         print('%s: %s' % (who.location.addr, line.decode()))
 
+
 # this task gets peer status (online / off-line) notification
 def peer_status(task=None):
     client = pycos.Task(rps_client)
-    rpss = set()
+    rpss = {}
     while 1:
         status = yield task.receive()
         if not isinstance(status, pycos.PeerStatus):
@@ -43,7 +44,7 @@ def peer_status(task=None):
             def discover_rps(location, task=None):
                 rps = yield pycos.RPS.locate('rps_log_monitor', location=location, timeout=5)
                 if isinstance(rps, pycos.RPS):
-                    rpss.add(rps)
+                    rpss[rps] = rps
                     server = yield rps(client)
                     if isinstance(server, pycos.Task):
                         servers[location] = server
@@ -51,8 +52,9 @@ def peer_status(task=None):
         else:  # status.status == pycos.PeerStatus.Offline
             servers.pop(status.location, None)
 
-    for rps in rpss:
+    for rps in rpss.values():
         rps.close()
+
 
 if __name__ == '__main__':
     pycos.logger.setLevel(pycos.Logger.DEBUG)

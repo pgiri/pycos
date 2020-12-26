@@ -45,7 +45,7 @@ def rps_log_monitor(client, task=None):
             pycos.logger.warning('Could not send message to %s', client)
             break
     pipe.terminate()
-    
+
 
 if __name__ == '__main__':
     pycos.logger.setLevel(pycos.Logger.DEBUG)

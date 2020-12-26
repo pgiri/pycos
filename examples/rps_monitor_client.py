@@ -10,7 +10,7 @@ import pycos.netpycos
 
 
 # this task gets MonitorStatus messages (notifications of exit status) for (remote) tasks created
-# in rps_client
+# in rps_client (although monitor is not really necessary in this case - see below)
 def monitor_proc(n, task=None):
     done = 0
     while done < n:
@@ -53,6 +53,9 @@ def rps_client(task=None):
         # messages can be exchanged with rtask; in this case, 'rps_server' expecpts to receive
         rtask.send('msg:%s' % i)
         yield task.sleep(random.uniform(0, 1))
+    # it is easier to wait for each rtask with 'yield rtask()' here (without using monitor); using
+    # monitor allows processing results as soon as they become available and using 'yield rtask()'
+    # allows processing synchronously (potentially waiting till task is finished).
 
 
 if __name__ == '__main__':

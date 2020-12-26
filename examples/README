@@ -1,11 +1,16 @@
 Example files in this directory are meant to illustrate features of pycos
 framework. They are not necessarily efficient versions, nor very useful. The
 descriptions below are sorted on the names of files, so some examples at the
-beginning use advanced features, whereas later files may be easier to follow. In
-some cases, 'encode' method is called on strings so same code works with Python
-2 (where 'encode' returns string itself) and Python 3 (where 'encode' returns
-bytes as needed). When programming with Python 2 exclusively, there is no need
-to call 'encode'.
+beginning use advanced features, whereas later files may be easier to follow.
+
+In the examples (as in Pycos implementation), 'raise StopIteration(value)' is used to exit task
+functions (generators). In Python 3.8+, 'StopIteration' has been removed and instead 'return' must
+be used. Pip installer for pycos translates 'raise StopIteration' to 'return' appropriately when
+installing with Python 3.8+. When programming for Python 3.8+ only, use 'return'.
+
+In some cases, 'encode' method is called on strings so same code works with Python 2 (where
+'encode' returns string itself) and Python 3 (where 'encode' returns bytes as needed). When
+programming with Python 2 exclusively, there is no need to call 'encode'.
 
 dispy project (http://dispy.sourceforge.net) uses pycos to implement Python
 framework for distributed and parallel computing.
