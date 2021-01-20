@@ -1,14 +1,11 @@
 pycos
 ######
 
-    This project is hosted at `Sourceforge <https://pycos.sourceforge.io>`_;
-    however, sourceforge has been unreliable for the past few weeks, so
-    (for now) documentation has been uploaded to `github
-    <https://pgiri.github.io/pycos/index.html>`_ as well.
+    .. note:: Full documentation for pycos is now available at `pycos.org
+              <https://pycos.org>`_.
 
-`pycos <https://pgiri.github.io/pycos/index.html>`_ is a Python framework for
-asynchronous, concurrent, distributed programming with tasks, asynchronous
-completions and message passing.
+`pycos <https://pycos.org>`_ is a Python framework for asynchronous, concurrent, network /
+distributed programming, distributed computing with *very* light weight tasks and message passing.
 
 Unlike with other asynchronous frameworks, programs developed with pycos have
 **same logic and structure** as programs with threads, except for a few
@@ -23,8 +20,8 @@ pycos context switch occurs only when tasks use *yield* (typically with an
 asychronous call), so there is no need for locking and there is no overhead of
 unnecessary context switches.
 
-pycos works with Python versions 2.7+ and 3.1+. It has been tested with
-Linux, Mac OS X and Windows; it may work on other platforms, too.
+pycos works with Python versions 2.7+ and 3.1+ on Linux, Mac OS X and Windows; it may
+work on other platforms (e.g., FreeBSD and other BSD variants) too.
 
 Features
 --------
@@ -55,11 +52,14 @@ Features
   <http://en.wikipedia.org/wiki/Location_transparency>`_ with naming
   and locating (local and remote) resources,
 
+* Remote Pico Service (RPS) for defining services that remote clients can run as tasks
+  (with possibly message passing to communicate).
+
 * Distributing computation components (code and data) for execution of
   distributed communicating processes, for wide range of use cases, covering
   `SIMD, MISD, MIMD <https://en.wikipedia.org/wiki/Flynn%27s_taxonomy>`_ system
   architectures at the process level, `web interface
-  <https://pgiri.github.io/pycos/dispycos.html#client-browser-interface>`_ to
+  <https://pycos.org/dispycos.html#client-browser-interface>`_ to
   monitor cluster/application status/performance; `in-memory processing
   <https://en.wikipedia.org/wiki/In-memory_processing>`_, data streaming,
   real-time (live) analytics and cloud computing are supported as well,
@@ -67,7 +67,7 @@ Features
 * Monitoring and restarting of (local or remote) tasks, for fault detection
   and fault-tolerance,
 
-* Hot-swapping of task functions, for dynamic system reconfiguration,
+* Hot-swapping of task functions, for dynamic system reconfiguration.
 
 * Thread pools with asynchronous task completions, for executing (external)
   synchronous tasks, such as reading standard input.
@@ -97,5 +97,5 @@ Authors
 
 Links
 -----
-* `Project page <https://pgiri.github.io/pycos/index.html>`_.
+* Documentation is at `pycos.org`_.
 * `GitHub (Code Repository) <https://github.com/pgiri/pycos>`_.
