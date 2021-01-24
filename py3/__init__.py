@@ -2669,14 +2669,18 @@ class Task(object):
         return self._scheduler._throw(self, *args)
 
     def value(self, timeout=None):
-        """Get last value 'yield'ed / value of StopIteration of task.
+        """Get exit "value" of task.
 
         NB: This method should _not_ be called from a task! This method is meant
         for main thread in the user program to wait for (main) task(s) it
         creates.
 
-        Once task stops (finishes) executing, the last value is returned.
+        Once task stops (finishes) executing, the value it exited with
+        'raise StopIteration(value)' is returned.
         """
+        if not hasattr(self, '_complete'):
+            logger.warning('task %s is not suitable for "value"', self)
+            return None
         value = None
         self._scheduler._lock.acquire()
         if self._complete is None:
@@ -2694,11 +2698,15 @@ class Task(object):
         return value
 
     def finish(self, timeout=None):
-        """Get last value 'yield'ed / value of StopIteration of task. Must be
-        used in a task with 'yield' as 'value = yield other_task.finish()'
+        """Get exit "value" of task. Must be used in a task with 'yield' as
+        'value = yield other_task.finish()'
 
-        Once task stops (finishes) executing, the last value is returned.
+        Once task stops (finishes) executing, the value it exited with
+        'raise StopIteration(value)' is returned.
         """
+        if not hasattr(self, '_complete'):
+            logger.warning('task %s is not suitable for "finish"', self)
+            raise StopIteration(None)
         value = None
         if self._complete is None:
             self._complete = Event()
