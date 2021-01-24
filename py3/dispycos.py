@@ -726,6 +726,7 @@ class Client(object):
                 elif askew._value.type == Scheduler.TaskAbandoned:
                     pycos.logger.warning('rtask %s abandoned', rtask)
                 else:
+                    rtask._value = askew._value
                     pycos.logger.warning('rtask %s failed: %s with %s',
                                          rtask, askew._value.type, askew._value.value)
                 rtask._complete.set()
@@ -778,6 +779,7 @@ class Client(object):
                         elif req.type == Scheduler.TaskAbandoned:
                             pycos.logger.warning('rtask %s abandoned', rtask)
                         else:
+                            rtask._value = req
                             pycos.logger.warning('rtask %s failed: %s with %s',
                                                  rtask, req.type, req.value)
                         rtask._complete.set()

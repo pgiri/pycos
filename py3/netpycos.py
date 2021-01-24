@@ -1514,6 +1514,7 @@ class RPS(object):
                 logger.debug('RPS: rtask %s done: %s', rtask, msg.value)
                 rtask._value = msg.value
             else:
+                rtask._value = msg
                 logger.warning('RPS: rtask %s failed: %s%s', rtask, msg.type,
                                ' with %s' % msg.value if isinstance(msg.value, str) else '')
             rtask._complete.set()

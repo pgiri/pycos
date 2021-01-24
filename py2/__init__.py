@@ -3705,6 +3705,7 @@ class Pycos(object):
                                 except Exception:
                                     logger.warning('closing %s raised exception: %s',
                                                    task._name, traceback.format_exc())
+                                task._value = MonitorStatus(task, exc[0], exc_trace)
 
                         # delete this task
                         # if task._state not in (Pycos._Scheduled, Pycos._Running):
