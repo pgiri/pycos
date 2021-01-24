@@ -674,18 +674,14 @@ class Client(object):
     def _rtask_req(self, where, cpu, gen, *args, **kwargs):
         """Internal use only.
         """
-        if isinstance(gen, str):
-            name = gen
-        else:
-            name = gen.func_name
+        if not inspect.isgeneratorfunction(gen):
+            logger.warning('rtask first argument must be generator function')
+            raise StopIteration(None)
 
+        name = gen.func_name
         if name in self.__xfer_funcs:
             code = None
         else:
-            if not inspect.isgeneratorfunction(gen):
-                logger.warning('"%s" is not a valid generator function', name)
-                raise StopIteration(None)
-
             code = inspect.getsource(gen).lstrip()
 
         def _job_req(task=None):
