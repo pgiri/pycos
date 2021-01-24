@@ -1565,6 +1565,9 @@ class RPS(object):
             s = '%s@%s' % (s, self._location)
         return s
 
+    def __hash__(self):
+        return hash(str(self))
+
 
 class SysTask(pycos.Task):
     """Task meant for reactive components that are always ready to respond to
