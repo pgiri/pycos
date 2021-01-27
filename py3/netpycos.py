@@ -1,5 +1,5 @@
 """
-This file is part of pycos project. See https://pycos.sourceforge.io for details.
+This file is part of pycos; see https://pycos.org for details.
 
 This module adds API for distributed programming to Pycos.
 """
@@ -44,7 +44,7 @@ assert sys.version_info.major == 3 and sys.version_info.minor < 7, \
 __author__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __copyright__ = "Copyright (c) 2012-2014 Giridhar Pemmasani"
 __license__ = "Apache 2.0"
-__url__ = "https://pycos.sourceforge.io"
+__url__ = "https://pycos.org"
 
 __version__ = pycos.__version__
 __all__ = pycos.__all__ + ['PeerStatus', 'RPS', 'RTI']

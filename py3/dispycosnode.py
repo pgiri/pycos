@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 """
-This file is part of pycos project. See https://pycos.sourceforge.io for details.
+This file is part of pycos; see https://pycos.org for details.
 
 This program can be used to start dispycos server processes so dispycos
 scheduler (see 'dispycos.py') can send clients to these server processes
@@ -13,7 +13,7 @@ See 'dispycos_*.py' files for example use cases.
 __author__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __copyright__ = "Copyright (c) 2014 Giridhar Pemmasani"
 __license__ = "Apache 2.0"
-__url__ = "https://pycos.sourceforge.io"
+__url__ = "https://pycos.org"
 
 
 def _dispycos_server_proc():
@@ -2010,7 +2010,7 @@ def _dispycos_node():
 if __name__ == '__main__':
 
     """
-    See http://pycos.sourceforge.io/dispycos.html#node-servers for details on
+    See http://pycos.org/dispycos.html#node-servers for details on
     options to start this program.
     """
 

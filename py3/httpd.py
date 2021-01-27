@@ -1,5 +1,5 @@
 """
-This file is part of pycos project. See https://pycos.sourceforge.io for details.
+This file is part of pycos; see https://pycos.org for details.
 """
 
 import sys
@@ -31,7 +31,7 @@ __copyright__ = "Copyright 2015, Giridhar Pemmasani"
 __contributors__ = []
 __maintainer__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __license__ = "Apache 2.0"
-__url__ = "https://pycos.sourceforge.io"
+__url__ = "https://pycos.org"
 
 __all__ = ['HTTPServer']
 
