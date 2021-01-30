@@ -719,6 +719,7 @@ class Client(object):
                 askew = None
             if askew:
                 # assert isinstance(askew._value, MonitorStatus)
+                askew._value.info = rtask
                 if askew._value.type == StopIteration:
                     pycos.logger.debug('rtask %s done', rtask)
                     rtask._value = askew._value.value
@@ -727,7 +728,6 @@ class Client(object):
                 elif askew._value.type == Scheduler.TaskAbandoned:
                     pycos.logger.warning('rtask %s abandoned', rtask)
                 else:
-                    askew._value.info = rtask
                     rtask._value = askew._value
                     pycos.logger.warning('rtask %s failed: %s with %s',
                                          rtask, askew._value.type, askew._value.value)
@@ -773,6 +773,7 @@ class Client(object):
                         continue
                     rtask = self.__rtasks.pop(req.info, None)
                     if rtask:
+                        req.info = rtask
                         if req.type == StopIteration:
                             pycos.logger.debug('rtask %s done', rtask)
                             rtask._value = req.value
@@ -781,7 +782,6 @@ class Client(object):
                         elif req.type == Scheduler.TaskAbandoned:
                             pycos.logger.warning('rtask %s abandoned', rtask)
                         else:
-                            req.info = rtask
                             rtask._value = req
                             pycos.logger.warning('rtask %s failed: %s with %s',
                                                  rtask, req.type, req.value)
