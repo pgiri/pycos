@@ -23,14 +23,17 @@ if sys.version_info.major == 3:
 
 def pico_service(req, task=None):
     if not isinstance(req, dict):
-        raise StopIteration
+        raise Exception('request must be a dictionary')
 
     client = req.get('client', None)
-    if req.get('req', None) == 'time' and isinstance(client, pycos.Task):
-        delay = random.uniform(0.5, 2)
-        # simulate delay in getting result (e.g., reading a sensor or computation)
-        yield task.sleep(delay)
-        raise StopIteration({'result': time.asctime(), 'server': task})
+    if req.get('name', None) != 'time':
+        raise Exception('request should have "name" set to "time"')
+    if not isinstance(client, pycos.Task):
+        raise Exception('request should have "client" set to task of requester')
+    delay = random.uniform(0.5, 2)
+    # simulate delay in getting result (e.g., reading a sensor or computation)
+    yield task.sleep(delay)
+    raise StopIteration({'result': time.asctime(), 'server': task})
 
 
 if __name__ == '__main__':

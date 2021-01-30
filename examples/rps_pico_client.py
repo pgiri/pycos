@@ -20,7 +20,7 @@ def client_proc(n, task=None):
 
     service_tasks = []
     for i in range(n):
-        req = {'req': 'time', 'client': task}
+        req = {'name': 'time', 'client': task}
         rtask = yield service_rps(req)
         if isinstance(rtask, pycos.Task):
             pycos.logger.info('service task: %s', rtask)
@@ -29,9 +29,15 @@ def client_proc(n, task=None):
     for rtask in service_tasks:
         reply = yield rtask.finish(timeout=5)  # use timeout in case of failures
         if isinstance(reply, dict):
-            assert rtask == reply.get('server')
+            # assert rtask == reply.get('server')
             pycos.logger.info('result: %s, from: %s',
                               reply.get('result', None), reply.get('server', None))
+        elif isinstance(reply, pycos.MonitorStatus):
+            # this warning is also shown by RPS monitor; in real use cases this error may be
+            # handled differently
+            pycos.logger.warning('rtask %s failed: %s with %s', rtask, reply.type, reply.value)
+        else:
+            pycos.logger.warning('invalid reply: %s', type(reply))
 
 
 if __name__ == '__main__':
