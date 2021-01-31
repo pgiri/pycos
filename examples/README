@@ -57,13 +57,6 @@ framework for distributed and parallel computing.
   client to this program executing on remote servers, and get the output back to
   client.
 
-* dispycos_client6.py uses streaming of data to remote tasks for efficient
-  communication. The example also shows how to implement live/real-time
-  analytics and send them to client.
-
-* dispycos_client6_channel.py is same as dispycos_client6.py, except it uses
-  channel to broadcast data to remote tasks.
-
 * dispycos_client7.py is an alternate implementation of dispycos_client1.py; it
   uses messages from dispycos scheduler to schedule remote tasks and get
   results.
@@ -103,6 +96,9 @@ framework for distributed and parallel computing.
   process messages from dispycos scheduler (in this case just to print when a
   remote task is finished) while also using httpd module (which chains messages
   from dispycos scheduler to client's 'status_proc').
+
+* dispycos_live_analytics.py shows how to implement live/real-time analytics and send the results
+  back to client. It also uses streaming of data to remote tasks for efficient communication.
 
 * dispycos_mas.py is a simple example of multi-agent system where computations (agents) discover
   each other, communicate with each other etc..
