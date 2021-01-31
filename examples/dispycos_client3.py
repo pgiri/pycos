@@ -43,8 +43,8 @@ def client_proc(njobs, task=None):
     # as soon as received
     def recv_results(task=None):
         for i in range(njobs):
-            msg = yield task.receive()
-            print('    result for job %d: %s' % (i, msg))
+            result = yield task.receive()
+            print('    result for job %d: %s' % (i, result))
 
     # remote tasks send replies as messages to this task
     results_task = pycos.Task(recv_results)
@@ -61,6 +61,9 @@ def client_proc(njobs, task=None):
         if not isinstance(rtask, pycos.Task):
             print('  ** rtask failed %s: %s' % (i, rtask))
 
+    # not required to wait for results_task (client.close will wait for results), but improves
+    # clarity
+    yield results_task.finish()
     # wait for all results and close client
     yield client.close()
 

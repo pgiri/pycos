@@ -38,6 +38,8 @@ def client_proc(njobs, task=None):
         result = yield rtask()
         if isinstance(result, tuple) and len(result) == 3:
             print('    result for %d from %s: %s' % result)
+        elif isinstance(result, pycos.MonitorStatus):
+            print('    ** rtask %s failed: %s with %s' % (rtask, result.type, result.value))
         else:
             print('    ** rtask %s failed' % rtask)
 

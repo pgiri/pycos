@@ -101,6 +101,8 @@ def client_proc(task=None):
         result = yield rtask()
         if isinstance(result, tuple) and len(result) == 3:
             print('   %ssum for %s: %s' % (result[1], result[0], result[2]))
+        elif isinstance(result, pycos.MonitorStatus):
+            print(' ** rtask %s failed: %s with %s' % (rtask, result.type, result.value))
 
     yield client.close()
 
