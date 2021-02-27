@@ -84,9 +84,8 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
     'name' is used in locating peers. They must be unique. If 'name' is not
     given, it is set to string 'host:tcp_port'.
 
-    'ext_ip_addr' is either the IP address or list of IP addresses of NAT
-    firewall/gateway if pycos is behind that firewall/gateway. If it is a list,
-    each element must correspond to element of 'host' list.
+    'ext_host' is (list of) host name(s) / IP address(es) of NAT
+    firewall/gateway if pycos is behind that firewall/gateway.
 
     If 'discover_peers' is True (default), this host broadcasts message to
     detect other peers. If it is False, message is not broadcasted.
@@ -107,7 +106,7 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
     _pycos = None
     _pycos_class = pycos.Pycos
 
-    def __init__(self, udp_port=pycos.config.NetPort, tcp_port=None, host=None, ext_ip_addr=None,
+    def __init__(self, udp_port=pycos.config.NetPort, tcp_port=None, host=None, ext_host=None,
                  socket_family=None, ipv4_udp_multicast=False, name=None, discover_peers=True,
                  secret='', certfile=None, keyfile=None, notifier=None,
                  dest_path=None, max_file_size=None):
@@ -148,10 +147,10 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 hosts = [None]
         else:
             hosts = [host]
-        if isinstance(ext_ip_addr, list):
-            ext_ip_addrs = ext_ip_addr
+        if isinstance(ext_host, list):
+            ext_hosts = ext_host
         else:
-            ext_ip_addrs = [ext_ip_addr]
+            ext_hosts = [ext_host]
 
         if not name:
             name = socket.gethostname()
@@ -159,12 +158,12 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
         location = None
         for i in range(len(hosts)):
             host = hosts[i]
-            if len(ext_ip_addrs) > i and ext_ip_addrs[i]:
-                ext_ip_addr = Pycos.host_ipaddr(ext_ip_addrs[i])
-                if not ext_ip_addr:
-                    logger.warning('invalid ext_ip_addr "%s" ignored', ext_ip_addrs[i])
+            if len(ext_hosts) > i and ext_hosts[i]:
+                ext_host = Pycos.host_ipaddr(ext_hosts[i])
+                if not ext_host:
+                    logger.warning('invalid ext_host "%s" ignored', ext_hosts[i])
             else:
-                ext_ip_addr = None
+                ext_host = None
             addrinfo = Pycos.host_addrinfo(host=host, socket_family=socket_family,
                                            ipv4_multicast=self.ipv4_udp_multicast)
             if not addrinfo:
@@ -201,8 +200,8 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
 
             location = Location(*(tcp_sock.getsockname()[0:2]))
             addrinfo.ip = location.addr
-            if ext_ip_addr:
-                location.addr = ext_ip_addr
+            if ext_host:
+                location.addr = ext_host
 
             tcp_sock.listen(32)
             logger.info('TCP server "%s" @ %s', name if name else '', location)
@@ -650,7 +649,6 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
                 else:
                     self.broadcast = broadcast
                 self.netmask = netmask
-                self.ext_ip_addr = None
                 if os.name == 'nt':
                     self.bind_addr = ip
                 elif platform.system() in ('Darwin', 'DragonFlyBSD', 'FreeBSD', 'OpenBSD', 'NetBSD'):
