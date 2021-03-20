@@ -660,6 +660,9 @@ class Pycos(pycos.Pycos):
                         self.bind_addr = self.broadcast
                 else:
                     self.bind_addr = self.broadcast
+                self.location = None
+                self.tcp_sock = None
+                self.udp_sock = None
 
         if socket_family not in (None, socket.AF_INET, socket.AF_INET6):
             return None
