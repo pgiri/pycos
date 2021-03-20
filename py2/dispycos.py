@@ -2172,10 +2172,11 @@ if __name__ == '__main__':
 
     pycos.config.DispycosSchedulerPort = eval(pycos.config.DispycosSchedulerPort)
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', '--ip_addr', dest='host', action='append', default=[],
-                        help='IP address or host name of this node')
-    parser.add_argument('--ext_ip_addr', dest='ext_ip_addr', action='append', default=[],
-                        help='External IP address to use (needed in case of NAT firewall/gateway)')
+    parser.add_argument('-i', '--host', dest='host', action='append', default=[],
+                        help='host name or IP address of this node')
+    parser.add_argument('--ext_host', dest='ext_host', action='append', default=[],
+                        help='host name or IP address of router to use '
+                        '(needed in case of NAT firewall/gateway)')
     parser.add_argument('--scheduler_port', dest='scheduler_port', type=str,
                         default=str(pycos.config.DispycosSchedulerPort),
                         help='port number for dispycos scheduler')
