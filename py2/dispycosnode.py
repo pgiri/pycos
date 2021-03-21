@@ -398,10 +398,12 @@ def _dispycos_server_proc():
                 continue
             _dispycos_reply_task.send(-1)
 
-    intr = KeyboardInterrupt()
+    exc = KeyboardInterrupt()
     for _dispycos_var in _dispycos_job_tasks:
-        _dispycos_var.throw(intr)
+        _dispycos_var.throw(exc)
     for _dispycos_var in range(10):
+        if (yield _dispycos_jobs_done.wait(timeout=0.5)):
+            break
         logger.debug('dispycos server "%s": Waiting for %s tasks from %s to terminate',
                      _dispycos_name, len(_dispycos_job_tasks), _dispycos_scheduler_task.location)
         yield task.sleep(0.5)
