@@ -398,6 +398,13 @@ def _dispycos_server_proc():
                 continue
             _dispycos_reply_task.send(-1)
 
+    intr = KeyboardInterrupt()
+    for _dispycos_var in _dispycos_job_tasks:
+        _dispycos_var.throw(intr)
+    for _dispycos_var in range(10):
+        logger.debug('dispycos server "%s": Waiting for %s tasks from %s to terminate',
+                     _dispycos_name, len(_dispycos_job_tasks), _dispycos_scheduler_task.location)
+        yield task.sleep(0.5)
     # kill any pending jobs
     for _dispycos_var in _dispycos_job_tasks:
         _dispycos_var.terminate()
@@ -671,11 +678,17 @@ def _dispycos_spawn(_dispycos_node_q, _dispycos_spawn_q, _dispycos_config, _disp
         # for server in children:
         #     server.pid = 0
         for server in children:
-            for j in range(10):
+            for j in range(30):
                 proc = server.proc
                 try:
                     if not proc or not proc.is_alive():
                         break
+                    if j == 0:
+                        if os.name == 'nt':
+                            signum = signal.SIGBREAK
+                        else:
+                            signum = signal.SIGINT
+                        os.kill(proc.pid, signum)
                     proc.join(0.2)
                 except ValueError:
                     break
@@ -1271,7 +1284,7 @@ def _dispycos_node():
                                            'pid': pid, 'auth': client_info.auth})) == 1:
                 if not terminate:
                     raise StopIteration
-                yield server.done.wait(timeout=7)
+                yield server.done.wait(timeout=10)
                 if server.done.is_set():
                     raise StopIteration
 
@@ -1298,7 +1311,7 @@ def _dispycos_node():
                 client_info.spawn_mpproc = None
                 return 0
             client_info.spawn_q.put({'msg': 'quit', 'auth': client_info.auth})
-            for j in range(5):
+            for j in range(10):
                 try:
                     msg = client_info.node_q.get(True, 2)
                 except Exception:
