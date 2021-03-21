@@ -138,7 +138,7 @@ class Client(object):
                  disable_nodes=False, disable_servers=False,
                  pulse_interval=(5*MinPulseInterval), node_allocations=[],
                  ping_interval=None, restart_servers=False,
-                 zombie_period=None, abandon_zombie_nodes=False, scheduler=None):
+                 zombie_period=None, abandon_zombie_nodes=False):
         """'components' should be a list, each element of which is either a
         module, a (generator or normal) function, path name of a file, a class
         or an object (in which case the code for its class is sent).
@@ -183,18 +183,7 @@ class Client(object):
         self._xfer_files = []
         self._auth = None
         self.__xfer_funcs = set()
-        if scheduler is None:
-            self.__scheduler = None
-            Scheduler()
-        elif isinstance(scheduler, Location):
-            self.__scheduler = Location(pycos.Pycos.host_ipaddr(scheduler.addr), scheduler.port)
-        elif isinstance(scheduler, str):
-            if not isinstance(pycos.config.DispycosSchedulerPort, int):
-                pycos.config.DispycosSchedulerPort = eval(pycos.config.DispycosSchedulerPort)
-            self.__scheduler = Location(pycos.Pycos.host_ipaddr(scheduler),
-                                        pycos.config.DispycosSchedulerPort)
-        else:
-            raise Exception('"scheduler" must be an instance of Location or host name or IP')
+        self.__scheduler = None
         self._pulse_task = None
         if zombie_period:
             self._pulse_interval = min(pulse_interval, zombie_period / 3)
@@ -276,13 +265,24 @@ class Client(object):
         # check code can be compiled
         compile(self._code, '<string>', 'exec')
 
-    def schedule(self, timeout=None):
+    def schedule(self, location=None, timeout=None):
         """Schedule client for execution. Must be used with 'yield' as
         'result = yield client.schedule()'. If scheduler is executing other clients,
         this will block until scheduler processes them (clients are processed in the
         order submitted).
         """
 
+        if location is None:
+            Scheduler()
+        elif isinstance(location, Location):
+            self.__scheduler = Location(pycos.Pycos.host_ipaddr(location.addr), location.port)
+        elif isinstance(location, str):
+            if not isinstance(pycos.config.DispycosSchedulerPort, int):
+                pycos.config.DispycosSchedulerPort = eval(pycos.config.DispycosSchedulerPort)
+            self.__scheduler = Location(pycos.Pycos.host_ipaddr(location),
+                                        pycos.config.DispycosSchedulerPort)
+        else:
+            raise Exception('"loaction" must be an instance of Location or host name or IP')
         if self._auth is not None:
             raise StopIteration(0)
         self._auth = ''
