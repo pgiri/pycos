@@ -3693,7 +3693,10 @@ class Pycos(object, metaclass=Singleton):
                         v = exc[1].args
                         # assert isinstance(v, tuple)
                         if v:
-                            task._value = v[0]
+                            if sys.version_info >= (3,7,0) or len(v) == 1:
+                                task._value = v[0]
+                            else:
+                                task._value = v
                         else:
                             task._value = None
                         task._exceptions = []
