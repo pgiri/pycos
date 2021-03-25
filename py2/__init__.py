@@ -58,7 +58,7 @@ __maintainer__ = "Giridhar Pemmasani (pgiri@yahoo.com)"
 __license__ = "Apache 2.0"
 __url__ = "https://pycos.org"
 __status__ = "Production"
-__version__ = "4.11.0"
+__version__ = "4.12.0"
 
 __all__ = ['Task', 'Pycos', 'Lock', 'RLock', 'Event', 'Condition', 'Semaphore',
            'AsyncSocket', 'HotSwapException', 'MonitorStatus', 'Location', 'Channel',
@@ -3626,7 +3626,7 @@ class Pycos(object):
                             retval = task._generator.throw(*exc)
                     else:
                         retval = task._generator.send(task._value)
-                except Exception:
+                except (Exception, KeyboardInterrupt):
                     self._lock.acquire()
                     exc = sys.exc_info()
                     if exc[0] == StopIteration:
