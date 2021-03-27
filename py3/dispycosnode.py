@@ -404,15 +404,14 @@ def _dispycos_server_proc():
     for _dispycos_var in range(10):
         if (yield _dispycos_jobs_done.wait(timeout=0.5)):
             break
-        logger.debug('dispycos server "%s": Waiting for %s tasks from %s to terminate',
+        logger.debug('dispycos server "%s": waiting for %s tasks from %s to finish',
                      _dispycos_name, len(_dispycos_job_tasks), _dispycos_scheduler_task.location)
-        yield _dispycos_task.sleep(0.5)
     # kill any pending jobs
+    logger.debug('dispycos server "%s": terminating %s tasks',
+                 _dispycos_name, len(_dispycos_job_tasks))
     for _dispycos_var in _dispycos_job_tasks:
         _dispycos_var.terminate()
     _dispycos_job_tasks.clear()
-    logger.debug('dispycos server "%s": %s tasks terminated',
-                 _dispycos_name, len(_dispycos_job_tasks))
     _dispycos_msg = {'status': Scheduler.ServerDisconnected, 'location': _dispycos_task.location,
                      'auth': _dispycos_auth, 'pid': _dispycos_config['pid']}
     _dispycos_scheduler_task.send(_dispycos_msg)
