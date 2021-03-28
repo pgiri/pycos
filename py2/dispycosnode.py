@@ -1905,6 +1905,7 @@ def _dispycos_node():
             os.kill(dispycos_pid, signal.CTRL_C_EVENT)
         else:
             os.kill(dispycos_pid, signal.SIGINT)
+        time.sleep(0.2)
 
     _dispycos_config['name'] = node_name
     _dispycos_config['dest_path'] = dispycos_path
