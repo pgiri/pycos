@@ -4,7 +4,7 @@
 # this is a simple example to show how KeyboardInterrupt exception can be used in remote tasks
 
 # this generator function is sent to remote dispycos servers to run tasks there
-def compute_proc(results_task, task=None):
+def compute_proc(client_task, task=None):
     import random, time
 
     best = 0
@@ -19,7 +19,7 @@ def compute_proc(results_task, task=None):
             if (now - last_update) > 10:
                 # it is safer to send replies as objects of private class (passed with 'depeneds'
                 # to avoid confusion with any other messages processed in 'status_proc')
-                results_task.send([task.location, best])
+                client_task.send([task.location, best])
                 last_update = now
         try:
             # simulate computation
@@ -37,7 +37,7 @@ def compute_proc(results_task, task=None):
         if v > best:
             best = v
         yield task.sleep(random.uniform(0.25, 0.5))
-    results_task.send([task.location, best])
+    client_task.send([task.location, best])
 
 
 # -- code below is executed locally --
@@ -45,37 +45,14 @@ def compute_proc(results_task, task=None):
 # status messages indicating nodes, servers and remote tasks finish status are sent to this local
 # task; in this case we process only servers initialized and closed
 def status_proc(task=None):
-
-    # task to process results (sent by 'compute_proc' remote tasks)
-    def results_proc(task=None):
-        task.set_daemon()  # set as daemon so this task is terminated automatically when exiting
-        best = 0
-        while 1:
-            # as best value approaches 1, it may take long time to receive next best updates;
-            # here, the computations are stopped if no update received for 60 seconds
-            msg = yield task.recv(timeout=60)
-            if isinstance(msg, list):  # safer approach is to use special class instead of list
-                if len(msg) == 2 and isinstance(msg[0], pycos.Location):
-                    # from a compute task with latest best value
-                    if msg[1] > best:
-                        pycos.logger.info('update from %s: %s', msg[0], msg[1])
-                        best = msg[1]
-            elif not msg:  # no message (update) received for 60 seconds
-                pycos.logger.info('stopping computations; current best value is %s', best)
-                client_task.send(None)
-                # don't break from loop; while computations are being terminated, updates received
-                # from them may be better than current best (as 'compute_proc' processes
-                # KeyboardInterrupt to send its best) - although rather unlikely in this case
-
     task.set_daemon()  # set as daemon so this task is terminated automatically when exiting
-    results_task = pycos.Task(results_proc)
     while 1:
         msg = yield task.recv()
         if isinstance(msg, DispycosStatus):
             if msg.status == Scheduler.ServerInitialized:
                 pycos.logger.debug('server at %s is available', msg.info)
                 # start new computation task at this server
-                rtask = yield client.rtask_at(msg.info, compute_proc, results_task)
+                rtask = yield client.rtask_at(msg.info, compute_proc, client_task)
             elif msg.status == Scheduler.ServerClosed or msg.status == Scheduler.ServerAbandoned:
                 pycos.logger.debug('server at %s is closed', msg.info)
 
@@ -88,15 +65,27 @@ def client_proc(task=None):
     if (yield client.schedule()):
         raise Exception('schedule failed')
 
-    # wait until either 'quit' command is given by user, or if no updates are received by
-    # status_proc above for 60 seconds
+    # process results from 'compute_proc' rtasks
+    best = 0
     while 1:
-        msg = yield task.recv()
-        if msg == 'quit' or msg is None:
+        # as best value approaches 1, it may take long time to receive next best updates;
+        # here, the computations are stopped if no update received for 60 seconds
+        msg = yield task.recv(timeout=60)
+        if isinstance(msg, list):  # safer approach is to use special class instead of list
+            if len(msg) == 2 and isinstance(msg[0], pycos.Location):
+                # from a compute task with latest best value
+                if msg[1] > best:
+                    pycos.logger.info('update from %s: %s', msg[0], msg[1])
+                    best = msg[1]
+        elif not msg:  # no message (update) received for 60 seconds
+            pycos.logger.info('stopping computations; current best value is %s', best)
             break
+        elif msg == 'quit':
+            break
+
     yield client.close(terminate=True)
     if msg is None:
-        # closing with message from 'results_proc', so need to terminate loop in __main__
+        # closing due to no updates in 60 seconds; need to terminate loop in __main__
         if os.name == 'nt':
             signum = signal.CTRL_BREAK
         else:
