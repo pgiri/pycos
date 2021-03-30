@@ -1,8 +1,6 @@
-# File to build docker (https://www.docker.com) images to run
-# dispycosnode containers.
+# File to build docker (https://www.docker.com) images to run dispycosnode containers.
 
-# This file builds pycos (http://pycos.sourceforge.net) with Python 3
-# using latest Ubuntu Linux.
+# This file builds pycos (https://pycos.org) with Python 3 using latest Ubuntu Linux.
 
 FROM ubuntu:latest
 
