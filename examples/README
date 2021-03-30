@@ -97,6 +97,10 @@ framework for distributed and parallel computing.
   remote task is finished) while also using httpd module (which chains messages
   from dispycos scheduler to client's 'status_proc').
 
+* dispycos_kbd_int.py catches KeyboardInterrupt exception raised when a task is being
+  terminated. This is useful to save current state of computation (e.g., to resume later), perform
+  any cleanup, send appropriate data / result to client etc.
+
 * dispycos_live_analytics.py shows how to implement live/real-time analytics and send the results
   back to client. It also uses streaming of data to remote tasks for efficient communication.
 

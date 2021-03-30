@@ -130,7 +130,6 @@ if __name__ == '__main__':
 
     client = Client([agent_proc])
     agents = set()  # for illustration - not required in this example
-    servers = set()
     client_task = pycos.Task(client_proc)
 
     print('   Enter "quit" or "exit" to end the program ')

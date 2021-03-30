@@ -21,7 +21,11 @@ def compute(i, n, reply, task=None):
 
 # client (local) task submits computations
 def client_proc(client, task=None):
-    if (yield client.schedule()):
+    # unlike in other example, here dispycos scheduler is assumed to be running on host 'foreman';
+    # using a remote scheduler is useful when multiple clients can use nodes so each client
+    # can use all available nodes exclusively and clients are scheduled one after another, using
+    # nodes very effectively in a shared environment
+    if (yield client.schedule(location='foreman')):
         raise Exception('Could not schedule client')
 
     # remote tasks send results to this process
@@ -60,9 +64,6 @@ if __name__ == '__main__':
             ('"%s" is not suitable for Python version %s.%s; use file installed by pip instead' %
              (__file__, sys.version_info.major, sys.version_info.minor))
 
-    # in this example, dispycos scheduler is assumed to be running elsewhere on
-    # the network, so unlike in other examples, scheduler is not started here
-
     # assume that we want to customize allocation of CPUs; in this case, we
     # leave one of the CPUs on node not used (default DispycosNodeAllocate uses all
     # CPUs)
@@ -73,12 +74,7 @@ if __name__ == '__main__':
             return cpus - 1
 
     nodes = [NodeAllocate(node='*')]
-    # unlike in other example, here dispycos scheduler is assumed to be running on host 'foreman';
-    # using a remote scheduler is useful when multiple clients can use nodes so each client
-    # can use all available nodes exclusively and clients are scheduled one after another, using
-    # nodes very effectively in a shared environment
-    client = Client([compute], pulse_interval=10, zombie_period=51, nodes=nodes,
-                    scheduler='foreman')
+    client = Client([compute], pulse_interval=10, zombie_period=51, nodes=nodes)
     # start httpd so client can be monitored with a browser
     http_server = pycos.httpd.HTTPServer(client)
 

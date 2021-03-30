@@ -83,7 +83,7 @@ def status_proc(task=None):
 def client_proc(task=None):
     if (yield client.schedule()):
         raise Exception('Could not schedule client')
-    # execute 10 jobs (tasks) and get their results. Note that number of jobs
+    # execute 15 jobs (tasks) and get their results. Note that number of jobs
     # created can be more than number of server processes available; the
     # scheduler will use as many processes as necessary/available, running one
     # job at a server process
