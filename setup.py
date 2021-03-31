@@ -30,7 +30,12 @@ if len(sys.argv) > 1 and sys.argv[1] == 'sdist':
                         if lines[i].endswith('sys.version_info.minor < 7, \\\n'):
                             lines[i] = lines[i].replace('sys.version_info.minor < 7',
                                                         'sys.version_info.minor >= 7')
-                            break
+                        else:
+                            m = re.match(r'^([\W]*)if sys.version_info >= \(3,7,0\) or ',
+                                         lines[i])
+                            if m:
+                                lines[i] = m.group(1) + 'if True:\n'
+                                break
                 with open(filename, 'w') as fd:
                     fd.write(''.join(lines))
                 os.chmod(filename, sbuf.st_mode)
@@ -48,8 +53,9 @@ setup(
     version=module_version,
     description='Concurrent, Asynchronous, Distributed, Communicating Tasks with Python',
     long_description=open('README.rst').read(),
+    long_description_content_type='text/x-rst',
     keywords='concurrency, asynchronous, network programming, distributed, tasks, message passing',
-    url='http://pycos.sourceforge.io',
+    url='https://pycos.org',
     author='Giridhar Pemmasani',
     author_email='pgiri@yahoo.com',
     package_dir={'pycos': base_dir},
