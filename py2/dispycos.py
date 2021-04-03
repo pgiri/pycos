@@ -38,16 +38,32 @@ __url__ = "https://pycos.org"
 __all__ = ['Scheduler', 'Client', 'Computation', 'DispycosStatus', 'DispycosTaskInfo',
            'DispycosNodeInfo', 'DispycosNodeAvailInfo', 'DispycosNodeAllocate']
 
-# status about nodes / servers are sent with this structure
-DispycosStatus = collections.namedtuple('DispycosStatus', ['status', 'info'])
-DispycosTaskInfo = collections.namedtuple('DispycosTaskInfo', ['task', 'args', 'kwargs',
-                                                               'start_time'])
-DispycosNodeInfo = collections.namedtuple('DispycosNodeInfo', ['name', 'addr', 'cpus', 'platform',
-                                                               'avail_info'])
 MsgTimeout = pycos.config.MsgTimeout
 MinPulseInterval = pycos.config.MinPulseInterval
 MaxPulseInterval = pycos.config.MaxPulseInterval
 logger.name = 'dispycos'
+
+
+class DispycosStatus(object):
+    """Status messages from scheduler are indicated with this structure. 'status' is one of the
+    constants defined in 'Scheduler' below, such as NodeInitialized, ServerClosed, TaskStarted
+    etc. 'info' is information structure that varies depending on 'status'; e.g., if 'status' is
+    NodeDiscovered, it would be DispycosNodeAvailInfo etc.
+    """
+    def __init__(self, status, info):
+        self.status = status
+        self.info = info
+
+
+class DispycosTaskInfo(object):
+    """When a task is created at remote dispycos server, this structure is given as 'info'
+    attribute of DispycosStatus message.
+    """
+    def __init__(self, task, args, kwargs):
+        self.task = task
+        self.args = args
+        self.kwargs = kwargs
+        self.start_time = time.time()
 
 
 class DispycosNodeAvailInfo(object):
@@ -55,13 +71,26 @@ class DispycosNodeAvailInfo(object):
     available CPU in percent in the range 0 to 100. 0 indicates node is busy
     executing tasks on all CPUs and 100 indicates node is not busy at all.
     """
-
     def __init__(self, location, cpu, memory, disk, swap):
         self.location = location
         self.cpu = cpu
         self.memory = memory
         self.disk = disk
         self.swap = swap
+
+
+class DispycosNodeInfo(object):
+    """When there is a change in node status (e.g., NodeDiscovered, NodeInitialize etc.),
+    DispycosStatus message with 'info' attribute is set to this structure.
+    """
+    def __init__(self, name, addr, cpus, platform, avail_info):
+        self.name = name
+        self.addr = addr
+        self.cpus = cpus
+        self.platform = platform
+        # avail_info is an instance of DisycosNodeAvailInfo if psutil is available on node;
+        # otherwise it is None
+        self.avail_info = avail_info
 
 
 class DispycosNodeAllocate(object):
@@ -240,7 +269,7 @@ class Client(object):
                 if name in depends:
                     continue
                 try:
-                    with open(name, 'rb') as fd:
+                    with open(name, 'rb'):
                         pass
                 except Exception:
                     raise Exception('File "%s" is not valid' % name)
@@ -728,7 +757,7 @@ class Client(object):
                 setattr(rtask, '_value', None)
                 self.__rtasks[rtask] = rtask
                 if self.status_task:
-                    msg = DispycosTaskInfo(rtask, args, kwargs, time.time())
+                    msg = DispycosTaskInfo(rtask, args, kwargs)
                     self.status_task.send(DispycosStatus(Scheduler.TaskStarted, msg))
             raise StopIteration(rtask)
 
