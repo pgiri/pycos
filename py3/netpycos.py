@@ -20,7 +20,10 @@ import ssl
 import struct
 import re
 import platform
-import ipaddress
+try:
+    import ipaddress
+except ImportError:
+    ipaddress = None
 try:
     import netifaces
 except ImportError:
@@ -795,12 +798,37 @@ class Pycos(pycos.Pycos, metaclass=Singleton):
             return best.get(socket_families[1], None)
         return None
 
-    # TODO: is there a better approach to find best suitable address to select
-    # (with netmask)?
     def _ip_addrinfo_(self, ip):
         """
         Internal use only.
         """
+        if ipaddress:
+            ip_addr = ipaddress.ip_address(ip)
+            for addrinfo in self._addrinfos:
+                if not addrinfo.netmask:
+                    continue
+                if isinstance(ip_addr, ipaddress.IPv4Address):
+                    if addrinfo.family != socket.AF_INET:
+                        continue
+                    try:
+                        net = ipaddress.IPv4Network((addrinfo.ip, addrinfo.netmask), strict=False)
+                        if ipaddress.IPv4Address(ip) in net:
+                            return addrinfo
+                    except Exception:
+                        pass
+                elif isinstance(ip_addr, ipaddress.IPv6Address):
+                    if addrinfo.family != socket.AF_INET6:
+                        continue
+                    try:
+                        # IPv6Network works with prefixlen, but not netmask, so try common
+                        # prefixlen of 64 and check if netmask is same
+                        net = ipaddress.IPv6Network(addrinfo.ip + '/64', strict=False)
+                        if (net.netmask == ipaddress.IPv6Address(addrinfo.netmask) and
+                            ipaddress.IPv6Address(ip) in net):
+                            return addrinfo
+                    except Exception:
+                        pass
+
         best = (0, self._addrinfos[0])
         for addrinfo in self._addrinfos:
             i, n = 0, min(len(ip), len(addrinfo.ip))
