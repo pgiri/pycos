@@ -450,7 +450,7 @@ class _AsyncSocket(object):
                     buf = bytes(self._read_result[:n])
             if buf:
                 self._read_task._proceed_(buf)
-            else:
+            elif self._read_task:
                 self._read_task.throw(socket.timeout('timed out'))
             self._notifier.clear(self, _AsyncPoller._Read)
             self._read_fn = self._read_result = self._read_task = None
@@ -460,7 +460,7 @@ class _AsyncSocket(object):
                 sent = self._write_fn.args[1] - len(self._write_result)
             if sent:
                 self._write_task._proceed_(sent)
-            else:
+            elif self._write_task:
                 self._write_task.throw(socket.timeout('timed out'))
             self._notifier.clear(self, _AsyncPoller._Write)
             self._write_fn = self._write_result = self._write_task = None
