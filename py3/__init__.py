@@ -323,6 +323,50 @@ class _AsyncSocket(object):
     def close(self):
         """'close' must be called when done with socket.
         """
+        if self._certfile and isinstance(self._rsock, ssl.SSLSocket):
+            if self._blocking:
+                try:
+                    self._rsock = self._rsock.unwrap()
+                except Exception:
+                    # logger.debug('unwrap of %s exception: %s',
+                    #              self._fileno, traceback.format_exc())
+                    pass
+            else:
+                def _unwrap_():
+                    try:
+                        self._rsock = self._rsock.unwrap()
+                    except ssl.SSLError as err:
+                        if err.args[0] == ssl.SSL_ERROR_WANT_READ:
+                            self._notifier.clear(self, _AsyncPoller._Write)
+                            self._notifier.add(self, _AsyncPoller._Read)
+                            return
+                        elif err.args[0] == ssl.SSL_ERROR_WANT_WRITE:
+                            self._notifier.clear(self, _AsyncPoller._Read)
+                            self._notifier.add(self, _AsyncPoller._Write)
+                            return
+                    except Exception:
+                        # logger.debug('unwrap of %s exception: %s',
+                        #              self._fileno, traceback.format_exc())
+                        pass
+                    self._read_fn = self._write_fn = None
+                    self._notifier.clear(self, _AsyncPoller._Read | _AsyncPoller._Write)
+                    self._certfile = None
+                    self.close()
+
+                if not self._scheduler:
+                    self._scheduler = Pycos.scheduler()
+                    self._notifier = self._scheduler._notifier
+                    self._register()
+
+                if self._scheduler:
+                    self._read_task = Pycos.cur_task(self._scheduler)
+                    self._read_fn = self._write_fn = _unwrap_
+                    if self._rsock.server_side:
+                        self._notifier.add(self, _AsyncPoller._Read)
+                    else:
+                        self._notifier.add(self, _AsyncPoller._Write)
+                    return
+
         self._unregister()
         if self._rsock:
             self._rsock.close()
