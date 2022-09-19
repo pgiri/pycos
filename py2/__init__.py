@@ -479,6 +479,8 @@ class _AsyncSocket(object):
         def _recv():
             try:
                 buf = self._rsock.recv(bufsize, *args)
+            except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
+                return
             except Exception:
                 self._read_fn = None
                 self._notifier.clear(self, _AsyncPoller._Read)
@@ -521,6 +523,8 @@ class _AsyncSocket(object):
         def _recvall(self, view):
             try:
                 recvd = self._rsock.recv_into(view, len(view), *args)
+            except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
+                return
             except Exception:
                 self._read_fn = self._read_result = None
                 self._notifier.clear(self, _AsyncPoller._Read)
@@ -620,6 +624,8 @@ class _AsyncSocket(object):
         def _send():
             try:
                 sent = self._rsock.send(*args)
+            except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
+                return
             except Exception:
                 self._write_fn = None
                 self._notifier.clear(self, _AsyncPoller._Write)
@@ -685,6 +691,8 @@ class _AsyncSocket(object):
                     self._write_fn = self._write_result = None
                     self._notifier.clear(self, _AsyncPoller._Write)
                     self._write_task.throw(*sys.exc_info())
+            except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
+                return
             except Exception:
                 self._write_fn = self._write_result = None
                 self._notifier.clear(self, _AsyncPoller._Write)
