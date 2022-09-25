@@ -693,11 +693,6 @@ class _AsyncSocket(object):
         def _sendall(self, data_len):
             try:
                 sent = self._rsock.send(self._write_result, *args)
-                if sent < 0:
-                    self._write_result.release()
-                    self._write_fn = self._write_result = None
-                    self._notifier.clear(self, _AsyncPoller._Write)
-                    self._write_task.throw(*sys.exc_info())
             except socket.error as exc:
                 # apparently BSD may raise EAGAIN
                 if exc.errno != errno.EAGAIN:
@@ -722,6 +717,11 @@ class _AsyncSocket(object):
                     # elif self._timeout:
                     #     self._notifier._del_timeout(self)
                     #     self._notifier._add_timeout(self)
+                else:
+                    self._write_result.release()
+                    self._write_fn = self._write_result = None
+                    self._notifier.clear(self, _AsyncPoller._Write)
+                    self._write_task.throw(*sys.exc_info())
 
         self._write_result = memoryview(data)
         if not self._scheduler:
