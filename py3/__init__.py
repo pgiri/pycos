@@ -2889,8 +2889,10 @@ class Task(object):
             kwargs = kwargs.pop('kwargs', kwargs)
         if not inspect.isgeneratorfunction(target):
             raise Exception('%s is not a generator!' % target.__name__)
-        if target.__defaults__ and \
-           'task' in target.__code__.co_varnames[:target.__code__.co_argcount][-len(target.__defaults__):]:
+        if target.__kwdefaults__ and target.__kwdefaults__.get('task', '') is None:
+            kwargs['task'] = task
+        elif (target.__defaults__ and
+            'task' in target.__code__.co_varnames[:target.__code__.co_argcount][-len(target.__defaults__):]):
             kwargs['task'] = task
         return target(*args, **kwargs)
 
