@@ -110,6 +110,28 @@ class Singleton(type):
         Singleton._memo.pop(cls, None)
 
 
+class Struct(object):
+    """
+    Class for creating "sruct" data structure (not to be confused with 'struct' module).
+    """
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+    def __getattr__(self, name):
+        try:
+            value = self.__dict__[name]
+        except Exception:
+            logger.warning('attribute "%s" is invalid', name)
+            value = None
+        return value
+
+    def __setattr__(self, name, value):
+        if hasattr(self, name):
+            self.__dict__[name] = value
+        else:
+            raise AttributeError('Invalid attribute "%s"' % name)
+
+
 class Logger(object):
     """Simple(r) (and more efficient) version of logging mechanism with limited
     features.

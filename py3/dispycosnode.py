@@ -593,18 +593,7 @@ def _dispycos_spawn(_dispycos_node_q, _dispycos_spawn_q, _dispycos_config, _disp
         pycos.logger.setLevel(pycos.logger.INFO)
     pycos_scheduler = pycos.Pycos.instance()
 
-    class Struct(object):
-
-        def __init__(self, **kwargs):
-            self.__dict__.update(kwargs)
-
-        def __setattr__(self, name, value):
-            if hasattr(self, name):
-                self.__dict__[name] = value
-            else:
-                raise AttributeError('Invalid attribute "%s"' % name)
-
-    servers = [Struct(sid=sid, port=port, busy_time=busy_time, proc=None, status=None, pid=0)
+    servers = [pycos.Struct(sid=sid, port=port, busy_time=busy_time, proc=None, status=None, pid=0)
                for sid, port, busy_time in _dispycos_server_params]
     mp_q = multiprocessing.Queue()
     lock = threading.Lock()
@@ -1062,18 +1051,7 @@ def _dispycos_node():
 
     _dispycos_config['discover_peers'] = False
 
-    class Struct(object):
-
-        def __init__(self, **kwargs):
-            self.__dict__.update(kwargs)
-
-        def __setattr__(self, name, value):
-            if hasattr(self, name):
-                self.__dict__[name] = value
-            else:
-                raise AttributeError('Invalid attribute "%s"' % name)
-
-    service_times = Struct(start=None, stop=None, end=None)
+    service_times = pycos.Struct(start=None, stop=None, end=None)
     # time at start of day
     _dispycos_var = time.localtime()
     _dispycos_var = (int(time.time()) - (_dispycos_var.tm_hour * 3600) -
@@ -1211,14 +1189,14 @@ def _dispycos_node():
 
     for _dispycos_id in range(0, num_cpus + 1):
         _dispycos_var = os.path.join(dispycos_path, '..', 'server-%d.pkl' % _dispycos_id)
-        node_servers[_dispycos_id] = Struct(
+        node_servers[_dispycos_id] = pycos.Struct(
             id=_dispycos_id, pid=0, task=None, name='%s_server-%s' % (node_name, _dispycos_id),
             port=node_ports[_dispycos_id], restart=False, pid_file=_dispycos_var, done=pycos.Event(),
             busy_time=multiprocessing.RawValue('L', 0)
         )
     node_servers[0].name = None
 
-    client_info = Struct(auth=None, scheduler=None, client_location=None, cpus_reserved=0,
+    client_info = pycos.Struct(auth=None, scheduler=None, client_location=None, cpus_reserved=0,
                          spawn_mpproc=None, interval=_dispycos_config['max_pulse_interval'],
                          zombie_period=0, restart_servers=False, served=0, node_q=None, spawn_q=None)
 
