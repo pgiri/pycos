@@ -99,6 +99,10 @@ class Singleton(type):
         return c
 
     @classmethod
+    def instance(_, cls):
+        return Singleton._memo.get(cls, None)
+
+    @classmethod
     def discard(_, cls):
         """
         Forget singleton instance.
