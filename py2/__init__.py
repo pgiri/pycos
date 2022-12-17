@@ -1991,7 +1991,7 @@ if not hasattr(sys.modules[__name__], '_AsyncNotifier'):
                 self._poller.register(fd._fileno, event)
             else:
                 fd._event |= event
-                self._poller.modify(fd._fileno, event)
+                self._poller.modify(fd._fileno, fd._event)
             if fd._timeout:
                 self._add_timeout(fd)
             else:
