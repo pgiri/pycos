@@ -340,6 +340,12 @@ class _AsyncSocket(object):
         """Internal use only.
         """
         if self._notifier:
+            if self._read_fn and self._read_task:
+                self._timed_out(exc=socket.error('%s closed in %s' %
+                                                 (self._fileno, self._read_task)))
+            if self._write_fn and self._write_task:
+                self._timed_out(exc=socket.error('%s closed in %s' %
+                                                 (self._fileno, self._write_task)))
             self._notifier.unregister(self)
             self._notifier = None
 
@@ -464,20 +470,20 @@ class _AsyncSocket(object):
         else:
             return self._timeout
 
-    def _timed_out(self):
+    def _timed_out(self, exc=None):
         """Internal use only.
         """
         if self._read_fn:
-            buf = None
+            buf = ''
             if isinstance(self._read_result, bytearray):
                 view = self._read_fn.args[1]
                 n = len(self._read_result) - len(view)
                 if n > 0:
                     buf = bytes(self._read_result[:n])
-            if buf:
+            if self._read_task:
                 self._read_task._proceed_(buf)
-            elif self._read_task:
-                self._read_task.throw(socket.timeout('timed out'))
+            else:
+                logger.debug('%s has pending read', self._fileno)
             self._notifier.clear(self, _AsyncPoller._Read)
             self._read_fn = self._read_result = self._read_task = None
         if self._write_fn:
@@ -487,7 +493,11 @@ class _AsyncSocket(object):
             if sent:
                 self._write_task._proceed_(sent)
             elif self._write_task:
-                self._write_task.throw(socket.timeout('timed out'))
+                if not exc:
+                    exc = socket.timeout('timedout')
+                self._write_task.throw(exc)
+            else:
+                logger.debug('%s has pending write', self._fileno)
             self._notifier.clear(self, _AsyncPoller._Write)
             self._write_fn = self._write_result = self._write_task = None
 
